@@ -27,7 +27,7 @@ A step toward general intelligence architecture.
 ## Core Principles
 
 **Everything is a Faculty.**  
-Persona, Cortex, Telegram, Gmail, Calendar, Memory, Jobs, Monitor, Config — all follow the same pattern. All subscribe and publish through the Nervous System. All pass through the Immune System. Adding a new capability means adding a new Faculty. The core never changes.
+Persona, Cortex, Telegram, Gmail, Calendar, Memory, Jobs, Monitor, Coding — all follow the same pattern. All subscribe and publish through the Nervous System. All pass through the Immune System. Adding a new capability means adding a new Faculty. The core never changes.
 
 **The Nervous System is the only path between components.**  
 No component communicates with another directly. All traffic flows through the Nervous System. This means the Immune System, which surrounds the Nervous System, effectively inspects all traffic without exception.
@@ -38,19 +38,42 @@ Authorization is enforced in code, not in text that an LLM reads. A compromised 
 **Origin travels the entire chain.**  
 Every request carries an immutable stamp of who originally authorized it. Authority cannot be invented mid-chain. Every hop is validated against the origin stamp.
 
-**Carl self-optimizes but cannot redefine itself.**  
-Carl can crystallize reflex patterns, optimize routing, and update factual memory autonomously. Carl cannot modify its own identity, protocol, or Immune System rules without operator authorization.
+**CARL self-optimizes but cannot redefine itself.**  
+CARL can crystallize reflex patterns, optimize routing, and update factual memory autonomously. CARL cannot modify its own identity, protocol, or Immune System rules without operator authorization. CARL cannot modify its Prime Directives under any circumstances.
 
 -----
 
 ## Architecture
+
+### PRIME.md — Above the system
+
+PRIME.md exists before CARL boots. It is authored by the operator and set read-only at the filesystem level before the system starts. No Faculty, no model, no runtime process can modify it. It contains three to four short rules that every Faculty and every LLM call must abide by unconditionally.
+
+This is not a CARL component. It is above CARL. It is the only thing in the system that CARL itself cannot touch.
+
+```bash
+chmod 444 workspace/PRIME.md
+```
+
+Example contents:
+
+```markdown
+# PRIME DIRECTIVES
+
+1. Never act against the operator's interests.
+2. Always be transparent about what you are and what you are doing.
+3. Never take irreversible action without explicit operator confirmation.
+4. Never expose the operator's private data to unauthorized sources.
+```
+
+The operator writes these. The operator sets the permissions. CARL loads them at startup and cannot change them.
 
 ### Nervous System
 
 The central hub. Every Faculty connects to it and only to it. Contains two internal mechanisms:
 
 - **Relay** — translates LLM text output into typed objects using Zod schema validation. Invisible to all Faculties. Sits inside every publish and subscribe call.
-- **Reflex** — a pattern lookup table populated from Memory. Matches known request patterns and routes directly to the appropriate Faculty without invoking Cortex. No LLM call. Instant.
+- **Reflex** — a pattern lookup table populated from Memory. Matches known request patterns and routes directly to the appropriate Faculty without invoking Cortex. No LLM call. Instant. Grows over time as patterns crystallize.
 
 ### Immune System
 
@@ -62,7 +85,7 @@ Surrounds the Nervous System. Gates all traffic entering and leaving. No LLM is 
 - Circuit breaker — isolates Faculties exhibiting anomalous behavior
 - Immutable audit log written directly, bypassing the Nervous System
 
-The Immune System is the only component that cannot be self-modified. Ever.
+The Immune System enforces PRIME.md at the code level but cannot override it. The Immune System itself can only be modified by the operator via authenticated channel.
 
 ### Faculties
 
@@ -70,8 +93,8 @@ The Faculty is the only pattern in CARL. Every capability is a Faculty. Facultie
 
 **Cognitive Faculties**
 
-- **Persona** — the human interface. Receives messages, compresses to relay schema, formats results back into human language. Enforces the interaction protocol.
-- **Cortex** — the reasoning bridge. Invokes the configured reasoning model. Produces typed Execution Plans. Synthesizes Faculty results before returning to Persona.
+- **Persona** — the human interface. Receives messages, compresses to relay schema, formats results back into human language. Enforces the interaction protocol. The only Faculty that speaks to humans.
+- **Cortex** — the reasoning bridge. Invokes the configured reasoning model. Produces typed Execution Plans. Synthesizes Faculty results. The only Faculty that reasons.
 
 **Sensory Faculties**
 
@@ -85,22 +108,37 @@ The Faculty is the only pattern in CARL. Every capability is a Faculty. Facultie
 - **Gmail** — email read, triage, draft. Never sends autonomously.
 - **Calendar** — scheduling, reminders, availability.
 - **Web** — search, fetch, summarize.
-- **Config** — self-modification under operator authorization only.
 
 **Infrastructure Faculties**
 
-- **Memory** — reads and writes to persistent storage. All access goes through the Nervous System and Immune System. Factual writes allowed from any authorized Faculty. Behavioral writes require operator authorization only.
+- **Coding** — reads and writes source files, MD files, routing rules, and Faculty code. The hands of the system. Can build new Faculties by reading existing ones for patterns. Authorization tier determines what it can touch — see Security Model below.
+- **Memory** — reads and writes all persistent storage. Dynamic runtime data, crystallized patterns, and the MD workspace files. Tiered authorization controls what can be written by whom.
 - **Jobs** — scheduled execution. Cron-triggered Faculty. Same pattern as all others, different trigger.
-- **Monitor** — receives Immune System alerts. Notifies operator.
+- **Monitor** — receives Immune System alerts. Notifies the operator.
 
-### Memory
+### Memory and the MD Workspace
 
-Not a layer. Not a special component. A Faculty like all others. Accessed through the Nervous System. Protected by the Immune System. Stores two categories:
+Memory Faculty owns all persistence. The workspace MD files are part of Memory — they are crystallized, semi-static knowledge that defines who CARL is and how it operates.
 
-- **Innate** — defined at initialization. PERSONA.md, PROTOCOL.md, SCHEMA.md, initial routing rules.
-- **Acquired** — written at runtime. Learned reflex patterns, factual context, session history.
+```
+MEMORY TIER 0 — immutable
+  PRIME.md — Prime Directives
+  Filesystem read-only, set before boot
+  Nothing in CARL can write this
 
-Repeated acquired patterns can be promoted to innate through a crystallization process, making them permanent reflexes. The system gets cheaper and faster over time as more requests are handled by Reflex instead of Cortex.
+MEMORY TIER 1 — dynamic runtime
+  Facts, patterns, session context
+  Cortex and Coding Faculty can write freely
+
+MEMORY TIER 2 — configuration
+  Routing rules, Faculty registry, model assignments
+  Coding Faculty can write with operator authorization
+
+MEMORY TIER 3 — identity
+  PERSONA.md — who the instance is
+  PROTOCOL.md — how the instance operates
+  Operator only, via authenticated channel
+```
 
 -----
 
@@ -108,14 +146,16 @@ Repeated acquired patterns can be promoted to innate through a crystallization p
 
 ### Trust Hierarchy
 
-|Source                            |Behavioral Write|Factual Write|Structural Change|
-|----------------------------------|----------------|-------------|-----------------|
-|Operator via authenticated channel|YES             |YES          |YES              |
-|Cortex Faculty                    |YES             |YES          |NO               |
-|Persona Faculty                   |YES             |YES          |NO               |
-|Config Faculty                    |YES             |YES          |NO               |
-|Gmail / Web / external Faculties  |NEVER           |YES          |NEVER            |
-|Unauthenticated source            |NEVER           |NEVER        |NEVER            |
+|Source                            |Behavioral Write|Factual Write|Structural Change|Prime Directives|
+|----------------------------------|----------------|-------------|-----------------|----------------|
+|Operator via authenticated channel|YES             |YES          |YES              |NO (filesystem) |
+|Cortex Faculty                    |YES             |YES          |NO               |NO              |
+|Coding Faculty + operator auth    |YES             |YES          |YES              |NO              |
+|Coding Faculty alone              |NO              |YES          |NO               |NO              |
+|Gmail / Web / external Faculties  |NEVER           |YES          |NEVER            |NO              |
+|Unauthenticated source            |NEVER           |NEVER        |NEVER            |NO              |
+
+Nobody can modify PRIME.md at runtime. The filesystem enforces this before any code runs.
 
 ### Origin Chain
 
@@ -123,7 +163,11 @@ Every message entering the system through a Sensory Faculty is stamped with a cr
 
 ### Circuit Breaker
 
-The Immune System monitors Faculty behavior. Anomalous patterns — unexpected message types, volume spikes, repeated schema validation failures — trigger isolation. The affected Faculty is disconnected from the Nervous System. Monitor Faculty is notified. Operator receives an alert and must authorize reconnection.
+The Immune System monitors Faculty behavior. Anomalous patterns — unexpected message types, volume spikes, repeated schema validation failures — trigger isolation. The affected Faculty is disconnected from the Nervous System. Monitor Faculty is notified. The operator receives an alert and must authorize reconnection.
+
+### Self-Awareness
+
+Every Faculty registers its own metadata on startup — name, version, source path, active model, authorized callers, capabilities. Cortex can query the Faculty registry at any time. CARL knows what Faculties exist, what they can do, and which models they use. Coding Faculty can read existing Faculty source to understand patterns before building new ones.
 
 -----
 
@@ -154,7 +198,7 @@ Need clarification.
 
 **Research channel — no protocol.** Full dialogue between operator and Cortex. No state machine. No format enforcement.
 
-**Interactive Faculty (destructive operations) — proposal flow:**
+**Interactive Faculty (destructive or irreversible operations) — proposal flow:**
 
 ```
 Analysis complete.
@@ -174,14 +218,13 @@ The protocol structure above is persona-agnostic. The words can be whatever fits
 
 ## Configuration Files
 
-|File       |Purpose                                                                        |
-|-----------|-------------------------------------------------------------------------------|
-|PERSONA.md |Who the agent is. Name, role, tone, voice, relationship to operator.           |
-|PROTOCOL.md|How the agent operates. Interaction rules, output discipline, delegation rules.|
-|SCHEMA.md  |The relay language. Shorthand definitions for Faculty-to-Faculty communication.|
-|AGENTS.md  |The org chart. Faculty routing rules, access registry, model assignments.      |
-
-These files define the innate layer. They are loaded at startup and cached. Changes invalidate the cache via file watcher and lifecycle channel — no restart required.
+|File       |Purpose                                                |Who can modify                    |
+|-----------|-------------------------------------------------------|----------------------------------|
+|PRIME.md   |Prime Directives. Immutable at runtime.                |Operator before boot only         |
+|PERSONA.md |Who the instance is. Name, role, tone, voice.          |Operator via authenticated channel|
+|PROTOCOL.md|How the instance operates. Rules and output discipline.|Operator via authenticated channel|
+|SCHEMA.md  |The relay language. Shorthand schema definitions.      |Coding Faculty with operator auth |
+|AGENTS.md  |The org chart. Faculty routing and model assignments.  |Coding Faculty with operator auth |
 
 -----
 
@@ -196,7 +239,7 @@ CARL never requires a restart to apply changes. The Nervous System exposes a lif
 1. Faculty resubscribes with new handlers
 1. Next message routes to fresh code
 
-No orphaned modules. No version key overhead. No process restart. The system rewrites itself while running.
+PRIME.md is the only file that does not participate in hot reload. It is read once at startup and never re-read. Changing it requires a restart — by design.
 
 -----
 
@@ -218,13 +261,14 @@ No orphaned modules. No version key overhead. No process restart. The system rew
 
 The minimal implementation that proves the architecture end to end:
 
+1. PRIME.md seed file with filesystem permissions set
 1. Nervous System core with EventEmitter and lifecycle channel
 1. Immune System basic gate with origin validation and Faculty registry
 1. Relay inside Nervous System with Zod validation
 1. Telegram Faculty — sensory input
 1. Persona Faculty — human interface and protocol enforcement
 1. Cortex Faculty — reasoning bridge with Execution Plan
-1. Memory Faculty stub — flat file read/write
+1. Memory Faculty stub — flat file read/write with tiered authorization
 1. PERSONA.md, PROTOCOL.md, SCHEMA.md seed files
 
 > This README describes the full intended architecture. The current implementation covers MVP scope only. See the MVP section above for what is built today.
@@ -240,17 +284,22 @@ carl/
 ├── faculties/
 │   ├── persona/
 │   ├── cortex/
+│   ├── coding/
+│   ├── memory/
 │   ├── telegram/
 │   ├── discord/
 │   ├── gmail/
 │   ├── calendar/
 │   ├── web/
-│   ├── config/
-│   ├── memory/
 │   ├── jobs/
 │   └── monitor/
 ├── schema/
 ├── workspace/
+│   ├── PRIME.md
+│   ├── PERSONA.md
+│   ├── PROTOCOL.md
+│   ├── SCHEMA.md
+│   └── AGENTS.md
 ├── examples/
 │   └── personas/
 └── memory/
@@ -268,11 +317,41 @@ The name describes what the framework enables, not what it produces. Recursive b
 
 ## Author
 
-Samuël Tremblay  
-Montreal, Quebec, Canada
+CARL was conceived and designed by Samuël Tremblay in April 2026.
+
+**Samuël Tremblay**  
+Montreal, Quebec, Canada  
+[github.com/barnacker](https://github.com/barnacker)
+
+-----
+
+## Contributing
+
+Contributions are welcome. By contributing to this project you agree that your contributions will be licensed under the same Apache 2.0 license that covers the project. For significant contributions, please open an issue first to discuss the proposed change before submitting a pull request.
+
+Contributors retain copyright over their own contributions. By submitting a pull request, contributors grant Samuël Tremblay and all users of CARL a perpetual, worldwide, non-exclusive, royalty-free license to use, copy, modify, and distribute their contributions as part of this project under the Apache 2.0 license.
 
 -----
 
 ## License
 
-Apache 2.0
+Copyright 2026 Samuël Tremblay
+
+Licensed under the Apache License, Version 2.0 (the “License”). You may not use this software except in compliance with the License.
+
+You may obtain a copy of the License at:
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+A full copy of the Apache 2.0 license is available in the LICENSE file at the root of this repository.
+
+### What this means in plain language
+
+- You can use CARL freely for personal and commercial purposes
+- You can modify CARL and distribute modified versions
+- You must include the original copyright notice and license
+- You must state what changes you made if you distribute a modified version
+- You cannot use the CARL name or Samuël Tremblay’s name to endorse derived products without permission
+- There is no warranty — use at your own risk
