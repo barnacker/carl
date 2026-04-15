@@ -2,6 +2,8 @@
 
 CARL is a control architecture for AI systems that need to reason persistently, act safely, and improve through operation rather than retraining. Its central design choice is the separation of *decision policy* (centralized, audited, traceable to one authority) from *execution* (distributed, bounded, replaceable). Every other property follows from that separation.
 
+CARL claims structural control properties by design, not security by declaration. Compiled boundaries, typed interfaces, audit trails, and operator-gated lifecycles close specific classes of attack surface. They do not produce security as a property by virtue of existing. Security requires implementation correctness, ongoing validation, operational monitoring, and adversarial testing — none of which the document alone can provide. Where this document says "structural" or "compiled," it means *one defense among several required*, not *defense complete*.
+
 The biological terminology — Cortex, Nervous System, Immune System, Faculty, Reflex — is a naming convention, not a proof framework. It selects names from cognitive biology because the role correspondences are useful for navigation. It does not claim biological fidelity, biological completeness, or that CARL "thinks" in any sense beyond what its mechanisms demonstrably do. Where the architecture makes a claim that resembles a cognitive property (persistence, accumulation, recursion), that claim is grounded in a named mechanism with a falsification condition, not in the analogy.
 
 | Dimension | Agent Frameworks | CARL |
@@ -38,9 +40,9 @@ These are necessary preconditions, not sufficient capabilities. CARL does not cl
 
 Three objections recur in adversarial review of this architecture. Each is addressed once here for the reader who wants the answer before reading the full spec.
 
-**Objection 1 — "You claim a single reasoning locus, but Reflex, the Gating model, the Optimization Pass, and Persona framing all make decisions. That is multiple reasoning loci with extra steps."**
+**Objection 1 — "You claim a single policy origination authority, but Reflex, the Gating model, the Optimization Pass, and Persona framing all make decisions. That is multiple decision-makers with extra steps."**
 
-Law 3 distinguishes *originating* decision policy from *executing* it. Reflex is cached policy execution — routes Cortex previously derived, made durable, executed without re-reasoning. The Gating model operates within Cortex-authorized escalation bounds defined as hard constraints, not learned behavior. The Optimization Pass tunes four named thresholds within a compiled safety floor it cannot breach. Persona is structurally restricted to presentation and interaction — its allowed and forbidden surfaces are enumerated and architecturally enforced (Persona has no call path to Reflex internals or Immune System state). None of these components originate decision policy. They execute or tune within bounds Cortex authorized. The distinction is the architecture's central commitment, not a rhetorical one.
+Law 3 distinguishes *originating* decision policy from *executing* it, and the rename was deliberate — the architecture acknowledges multiple bounded runtime decision-makers and constrains each one separately. Reflex is cached policy execution — routes Cortex previously derived, made durable, executed without re-reasoning. The Gating model operates within Cortex-authorized escalation bounds defined as hard constraints, not learned behavior. The Optimization Pass tunes four named thresholds within a compiled safety floor it cannot breach. Persona is structurally restricted to presentation and interaction — its allowed and forbidden surfaces are enumerated and architecturally enforced (Persona has no call path to Reflex internals or Immune System state). None of these components originate decision policy. They execute or tune within bounds Cortex authorized. The distinction is the architecture's central commitment, not a rhetorical one.
 
 **Objection 2 — "Compiled core does not equal secure architecture. You are claiming structural security where you only have one class of attack surface closed."**
 
@@ -80,7 +82,7 @@ Invariants. A system that violates any of these is not CARL.
 
 **Law 2 — The Nervous System is the only path.** No component communicates with another directly. All traffic flows through the Nervous System. One path means one gate.
 
-**Law 3 — One Reasoning Locus.** Only Cortex may originate or authorize durable decision policy. Faculties execute what Cortex derived. Reflex is cached policy execution: routes Cortex previously derived, made durable. Multiple Reasoning Engine instances may run concurrently — one per active Arc. "One locus" refers to origination and authorization of decision policy, not runtime execution.
+**Law 3 — Single Policy Origination Authority.** Only Cortex may originate or authorize durable decision policy. Faculties execute what Cortex derived. Reflex is cached policy execution: routes Cortex previously derived, made durable. The Gating model classifies within Cortex-authorized escalation bounds. The Optimization Pass tunes within a compiled safety floor. Persona shapes presentation within an architecturally restricted surface. Multiple Reasoning Engine instances may run concurrently — one per active Arc. This Law constrains *origination authority over decision policy*, not the existence of bounded runtime decision-makers — those exist by necessity, and are individually constrained elsewhere in the architecture.
 
 **Law 4 — Faculties are decision-stateless.** Faculties carry no decision state between invocations. All persistence that influences decisions lives in Memory Faculty only. Operational state (connection pools, cached clients, retry metadata) is permitted when explicit, typed, and auditable. Hidden operational state is forbidden. A Faculty that crashes and restarts produces identical decision outputs from identical inputs.
 
@@ -106,7 +108,7 @@ Invariants. A system that violates any of these is not CARL.
 |---|---|---|
 | 1 — Everything is a Faculty | Faculty Contract registration in Immune System | Faculty without contract cannot register |
 | 2 — Nervous System is the only path | Synapse abstraction layer; Faculty code has no bus reference | Static analysis at validation step 2 of System Evolution Boundary lifecycle |
-| 3 — One Reasoning Locus | Reflex/Gating/Optimization call paths cannot author routes; only Cortex writes to Tier 2 routing | Trace log shows route origination authority per Resolution Record |
+| 3 — Single Policy Origination Authority | Reflex/Gating/Optimization call paths cannot author routes; only Cortex writes to Tier 2 routing | Trace log shows route origination authority per Resolution Record |
 | 4 — Faculties are decision-stateless | Faculty Contract requires explicit operational state declaration; hidden state rejected at validation | Restart equivalence test on identical inputs |
 | 5 — Security is structural | Compiled core (production); chmod 444 on PRIME.md (prototype); halt-on-missing | Build attestation; runtime halt verification |
 | 6 — Origin travels the entire chain | Immune System validates origin stamp at every hop | Audit log entries per hop with origin hash |
@@ -386,6 +388,13 @@ SEMANTIC INDEX
 5. **Similarity is never a decision.** The Semantic Index returns ranked references; the caller decides what to do with them. Reflex makes routing decisions on discrete signatures. Cortex makes reasoning decisions over assembled context. Operator makes intent decisions in the ambiguity flow. The vector store is not authorized to make any of these decisions — it answers "give me relevant context," never "should I act."
 
 **Why this addition is structurally safe.** RAG is honest when it answers *"give me relevant context."* RAG is dangerous when it answers *"should I act?"* The first leaves the decision with a decision-maker (Cortex, operator, Persona). The second moves the decision into a vector space where it cannot be audited, cannot fall back gracefully, and cannot be falsified at low cost. The Semantic Index is restricted to the first.
+
+**Acknowledged indirect influence.** The Semantic Index is not authorized to decide, but it can shape Cortex context selection and therefore indirectly influence outcomes. Different retrieved context produces different reasoning. This is not a contradiction with the decision boundary — Cortex still chooses what to do with retrieved context — but the influence is real and must be visible to operate honestly. Three mitigations:
+- All vector queries logged to Tier 1a with `{caller, query_text_hash, returned_keys, similarity_scores}` so retrieval choices are reconstructable.
+- Cortex Reasoning Engine traces which retrieved entries actually influenced the Execution Plan, so context-to-decision linkage is auditable.
+- Operator-initiated audit can replay any Arc against alternative retrieval results to test sensitivity to context selection.
+
+The Semantic Index is therefore a *visible indirect influence*, not a *hidden one*. That distinction is what makes it admissible.
 
 **Crystallization-time use — secondary benefit.** At crystallization time, Memory Faculty runs a vector check: *"Is this candidate pattern semantically near an existing crystallized pattern that the K/V exact-match check missed?"* Three outcomes:
 - No vector hit → write new entry
@@ -889,6 +898,27 @@ carl/
 | Reproducible Build | Validation step requiring binary hash to match deterministic rebuild from declared source |
 | Staged Canary | 1% traffic promotion for generated Faculties before full deployment |
 | Longitudinal Drift Metric | Stage 4 instrumentation requirement — held-out corpus quality trended over time to detect silent regression within safety floor |
+
+---
+
+## Scope Statement
+
+CARL is a bounded control architecture for AI operation. It is not, by this document alone, evidence of generalized intelligence or safe autonomy. This document describes:
+
+- A design with named mechanisms and falsification conditions
+- A staged build path with empirical proof obligations per stage
+- Threat models with structural defenses for each named attack surface
+- Explicit limits on what is and is not claimed at every level
+
+This document does not provide:
+
+- Proof that the implementation will behave as specified
+- Proof of security beyond what compiled boundaries close
+- Proof of cognition beyond what mechanisms demonstrably do
+- Proof of safe autonomy — operator gates exist precisely because autonomy is not yet trustworthy
+- Proof that the trajectory toward general intelligence will succeed
+
+A working CARL instance is necessary to convert any of these from architectural claim to demonstrated property. The architecture is the substrate for that demonstration, not the demonstration itself.
 
 ---
 
