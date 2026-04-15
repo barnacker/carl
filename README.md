@@ -1,24 +1,6 @@
 # CARL — Cognitive Autonomous Recursive Learning
 
-CARL is a framework for building systems that reason independently, self-protect by design, and grow more capable the longer they run — by converting experience into reflex, chaining Faculties recursively to resolve complex problems, and feeding every resolved request back into a loop that makes the next response faster, cheaper, and more precise.
-
-CARL is not an agent framework.  
-CARL is not a chatbot platform.  
-CARL is not an automation tool.
-
-CARL is a synthetic cognitive architecture. Every component maps to a functional analog in biological cognition. The result is a system that thinks, protects itself structurally, and improves the longer it runs — booting the way a human does: knowing who it is and what matters, retrieving everything else on demand, as fast as reflex.
-
----
-
-## Why CARL Exists
-
-The agent paradigm made AI automation accessible. It is also fundamentally limited. Agents conflate reasoning and execution. That conflation is where security breaks down, costs compound, and systems become unpredictable.
-
-CARL eliminates the agent concept as the organizing primitive.
-
-The distinction from agent frameworks is real but precise — not absolute. In agent frameworks, each agent reasons about what it should do next and acts on that reasoning. In CARL, Faculties do not reason about what to do next — they execute what Cortex derived. A Faculty that invokes a model for classification is performing a bounded transformation, not deciding its next action. Cortex is the only component authorized to originate or change decision policy.
-
-The practical consequence: security boundaries are structural, routing is centralized, and self-extension (Coding Faculty) requires the most constrained lifecycle in the architecture precisely because it comes closest to agent-like behavior.
+A synthetic cognitive architecture. Every component maps to a functional analog in biological cognition. The result is a system that thinks, protects itself structurally, and improves the longer it runs — booting the way a human does: knowing who it is and what matters, retrieving everything else on demand, as fast as reflex.
 
 | Dimension | Agent Frameworks | CARL |
 |---|---|---|
@@ -31,69 +13,57 @@ The practical consequence: security boundaries are structural, routing is centra
 | Trust | Assumed | Earned per identity, per pattern |
 | Operation | Request-response, blocking | Continuous, multitasking, non-blocking |
 
+In agent frameworks, each agent reasons about what it should do next and acts on that reasoning. In CARL, Faculties execute what Cortex derived — they do not decide what happens next. Cortex is the only component authorized to originate or change decision policy. Security boundaries are structural, routing is centralized, and self-extension (Coding Faculty) requires the most constrained lifecycle in the architecture precisely because it comes closest to agent-like behavior.
+
 One persistent reasoning core. Infinite specialized Faculties. Each Faculty potentially multi-model. A step toward general intelligence architecture.
 
 ---
 
 ## What Makes CARL Recursive
 
-Recursion in CARL is not a single mechanism — it is a property that emerges from several reinforcing loops operating simultaneously.
+Recursion is a property that emerges from several reinforcing loops operating simultaneously.
 
-**Reflex crystallization loop.** Cortex resolves a request. The compressed intent and Faculty route are written to Memory. Memory crystallizes the pattern. The next matching request routes directly — no Cortex, no LLM, no cost. That resolution generates a new pattern. The loop feeds itself.
+**Reflex crystallization.** Cortex resolves a request. The compressed intent and Faculty route are written to Memory. Memory crystallizes the pattern. The next matching request routes directly — no Cortex, no LLM, no cost. That resolution generates a new pattern. The loop feeds itself.
 
-**Faculty chaining.** Cortex dispatches to Faculty A. Faculty A's result triggers dispatch to Faculty B. Each result can spawn the next dispatch. The chain depth is not fixed — Cortex decides at each step.
+**Faculty chaining.** Cortex dispatches to Faculty A. Faculty A's result triggers dispatch to Faculty B. Chain depth is not fixed — Cortex decides at each step.
 
-**Coding Faculty self-extension.** Coding Faculty reads existing Faculty source, writes a new Faculty, hot-reloads it. That Faculty begins generating resolved requests. Those resolutions feed the Reflex loop. CARL extended itself and that extension immediately improves the system.
+**Coding Faculty self-extension.** Coding Faculty reads existing Faculty source, writes a new Faculty, hot-reloads it. That Faculty begins generating resolved requests that feed the Reflex loop.
 
-**Arc context accumulation.** Each Faculty result fed back into the active Reasoning Arc changes what Cortex does next. Each result shapes the next decision, which shapes the next result.
+**Arc context accumulation.** Each Faculty result fed back into the active Reasoning Arc changes what Cortex does next.
 
-**Confidence compounding.** As crystallized patterns accumulate, Reflex handles more requests. More Reflex hits means fewer Cortex invocations. More throughput generates more patterns. Improvement compounds.
+**Confidence compounding.** As crystallized patterns accumulate, Reflex handles more requests. More Reflex hits means fewer Cortex invocations. More throughput generates more patterns.
 
-**Threshold self-optimization.** Every resolved request generates a Resolution Record. The Optimization Pass reads these records and tunes escalation thresholds — over time the system biases itself toward the cheapest viable path without being told to.
+**Threshold self-optimization.** Every resolved request generates a Resolution Record. The Optimization Pass reads these records and tunes escalation thresholds — the system biases itself toward the cheapest viable path.
 
 ---
 
 ## Laws
 
-These are invariants. A system that violates any of these is not CARL.
+Invariants. A system that violates any of these is not CARL.
 
-**Law 1 — Everything is a Faculty.**  
-Every capability follows the same pattern: subscribe through the Synapse, execute, publish results. Telegram, Gmail, Calendar, Memory, Coding — all Faculties. Adding capability means adding a Faculty. The core never changes. Cortex is the single exception — above the Faculty pattern, not outside it.
+**Law 1 — Everything is a Faculty.** Every capability follows the same pattern: subscribe through the Synapse, execute, publish results. Adding capability means adding a Faculty. The core never changes. Cortex is the single exception — above the Faculty pattern.
 
-**Law 2 — The Nervous System is the only path.**  
-No component communicates with another directly. All traffic flows through the Nervous System. No exceptions. One path means one gate.
+**Law 2 — The Nervous System is the only path.** No component communicates with another directly. All traffic flows through the Nervous System. One path means one gate.
 
-**Law 3 — One Reasoning Locus.**  
-Only Cortex may originate or authorize durable decision policy. Faculties execute what Cortex derived — they do not decide what happens next. Reflex is cached policy execution: routes Cortex previously derived, made durable. The Gating model operates within Cortex's authorized scope. The Optimization Pass adjusts thresholds within operator-defined bounds. None of these are independent decision-makers — they are authorized policy artifacts whose origin traces to Cortex.
+**Law 3 — One Reasoning Locus.** Only Cortex may originate or authorize durable decision policy. Faculties execute what Cortex derived. Reflex is cached policy execution: routes Cortex previously derived, made durable. Multiple Reasoning Engine instances may run concurrently — one per active Arc. "One locus" refers to origination and authorization of decision policy, not runtime execution.
 
-CARL enforces a single decision authority, not a single execution thread. Multiple Reasoning Engine instances may run concurrently — one per active Arc. Model invocations may occur in parallel across Arcs. "One locus" refers strictly to the origination and authorization of decision policy, not runtime execution.
+**Law 4 — Faculties are decision-stateless.** Faculties carry no decision state between invocations. All persistence that influences decisions lives in Memory Faculty only. Operational state (connection pools, cached clients, retry metadata) is permitted when explicit, typed, and auditable. Hidden operational state is forbidden. A Faculty that crashes and restarts produces identical decision outputs from identical inputs.
 
-**Law 4 — Faculties are decision-stateless.**  
-Faculties carry no decision state between invocations. All persistence that influences decisions lives in Memory Faculty only. Operational state — connection pools, cached clients, OAuth refresh handles, pagination cursors, retry metadata, idempotency keys — is permitted when it is explicit (declared in Faculty registration), typed (Relay-validated), and auditable (appears in trace log). Hidden operational state is forbidden. Cross-invocation behavioral state of any kind is forbidden. A Faculty that crashes and restarts produces identical decision outputs from identical inputs.
+**Law 5 — Security is structural, not prompt-based.** Authorization is enforced in code. In production, the core is compiled — no source for a model to read or modify at runtime. Compilation eliminates prompt-level tampering. It does not solve architectural trust, policy bugs, or incorrect authority propagation — those require explicit validation and monitoring.
 
-**Law 5 — Security is structural, not prompt-based.**  
-Authorization is enforced in code. In production, the core is compiled — there is no source for a model to read or modify at runtime. Compilation eliminates prompt-level tampering with Nervous System and Cortex internals. It does not solve architectural trust, policy bugs, unsafe schema assumptions, or incorrect authority propagation. Those require explicit validation, auditing, and operational monitoring. Structural security means the attack surface is defined and auditable — not that it is zero.
+**Law 6 — Origin travels the entire chain.** Every request carries an immutable stamp of who authorized it. Authority cannot be invented mid-chain. Each hop is validated against the original stamp.
 
-**Law 6 — Origin travels the entire chain.**  
-Every request carries an immutable stamp of who authorized it. Authority cannot be invented mid-chain. Each hop is validated against the original stamp.
+**Law 7 — CARL self-optimizes but cannot redefine itself.** CARL can crystallize Reflex patterns, tune thresholds, and update factual memory autonomously. CARL cannot modify its own identity, protocol, or Immune System rules without operator authorization. CARL cannot modify its Prime Directives under any circumstances.
 
-**Law 7 — CARL self-optimizes but cannot redefine itself.**  
-CARL can crystallize Reflex patterns, tune thresholds, and update factual memory autonomously. CARL cannot modify its own identity, protocol, or Immune System rules without operator authorization. CARL cannot modify its Prime Directives under any circumstances.
+**Law 8 — Model-invisible transit is a first-class primitive.** Content can move through the architecture without entering any model context. Files, secrets, tokens, and payloads can be fetched, routed, and written without any model consuming them as tokens.
 
-**Law 8 — Model-invisible transit is a first-class primitive.**  
-Content can move through the architecture without entering any model context. Files, secrets, tokens, and payloads can be fetched, routed, and written without any model ever consuming them as tokens.
+**Law 9 — Faculties never touch the bus directly.** Faculty code calls the Synapse — the typed abstraction layer between Faculty runtime and the Nervous System. This indirection makes the TypeScript-to-Zig evolution possible without rewriting any Faculty.
 
-**Law 9 — Faculties never touch the bus directly.**  
-Faculty code calls the Synapse — the typed abstraction layer between Faculty runtime and the Nervous System. This indirection makes the TypeScript-to-Zig evolution possible without rewriting a single Faculty.
+**Law 10 — Act only on confirmed intent.** Confidence is earned, not assumed. Ambiguous input is reflected back before routing. Low-confidence patterns re-validate before executing. Irreversible actions propose before they proceed. Silent routing is a privilege earned through repeated confirmed correct interpretation.
 
-**Law 10 — Act only on confirmed intent.**  
-Confidence is earned, not assumed. Ambiguous input is reflected back before routing. Low-confidence patterns re-validate before executing. Irreversible actions propose before they proceed. Silent routing is a privilege earned through repeated confirmed correct interpretation — never through assumption.
+**Law 11 — No mechanism without its constraints.** No capability is introduced without its safety constraints and observability instrumentation implemented in the same stage. A mechanism that exists without its constraints is a violation.
 
-**Law 11 — No mechanism without its constraints.**  
-No capability is introduced without its safety constraints and observability instrumentation implemented in the same stage. A mechanism that exists without its constraints is not a partial implementation — it is a violation. Reflex ships with Reflex safeguards. Coding Faculty ships with its full validation pipeline. There are no exceptions.
-
-**Law 12 — Safety is not subject to optimization.**  
-The Optimization Pass minimizes cost subject to safety constraints — not cost as a primary objective unconstrained by safety. The safety floor is a compiled invariant, not a tunable threshold. Cost optimization that would lower safety barriers is rejected regardless of what Resolution Records suggest. Risk classification is an Immune System property — the Optimization Pass cannot reclassify what is safe.
+**Law 12 — Safety is not subject to optimization.** The Optimization Pass minimizes cost subject to safety constraints — not cost unconstrained by safety. The safety floor is a compiled invariant, not a tunable threshold. Risk classification is an Immune System property — the Optimization Pass cannot reclassify what is safe.
 
 ---
 
@@ -101,11 +71,7 @@ The Optimization Pass minimizes cost subject to safety constraints — not cost 
 
 ### PRIME Directives — Above the System
 
-Three to four short rules every Faculty and every LLM call must abide by unconditionally. The only rules in CARL that nothing in CARL can override.
-
-**In production:** compiled into the Nervous System binary. Not a file. Not readable at runtime. Binary logic.
-
-**In the TypeScript prototype:** loaded from `workspace/PRIME.md` once at boot. Runtime halts if missing or unreadable. Exists only at build time in production.
+Three to four short rules every Faculty and every LLM call must abide by unconditionally. The only rules in CARL that nothing in CARL can override. In production: compiled into the Nervous System binary. In the TypeScript prototype: loaded from `workspace/PRIME.md` once at boot; runtime halts if missing.
 
 ```markdown
 # PRIME DIRECTIVES
@@ -119,152 +85,72 @@ Three to four short rules every Faculty and every LLM call must abide by uncondi
 
 ### Nervous System
 
-The central hub. Every Faculty connects through the Synapse, never directly. No model runs inside the Nervous System — it routes, validates, and carries. It never reasons.
+The central hub. Every Faculty connects through the Synapse, never directly. No model runs inside the Nervous System — it routes, validates, and carries. It never reasons. In production, the Nervous System and Immune System are compiled together as a single Zig binary with Prime Directives compiled in and in-process typed channels.
 
-In production, the Nervous System and Immune System are compiled together as a single Zig binary. Prime Directives compiled in. In-process typed channels — no sockets, no surface between internal components.
+**Immune System** — surrounds and gates all traffic. Pure compiled logic, no LLM. Origin chain validation on every request. Faculty access control via registered permission registry. Behavioral write restriction — external Faculties write facts, never behavior. Circuit breaker isolates anomalous Faculties; Monitor notified; operator authorizes reconnection. Immutable audit log written directly, bypassing the bus.
 
-**Immune System** — surrounds and gates all traffic. Pure compiled logic, no LLM.
-- Origin chain validation on every request, per input
-- Faculty access control via registered permission registry
-- Behavioral write restriction — external Faculties write facts, never behavior
-- Circuit breaker — isolates anomalous Faculties; Monitor notified; operator authorizes reconnection
-- Immutable audit log written directly, bypassing the bus
+**Relay** — translates LLM text output into typed objects via Zod (prototype) / Zig comptime types (production). Any payload failing schema is rejected before entering the bus.
 
-**Relay** — translates LLM text output into typed objects via Zod (prototype) / Zig comptime types (production). Any payload failing schema is rejected before entering the bus. The Nervous System never carries untyped data.
+**Reflex** — cached policy execution. No model. No inference. Reads Crystallized Memory. Executes Faculty sequences that Cortex previously authorized — it does not author routes. Initializes empty — no-op without Memory Faculty. Reflex is a fast path, never a blind path.
 
-**Reflex** — cached policy execution. No model. No inference. Reads Crystallized Memory. Executes Faculty sequences that Cortex previously derived and authorized — it does not author routes, it executes them. Routes directly, skipping Cortex on a hit. Initializes empty — no-op without Memory Faculty.
+Every Reflex hit passes mandatory checks before dispatch: Faculty health registry check, permission validation against origin stamp, confidence threshold check (HIGH or LOCKED required), risk check (HIGH/CRITICAL always bypass Reflex). Any check failure degrades to Cortex fallback with a REFLEX_DEGRADED signal.
 
-Reflex is a fast path, never a blind path.
+Required Reflex properties: decay without reinforcement (configurable per domain, LOCKED exempt), confidence states (UNSET → LOW → HIGH → LOCKED, where LOW/UNSET always re-validate), operator override (forces Cortex path, always honored), automatic Cortex fallback on low confidence / stale pattern / HIGH-CRITICAL risk / unhealthy Faculty.
 
-Every Reflex hit passes mandatory checks before dispatch:
-- Faculty health registry check — target Faculty registered and healthy?
-- Permission validation — origin stamp authorized for this route?
-- Confidence threshold check — pattern confidence is HIGH or LOCKED?
-- Risk check — action + domain risk level is LOW or ELEVATED? HIGH/CRITICAL always bypass Reflex regardless of confidence.
+**Reflex poisoning mitigations:** accumulation rate anomaly (velocity exceeding N/hour holds pattern PROVISIONAL, requires operator approval), origin diversity requirement (minimum M distinct origins before HIGH, single-origin poisoning structurally impossible), semantic distance check (large route delta at crystallization requires operator confirmation), immutable crystallization log (full observation trail preserved before collapse).
 
-If any check fails, Reflex degrades to Cortex fallback. Cortex receives a REFLEX_DEGRADED signal.
-
-Required Reflex properties:
-- Decay — patterns decay over time without reinforcement, configurable per domain. LOCKED entries exempt.
-- Confidence states — UNSET, LOW, HIGH, LOCKED. LOW and UNSET always re-validate.
-- Operator override — a defined signal forces Cortex path even on HIGH confidence. Always honored.
-- Automatic Cortex fallback on: low confidence, stale pattern, HIGH/CRITICAL risk action, Faculty unhealthy.
-
-**Reflex poisoning mitigations:**
-- Accumulation rate anomaly — confirmation velocity exceeding N per hour holds pattern in PROVISIONAL, requires operator approval before crystallization
-- Origin diversity requirement — minimum M distinct origins must confirm before HIGH confidence is reachable; single-origin poisoning is structurally impossible
-- Semantic distance check — large route delta at crystallization time requires operator confirmation
-- Immutable crystallization log — full observation trail preserved before collapse, enables forensic reconstruction
-
-**Dark Lane** — model-invisible data path alongside the reasoning path. Payload routed through it is never seen by any model. Carried opaque and intact from source to destination.
+**Dark Lane** — model-invisible data path alongside the reasoning path. Payload routed through it is never seen by any model. Cortex receives metadata only. See [Dark Transit](#dark-transit) for full specification.
 
 ---
 
 ### Cortex
 
-Cortex is not a Faculty. It is the single persistent cognitive entity in CARL — continuously running, multitasking across N simultaneous Reasoning Arcs, never blocked waiting for any single result.
-
-In production, a separate compiled Zig binary. One controlled typed boundary to the Nervous System. Soft surfaces — PERSONA.md, PROTOCOL.md, model assignments — remain configurable without recompilation.
+The single persistent cognitive entity in CARL — not a Faculty. Continuously running, multitasking across N simultaneous Reasoning Arcs, never blocked waiting for any single result. In production, a separate compiled Zig binary with one controlled typed boundary to the Nervous System. Soft surfaces (PERSONA.md, PROTOCOL.md, model assignments) remain configurable without recompilation.
 
 ```
 CORTEX
 
 PERSONA — main loop, always running
-  ├── Arc Store access         ← all active Arcs held in awareness simultaneously
-  ├── Identity context         ← PERSONA.md tints all decisions in the loop
-  ├── Arc router               ← which Arc does this input belong to?
-  ├── Ambiguity check          ← on new input
-  ├── Compression              ← intent extraction, partial or full
-  ├── Priority manager         ← what needs attention right now?
-  ├── Output composer          ← when Arc is ready to respond
+  ├── Arc Store access         ← all active Arcs held in awareness
+  ├── Identity context         ← PERSONA.md tints all decisions
+  ├── Arc router / Ambiguity check / Compression / Priority manager / Output composer
   └── spawns / manages ↓
 
 REASONING ENGINE — subordinate loop, one per Arc requiring it
-  ├── Gating model             ← cheap, runs every iteration
-  │     decides: Execution Faculty or Reasoning Faculty?
-  │     decides: is the plan ready?
+  ├── Gating model             ← cheap, decides: Execution or Reasoning Faculty? Plan ready?
   ├── calls Execution Faculty  ← cheap, bounded steps, via Synapse
   ├── calls Reasoning Faculty  ← expensive, deep steps, via Synapse
   ├── calls Memory Faculty     ← context gathering, via Synapse
   └── reports Execution Plan to Persona when ready
 
-DECOMPOSER — executor, one per active plan
-  ├── receives Execution Plan from Persona
-  ├── dispatches Faculty sequence through Synapse
-  └── results land in Result Buffer
-
-RESULT BUFFER — per Arc
-  └── collects async Faculty results, non-blocking
-
-SYNTHESIS GATE — per Arc
-  └── notifies Persona when Arc ready for synthesis or response
+DECOMPOSER — receives Execution Plan, dispatches Faculty sequence through Synapse
+RESULT BUFFER — per Arc, collects async Faculty results, non-blocking
+SYNTHESIS GATE — per Arc, notifies Persona when Arc ready for synthesis
 ```
 
 ---
 
 ### Persona — The Main Loop
 
-Persona is the soul of a CARL instance. Not an input/output formatter. The continuously running cognitive center that holds all active Reasoning Arcs in awareness simultaneously and tints every decision with the identity defined in PERSONA.md.
+The continuously running cognitive center that holds all active Reasoning Arcs in awareness simultaneously and tints every decision with the identity defined in PERSONA.md.
 
-**Persona influence boundaries — structurally enforced.**
+**Persona influences presentation and interaction, never system behavior.** Allowed: output framing (tone, format, verbosity), ambiguity resolution (which wildcard interpretation to propose), Arc prioritization, operator interaction tone. Forbidden (enforced by architecture, not convention): Execution Plan content, Reflex routing, security decisions, confidence thresholds, threshold tuning. Persona does not have access to Reflex internals or Immune System state.
 
-Persona influences presentation and interaction, never system behavior.
-
-Persona-allowed:
-- Output framing — tone, format, verbosity, register
-- Ambiguity resolution — which wildcard interpretation to propose
-- Arc prioritization — which pending Arc gets attention when multiple are actionable
-- Operator interaction tone — how proposals and clarifications are presented
-
-Persona-forbidden:
-- Execution Plan content — which Faculties are called, in what order
-- Reflex routing — whether a pattern matches or which Faculty is selected
-- Security decisions — origin validation, permission checks, circuit breaker triggers
-- Confidence thresholds — whether a pattern has earned silent routing
-- Threshold tuning — Optimization Pass parameters
-
-The forbidden list is not enforced by convention — it is enforced by architecture. Persona does not have access to Reflex internals. Persona does not have access to Immune System state. Persona does not write to Tier 2 configuration. These are not calls Persona can make.
-
-**The loop costs nothing at rest.** Persona does not invoke a model on each cycle. It reads Arc states, checks for new input, checks for Faculty results — pure logic, no tokens. A model is invoked only when a specific Arc step requires it. A system with ten suspended Arcs cycles indefinitely at zero cost.
+**The loop costs nothing at rest.** No model invoked per cycle — pure logic reads of Arc states, new input, Faculty results. A model is invoked only when a specific Arc step requires it. Ten suspended Arcs cycle indefinitely at zero cost.
 
 ```
 PERSONA CYCLE — zero token cost
 
-  await next event          ← sleeping, zero cost, zero tokens
+  await next event          ← sleeping, zero cost
        ↓
-  EVENT ARRIVES — one of:
-    new_input               ← Sensory Faculty published a message
-    faculty_result          ← Faculty completed, result in Buffer
-    arc_timeout             ← Arc suspended too long, notify operator
-    optimize_trigger        ← scheduled threshold sweep
+  EVENT ARRIVES: new_input | faculty_result | arc_timeout | optimize_trigger
        ↓
-  handle event
-  update Arc state
-  dispatch if needed        ← model invoked only here, only if required
+  handle event → update Arc state → dispatch if needed (model only here)
        ↓
-  await next event          ← back to sleep immediately
+  await next event
 ```
 
-Persona subscribes to the Nervous System. Sensory Faculties publish to the Nervous System. The Nervous System routes events to Persona. Persona never subscribes to a Faculty directly — Law 2 holds.
-
-**Multitasking:**
-
-```
-Operator sends message about project A
-  → Persona wakes, opens Arc A, spawns Reasoning Engine, sleeps
-
-Operator sends message about project B — Arc A still running
-  → Persona wakes, opens Arc B simultaneously, sleeps
-
-Arc A Faculty result arrives
-  → Persona wakes, folds result into Arc A Buffer, sleeps
-
-Arc B needs clarification
-  → Persona wakes, composes question, Arc B suspends, sleeps
-
-Operator answers Arc B, Arc A resolves
-  → Persona wakes, handles both, delivers results, sleeps
-```
+Persona subscribes to the Nervous System. Sensory Faculties publish to the Nervous System. Persona never subscribes to a Faculty directly — Law 2 holds.
 
 **Ambiguity detection:**
 
@@ -273,7 +159,7 @@ UNAMBIGUOUS — "Show me my calendar for tomorrow"
   Silent compression:
   { action: CHECK, domain: CALENDAR, scope: TEMPORAL,
     subject: SELF, params: { time_ref: "tomorrow" } }
-  → Reflex check. No question asked. Same for all operators.
+  → Reflex check. No question asked.
 
 AMBIGUOUS — "Show me what's for tomorrow"
   Partial compression:
@@ -285,159 +171,89 @@ AMBIGUOUS — "Show me what's for tomorrow"
   → Operator confirms → wildcard filled → Memory records observation
 ```
 
-`time_ref` was never ambiguous — extracted silently. Only wildcard fields trigger re-validation. Every confirmation feeds the Reflex corpus.
+Only wildcard fields trigger re-validation. Every confirmation feeds the Reflex corpus.
 
 ---
 
 ### Boot Protocol
 
-A human does not wake up with full context. They wake knowing who they are and what matters today. When they see a face, memory surfaces instantly — not because it was preloaded, but because the signal triggered retrieval. When a topic comes up, associated knowledge floods in automatically. No briefing document. No context dump. Identity is always present. Everything else arrives on demand, triggered by signal.
+CARL boots knowing who it is and what is pending. Everything else arrives on demand, triggered by signal.
 
-CARL boots the same way.
+**Loads at boot (always, small):** PRIME directives (compiled in production), PERSONA.md (~10 lines), PROTOCOL.md (~10 lines), Active Arc index (open Arc IDs + status + one-line summary only — not Arc contents).
 
-**What loads at boot — always, immediately, small:**
-
-```
-PRIME directives       ← 4 lines, compiled in production
-PERSONA.md             ← identity, tone, coloring — ~10 lines
-PROTOCOL.md            ← behavioral rules — ~10 lines
-Active Arc index       ← open Arc IDs + status + one-line summary only
-                          { arc_id, status, origin, intent_summary }
-                          not the Arc contents — just what is pending
-```
-
-Target: minimal working set. The exact size is measured at implementation — not declared upfront. Persona wakes knowing who it is and what is in flight. Nothing else.
-
-**What never preloads — fetched on demand by Memory Faculty:**
+**Fetched on demand by Memory Faculty:** Arc full context, Reflex table, Crystallized Memory, Resolution Records, Archived Arcs.
 
 ```
-Arc full context       ← fetched when that Arc becomes active
-Reflex table           ← queried by Nervous System, never loaded into Persona
-Crystallized Memory    ← queried by Memory Faculty on request
-Resolution Records     ← fetched only during Optimization Pass
-Archived Arcs          ← fetched only if operator references them
+SIGNAL ARRIVES → ARC INDEX HIT → MEMORY FACULTY FETCH → PERSONA ACTIVE → ARC RESOLVED → PERSONA SLEEPS
 ```
 
-**How retrieval works — the reflex analogy:**
-
-A message arrives. The origin stamp is recognized. The Arc index entry surfaces. Memory Faculty fetches that Arc's context. Persona responds. The retrieval is fast enough to feel like reflex — because architecturally, it is. The origin stamp is the face. The Arc index is the recognition. The Memory Faculty fetch is the context flooding in.
-
-```
-SIGNAL ARRIVES          ← new message, origin stamped
-      ↓
-ARC INDEX HIT           ← which Arc does this belong to?
-      ↓
-MEMORY FACULTY FETCH    ← Arc full context loaded now, not before
-      ↓
-PERSONA ACTIVE          ← working context assembled, nothing extra
-      ↓
-ARC RESOLVED            ← context released, Arc archived
-      ↓
-PERSONA SLEEPS          ← working context cleared
-```
-
-Context is a working surface, not a storage space. It assembles when needed and clears when done. A CARL instance that has been running for a year does not have a heavier boot than one that started yesterday. The index stays small. The memory stays in Memory Faculty. The context stays surgical.
-
-**Boot is not a cold start — it is a fast resume.**
-
-Every resolved Arc is archived in Crystallized Memory. Every crystallized Reflex pattern persists. Every confidence score survives restart. The instance that wakes after a reboot is not starting over. It is resuming — with the same identity, the same learned patterns, the same pending work — assembled on demand, as fast as recognition.
+Context is a working surface, not a storage space. It assembles when needed and clears when done. A CARL instance running for a year does not have a heavier boot than one started yesterday. Boot is not a cold start — it is a fast resume. Every resolved Arc, crystallized pattern, and confidence score survives restart.
 
 ---
 
 ### Compressed Intent — Payload Structure
 
-What Reflex matches on and what Cortex reasons from. Origin stamp travels separately — never part of the intent record.
+What Reflex matches on and what Cortex reasons from. Origin stamp travels separately.
 
 ```
 COMPRESSED INTENT RECORD
 {
-  action:   CHECK | FETCH | WRITE | DELETE | SCHEDULE
-          | SUMMARIZE | MONITOR | DRAFT | SEARCH | BUILD | ...
-
-  domain:   WEATHER | CALENDAR | EMAIL | FILE | WEB
-          | CODE | MEMORY | SYSTEM | ...
-
-  subject:  SELF | OTHER | EXTERNAL
-
-  scope:    TEMPORAL | SPATIAL | TOPICAL | null
-
-  risk:     LOW | ELEVATED | HIGH | CRITICAL
-            set by Immune System at intake — not by model, not by Faculty
-            HIGH and CRITICAL always bypass Reflex regardless of confidence
-            risk reclassification requires operator authorization
-
-  params:   {                          ← variable payload
-              time_ref:   "tomorrow"     never Reflex-matched
-              location:   "Montreal"     passed to Faculty as-is
-              filter:     "Kairos"
-              ...
-            }
+  action:      CHECK | FETCH | WRITE | DELETE | SCHEDULE | SUMMARIZE | MONITOR | DRAFT | SEARCH | BUILD | ...
+  domain:      WEATHER | CALENDAR | EMAIL | FILE | WEB | CODE | MEMORY | SYSTEM | ...
+  subject:     SELF | OTHER | EXTERNAL
+  scope:       TEMPORAL | SPATIAL | TOPICAL | null
+  risk:        LOW | ELEVATED | HIGH | CRITICAL         ← set by Immune System, not model
+  param_class: { quantifier, modifier, target_breadth }  ← normalized high-impact modifiers — Reflex-matched
+  params:      { time_ref, location, filter, ... }       ← variable instances — Reflex never sees them
 }
 ```
 
-**Domain is a semantic classifier — not a Faculty map.** Multiple Faculties can serve the same domain. Reflex maps the full signature `{ action + domain + subject + scope }` to a Faculty sequence.
+Domain is a semantic classifier, not a Faculty map. Multiple Faculties can serve the same domain. Reflex maps the full signature `{ action + domain + subject + scope + param_class }` to a Faculty sequence. Params carry variable instances — Reflex never sees them.
 
-```
-{ action: CHECK,     domain: WEATHER,  scope: TEMPORAL } → [ Weather Faculty ]
-{ action: SUMMARIZE, domain: EMAIL,    scope: TEMPORAL } → [ Gmail → synthesis ]
-{ action: CHECK,     domain: *,        scope: TEMPORAL } → identity-scoped
-```
+**Param classes prevent semantic collision.** Param values vary infinitely; param *classes* normalize the variance into Reflex-relevant categories. `quantifier` distinguishes `{one, some, all}` — "delete my email" vs "delete all my emails" produce different param_class signatures and therefore different Reflex keys. `modifier` flags qualifying constraints — "draft a reply" vs "draft a legal-safe reply" diverge on modifier presence. `target_breadth` distinguishes `{specific, filtered, unbounded}` — "show me weather tomorrow" vs "show me severe weather alerts tomorrow" diverge on breadth. Param class extraction is a Persona compression responsibility, validated against intent class declarations.
 
-**Params carry variables — Reflex never sees them.** "Weather for tomorrow", "weather for next week", "weather for Friday" — same Reflex key. `time_ref` is a param passed through.
+**Param-sensitive intent classes forbid Reflex entirely.** Some intent shapes carry meaning predominantly in their params — Reflex matching on signature alone produces false equivalence regardless of param_class granularity. Intent classes registered as `param_sensitive: true` always bypass Reflex and route to Cortex. Examples: any DELETE with non-`specific` target_breadth, any WRITE to external recipients, any SCHEDULE involving multiple parties. The `param_sensitive` flag is a compiled Immune System property — Optimization Pass cannot lower it.
 
 ---
 
 ### Reasoning Engine — Subordinate Loop
 
-Spawned by Persona per Arc that needs it. Reports Execution Plan back to Persona when ready. All Faculty calls through Synapse. All results Relay-validated.
+Spawned by Persona per Arc. Reports Execution Plan back when ready. All Faculty calls through Synapse, all results Relay-validated.
+
+Gating model (cheap, every iteration) decides tier — Execution Faculty (cheap, bounded) or Reasoning Faculty (expensive, deep). A simple problem resolves in one iteration at near-zero cost.
+
+**Hard gating constraints (not learned, not tunable):** certain domains always require Reasoning Faculty (SYSTEM domain, structural changes, multi-step irreversibles), certain actions never escalate beyond Execution (READ-ONLY on SELF with no side effects), max escalation depth declared in Arc budget at open time.
+
+**Arc budget — mandatory invariant:** every Arc declares `max_model_calls`, `max_faculty_dispatches`, `max_wall_time`, and `resource_claims` at open time. Budget exhausted → Arc suspends immediately, Persona notifies operator. No silent continuation. Operator must explicitly authorize continuation or resolution.
+
+**Resource arbitration — multi-Arc contention semantics.** Concurrent Arcs sharing external resources require explicit arbitration. Arc isolation prevents context bleed; it does not prevent write conflicts on shared external state.
+
+Every Arc declares `resource_claims` at open time — the set of external resources it intends to read or modify (e.g., `calendar:operator_main`, `file:/path/to/x`, `email_thread:abc123`, `memory:fact:project_status`). The Immune System maintains a per-resource lock registry. Lock semantics:
+
+- **Read claim** — multiple concurrent reads permitted. No conflict.
+- **Write claim** — exclusive. A second Arc requesting write claim on a held resource enters CONTESTED state.
+- **Read-then-write claim** — escalates from read to write at modification point. Conflict detected at escalation.
 
 ```
-REASONING ENGINE LOOP
-
-  Gating model evaluates Arc state  (cheap, every iteration)
-       ↓                    ↓
-  Execution Faculty     Reasoning Faculty
-  (cheap, bounded)      (expensive, deep)
-       ↓
-  Memory Faculty if context needed
-  repeat until Execution Plan producible
-       ↓
-  report Execution Plan to Persona
+CONTESTED ARC RESOLUTION
+  CONTESTED Arc → suspended immediately, Persona notified
+  Persona presents conflict to operator with both Arc summaries
+  Operator decides:
+    SERIALIZE  → second Arc waits for first to resolve, then proceeds
+    CANCEL     → second Arc dropped, first proceeds unchanged
+    MERGE      → both Arcs collapsed into a single Arc with combined intent
+                 (operator must confirm merged intent before execution)
+    OVERRIDE   → second Arc proceeds, first Arc rolled back if reversible
+                 or suspended for operator review if not
+  No silent contention resolution — operator authority required for all four outcomes.
 ```
 
-Gating model never reasons about the problem. It reasons about the reasoning process — what tier, is the plan ready. A simple problem resolves in one iteration at near-zero cost. The loop self-corrects toward cheapness. The Gating model's escalation threshold is tunable by the Optimization Pass.
+**Memory write conflicts** — Tier 1 writes are already serialized through a single write queue per Memory Faculty. Cross-Arc memory updates with conflicting values on the same key trigger CONTESTED resolution as above. Last-write-wins is forbidden for shared keys.
 
-**Hard gating constraints — not learned, not tunable:**
-
-Certain domains always require Reasoning Faculty regardless of Gating model decision. Certain actions never escalate beyond Execution Faculty. Max escalation depth per Arc is fixed at Arc open time. Learned thresholds tune behavior within these bounds — they do not define the bounds. If Gating model confidence is low, default to the cheaper path first. Escalate only on confirmed need.
+**Optimistic concurrency for low-risk reads** — read claims do not lock; reads complete immediately. If a write claim arrives while a read-claim Arc is mid-execution and the read is from a key the writer modifies, the reader receives a STALE_READ signal and Persona decides whether to re-read or surface the inconsistency to the operator.
 
 ```
-HARD GATING BOUNDARIES
-  always Reasoning Faculty:   SYSTEM domain, structural changes, multi-step irreversibles
-  never beyond Execution:     READ-ONLY actions on SELF domain with no side effects
-  max escalation depth:       declared in Arc budget at open time
-```
-
-**Arc budget — mandatory invariant, not implementation detail:**
-
-Every Arc MUST declare a budget at open time. There are no budgetless Arcs.
-
-```
-ARC LIFECYCLE
-  open       ← context initiated, budget declared — required
-  active     ← Cortex processing
-  suspended  ← awaiting input, Faculty result, or budget exhausted
-  resolved   ← output delivered, context archived
-
-ARC BUDGET — declared at open, enforced throughout
-  max_model_calls:        integer
-  max_faculty_dispatches: integer
-  max_wall_time:          duration
-
-  Budget exhausted → Arc enters SUSPENDED immediately
-  Persona MUST notify operator
-  No silent continuation under any circumstance
-  Operator must explicitly authorize continuation or resolution
+ARC LIFECYCLE:  open (with budget + resource_claims) → active → [contested?] → suspended → resolved
 ```
 
 ---
@@ -446,231 +262,139 @@ ARC BUDGET — declared at open, enforced throughout
 
 All persistence. The substrate that makes Reflex possible.
 
-```
-TIER 0    Prime Directives
-            compiled in production — file exists at build time only
+| Tier | Contents | Properties |
+|---|---|---|
+| 0 | Prime Directives | Compiled in production — file at build time only |
+| 1 | Dynamic runtime — facts, session context, Arc state | Write-serialized, concurrent reads, Arc contexts isolated |
+| 1a | Observation Log — immutable append-only record of every raw observation | Durable, never collapsed, never overwritten, append-only audit trail |
+| 1b | Short Term Memory — wildcard observations per origin (working representation) | Hash table, O(1), volatile (lost on restart), bounded max N before forced collapse |
+| 1c | Crystallized Memory — collapsed beliefs, Reflex corpus, Resolution Records, archived Arcs, Arc index | K/V store, durable, survives restart (LevelDB/SQLite → abstracted K/V) |
+| 2 | Configuration — routing rules, Faculty registry, tuned thresholds | Optimization Pass writes with Cortex authorization |
+| 3 | Identity — PERSONA.md, PROTOCOL.md | Operator only, via authenticated channel |
 
-TIER 1    Dynamic runtime
-            facts, session context, Arc state
-            all writes serialized through single write queue — no concurrent writes
-            reads remain concurrent
-            Arc contexts are isolated — Arc A cannot read or write Arc B's context
-
-TIER 1b   Short Term Memory
-            wildcard observations per origin per ambiguous pattern
-            hash table, O(1), volatile — lost on restart by design
-            bounded: max N observations before forced collapse
-
-TIER 1c   Crystallized Memory
-            collapsed beliefs, Reflex corpus, Resolution Records,
-            archived Arcs, Active Arc index
-            K/V store, durable, survives restart
-            prototype: LevelDB or SQLite
-            production: abstracted K/V interface
-
-TIER 2    Configuration
-            routing rules, Faculty registry, tuned thresholds
-            Optimization Pass writes here with Cortex authorization
-
-TIER 3    Identity
-            PERSONA.md, PROTOCOL.md
-            operator only, via authenticated channel
-```
-
-**Crystallization:**
+**Crystallization — collapse the working representation, preserve the evidence.** Each ambiguous confirmation produces *two* writes simultaneously: an entry in Tier 1b Short Term (working representation, volatile, used for fast threshold detection) and an entry in Tier 1a Observation Log (durable, immutable, append-only). Threshold reached → Tier 1b entries discarded, Tier 1c crystallized belief written with weight and confidence. **Tier 1a is never touched.**
 
 ```
-ACCUMULATION
-  Each ambiguous confirmation → observation in Short Term
-  { wildcard: domain, resolved_to: CALENDAR, origin: A, timestamp: t }
+ON AMBIGUOUS CONFIRMATION
+  Tier 1b ← observation (volatile, working, O(1) hash entry)
+  Tier 1a ← observation record (durable, immutable, append-only)
+            { ts, origin_hash, wildcard, resolved_to, intent_signature, prompt_phrasing_hash }
 
-COLLAPSE — threshold reached or observation ceiling hit
-  Raw observations: discarded
-  Crystallized: { domain: CALENDAR, weight: 0.86, corrections: 1 }
-  Short Term entry: null
+ON CRYSTALLIZATION THRESHOLD
+  Tier 1b entries → discarded (working representation collapsed)
+  Tier 1c ← { pattern, weight, confidence, observation_count, source_diversity }
+  Tier 1a → untouched, full evidence preserved
 
-POST-COLLAPSE CORRECTIONS
-  Enough corrections → confidence demotes to LOW
-  System re-enters accumulation, rebuilds belief
+ON SUSPECTED POISONING OR INCORRECT BELIEF
+  Tier 1c entry quarantined or demoted
+  Tier 1a queried for full provenance:
+    distribution shape across origins
+    correction chronology
+    source clustering
+    prompt phrasing patterns (jailbreak detection)
+  Forensic reconstruction → operator decides quarantine, demotion, or correction
 ```
 
-**Confidence states:** `UNSET → LOW → HIGH → LOCKED`  
-`PROVISIONAL` when ceiling hit before threshold.
+**Why two tiers.** Tier 1b is for *speed* — O(1) hash table for crystallization threshold detection at hot-path latency. Tier 1a is for *truth* — durable evidence that survives crystallization, restart, and any number of belief revisions. Collapsing the working representation does not destroy the evidence that produced it.
 
-**Identity-scoped confidence:** Unambiguous patterns are global. Ambiguous patterns tracked per origin stamp. A new operator starts at UNSET. Trust is not transferable.
+**Tier 1a properties:**
+- Append-only — no entry is ever modified or deleted
+- Immutable hash chain — each entry includes hash of previous entry, tamper-evident
+- Operator-readable, Faculty-readable for forensics, Cortex never writes directly
+- Bounded by retention policy, not by working-set size — old entries archive to cold storage but are not lost
+- Used by Reflex poisoning mitigations (semantic distance check, source diversity verification) at crystallization time
+
+**Confidence states:** `UNSET → LOW → HIGH → LOCKED`. `PROVISIONAL` when ceiling hit before threshold. Ambiguous patterns tracked per origin stamp — trust is not transferable.
 
 ---
 
 ### Optimization Pass
 
-Threshold tuning sweep — another Arc to Persona. Minimizes cost subject to safety constraints. Cost is not the primary objective — it is the optimization target within a fixed safety floor. The safety floor is a compiled invariant, not a tunable threshold.
+Threshold tuning sweep — another Arc to Persona. Minimizes cost subject to safety floor.
 
-```
-RESOLUTION RECORD — written after every resolved request
-{
-  intent_signature, path_taken, faculty_sequence,
-  cost, duration, result_quality, thresholds_used
-}
+After every resolved request, a Resolution Record is written: `{ intent_signature, path_taken, faculty_sequence, cost, duration, result_quality, thresholds_used }`.
 
-TUNABLE THRESHOLDS — within safety floor only
-  1 — Reflex confidence ceiling
-  2 — Gating model escalation trigger
-  3 — Result Buffer completeness window
-  4 — Decomposer step count ceiling
+**Tunable thresholds (within safety floor):** Reflex confidence ceiling, Gating model escalation trigger, Result Buffer completeness window, Decomposer step count ceiling.
 
-SAFETY FLOOR — compiled into Nervous System, not tunable
-  Risk classification is Immune System property — Optimization Pass cannot change it
-  HIGH/CRITICAL risk actions always bypass Reflex — this cannot be optimized away
-  Constitutional threshold ceiling: Reflex confidence cannot drop below operator floor
-  Escalation for HIGH/CRITICAL is fixed at ALWAYS — not subject to cost pressure
+**Safety floor (compiled, not tunable):** risk classification is Immune System property, HIGH/CRITICAL always bypass Reflex, constitutional threshold ceiling cannot drop below operator floor, escalation for HIGH/CRITICAL is fixed at ALWAYS.
 
-QUALITY SIGNAL POLICY
-  Stages 2-3: cost and duration only — no quality signal used
-  Stage 4+:   operator-defined quality rubric required before quality signal is used
-              rubric is explicit, versioned, stored in Tier 2
-              no rubric → quality dimension disabled for Optimization Pass
-              behavior proxies (acceptance rate, complaint rate) never used as quality ground truth
+**Quality signal policy:** Stages 2–3 use cost and duration only. Stage 4+ requires operator-defined quality rubric (explicit, versioned, Tier 2). No rubric → quality dimension disabled. Behavior proxies never used as quality ground truth.
 
-TRIGGERS
-  (a) operator: "optimize yourself"
-  (b) scheduled: every N resolved requests
-  (c) automatic: cost spike detected
-  (d) automatic: correction rate spike
+**Triggers:** operator command, scheduled (every N resolved requests), automatic (cost spike or correction rate spike detected).
 
-AUTHORITY
-  Threshold-only within safety floor: Cortex authorized
-  Any adjustment that approaches safety floor: operator required
-  Safety floor itself: compiled — operator must rebuild to change
-```
+**Authority:** threshold-only within safety floor → Cortex authorized. Approaches safety floor → operator required. Safety floor itself → compiled, operator must rebuild.
 
-**The cost funnel — how a mature CARL looks:**
+**The cost funnel at maturity:**
 
 ```
 ALL REQUESTS
-├── REFLEX              zero model cost        grows → majority
-├── SIMPLE PATH         cheap model            stable → common
-├── COMPLEX → SIMPLE    expensive + cheap      shrinks → rare
-└── COMPLEX → SYNTHESIS most expensive         shrinks most → exceptional
+├── REFLEX              zero model cost        → majority
+├── SIMPLE PATH         cheap model            → common
+├── COMPLEX → SIMPLE    expensive + cheap      → rare
+└── COMPLEX → SYNTHESIS most expensive         → exceptional
 ```
 
 ---
 
 ### Faculties
 
-Every capability follows the same pattern. Subscribe through Synapse. Execute. Publish through Synapse. A Faculty needs three things: a model capable of bounded execution, Synapse compliance, and a safety/fault validation layer that rejects non-conforming output before it returns to Cortex. Faculties do not communicate with each other — ever. Faculty A does not know Faculty B exists. Isolation is total and structural, not configured.
+Every capability follows the same pattern. Subscribe through Synapse. Execute. Publish through Synapse. A Faculty needs: a model capable of bounded execution, Synapse compliance, and a safety/fault validation layer that rejects non-conforming output before it returns to Cortex. Faculties do not communicate with each other — ever. Isolation is total and structural.
 
-Faculties are TypeScript. Hot-reloadable. Always. The Faculty is where flexibility lives. The compiled core is where security lives.
+Faculties are TypeScript. Hot-reloadable. Always.
 
-**Sensory Faculties** — receive external input, stamp origin, publish to Nervous System.
-- Telegram, Discord, WhatsApp — same pattern, different channel. New channel = new Faculty, zero core changes.
+**Categories:**
 
-**Execution Faculties** — act on the world within defined scope.
-- **Gmail** — read, triage, draft. Never sends autonomously.
-- **Calendar** — scheduling, reminders, availability.
-- **Web** — search, fetch, summarize.
+- **Sensory** — receive external input, stamp origin, publish to Nervous System (Telegram, Discord, etc.)
+- **Execution** — act on the world within defined scope (Gmail, Calendar, Web)
+- **Infrastructure** — maintain the system (Memory, Jobs, Monitor, Coding)
 
-**Infrastructure Faculties** — maintain the system itself.
-- **Memory** — all persistence. See Memory Faculty section.
-- **Jobs** — cron-triggered Faculty. Same pattern, different trigger.
-- **Monitor** — receives Immune System alerts. Notifies the operator.
-- **Coding** — deferred to Stage 3. Do not build earlier.
+**Faculty Contract — minimum interface, no exceptions:**
 
-  Reads and writes source files, Faculty code, routing rules, MD files. Can propose new Faculties by reading existing ones for pattern. The Synapse is not hot-reloadable and lives in the compiled boundary — Coding Faculty cannot modify it.
+```typescript
+interface Faculty {
+  readonly id:          FacultyId
+  readonly version:     string
+  readonly permissions: Permission[]
+  register(synapse: Synapse): Promise<void>
+  teardown(): Promise<void>
+}
+```
 
-  Mandatory lifecycle — no exceptions, no shortcuts:
+**Coding Faculty — deferred to Stage 3. Mandatory lifecycle:**
 
-  ```
-  1. Generate    Coding Faculty produces candidate Faculty code
-  2. Validate    Static analysis:
-                   schema compliance check
-                   Synapse-only check — no direct bus access
-                   no mutable global state
-                   no writes to nervous-system/ immune-system/ synapse/
-  3. Semantic diff
-                 Capabilities delta against closest existing Faculty
-                 Any undeclared capability → rejected, not flagged
-  4. Sandbox     Candidate runs in isolated environment:
-                   no filesystem access outside declared paths
-                   no network calls outside declared domain
-                   sandbox violations → immediate rejection
-  5. Quarantine  Non-executing observation mode for N cycles
-  6. Operator approval
-                 Required before promotion — always, no exceptions
-  7. Staged canary
-                 Promoted Faculty receives 1% of matching traffic
-                 Error rate monitored against baseline for N cycles
-                 Promotion to full traffic only after clean canary window
-  8. Rollback    Error rate spike → automatic rollback to previous version
-                 No operator action needed to rollback
-                 Operator action required to re-promote
-  ```
+```
+1. Generate       Coding Faculty produces candidate code
+2. Validate       Static analysis: schema compliance, Synapse-only, no mutable globals,
+                  no writes to nervous-system/ immune-system/ synapse/
+3. Semantic diff  Capabilities delta against closest existing Faculty;
+                  undeclared capability → rejected
+4. Sandbox        Isolated environment; filesystem/network restricted to declared scope;
+                  violations → immediate rejection
+5. Quarantine     Non-executing observation for N cycles
+6. Operator approval — required, always, no exceptions
+7. Staged canary  1% traffic, error rate monitored, clean window required for promotion
+8. Rollback       Error rate spike → automatic rollback; re-promotion requires operator
+```
 
-  Schema validity is necessary but not sufficient for promotion. Autonomous modification of existing Faculties without operator approval is forbidden.
+Autonomous modification of existing Faculties without operator approval is forbidden.
 
 ---
 
 ### Dark Transit
 
-Dark Transit is the principle that content can move through CARL without entering any model context. The Dark Lane is the Nervous System mechanism that makes it possible.
+Content can move through CARL without entering any model context. The Dark Lane is the Nervous System mechanism.
 
-**Blind Fetch** — outbound. Faculty fetches content, routes through Dark Lane. No model reads it. Cortex receives `{ type: FILE, status: DARK_LANE }` only. Content lands cold. Blind Fetch can only be initiated for operator-requested content — the request must trace to an authenticated operator origin in the active Arc. A Faculty cannot initiate Blind Fetch autonomously.
+**Blind Fetch** — outbound. Faculty fetches content, routes through Dark Lane. Cortex receives `{ type: FILE, status: DARK_LANE }` only. Can only be initiated for operator-requested content traceable to an authenticated origin.
 
-**Blind Write** — inbound. Operator provides secret or token. Dark Lane carries it to target. Written without any model reading it.
+**Blind Write** — inbound. Operator provides secret or token. Dark Lane carries to target. Written without any model reading it.
 
-**Inert by Default** — cold content cannot self-activate. A prompt injection in a cold file never reaches model context. The only path from cold to active is deliberate operator elevation through the elevation protocol below.
+**Inert by Default** — cold content cannot self-activate. A prompt injection in a cold file never reaches model context.
 
-```
-CONTENT TRUST STATES
-  COLD      ← Dark Lane, no model has seen it
-  ELEVATED  ← passed elevation protocol, model may read
-  ACTIVE    ← model reasoning over it
-```
+**Content trust states:** `COLD → ELEVATED → ACTIVE`
 
-**Cold-to-active elevation protocol — required before any model reads cold content:**
+**Cold-to-active elevation protocol:** operator issues elevation instruction (origin validated by Immune System) → MIME inspection → size check → malware scan (if configured) → policy scan (forbidden pattern list) → partial read / structural scan options → all gates pass → COLD → ELEVATED → logged in immutable audit trail with origin stamp.
 
-```
-Operator issues elevation instruction — origin validated by Immune System
-       ↓
-MIME inspection      — file type confirmed, unexpected types rejected
-Size check           — payload within operator-configured bounds
-Malware scan         — if configured, runs before model exposure
-Policy scan          — content matched against forbidden pattern list
-       ↓
-Partial read option  — operator may specify byte range only
-Structural scan      — extract schema or headers only, not full content
-       ↓
-All gates pass → content moves COLD → ELEVATED
-Elevation logged in immutable audit trail with operator origin stamp
-Model may now read — within scope of operator instruction only
-```
-
-**Dark Lane exfiltration mitigations — structural, not content-based:**
-
-```
-Destination whitelist
-  Every darkLane() call specifies a destination FacultyId
-  Immune System validates destination against operator-defined whitelist
-  Destinations outside whitelist rejected — not routed
-  No Faculty can add itself to whitelist at runtime
-
-Direction enforcement
-  Blind Fetch: external source → internal Faculty or operator output only
-  Blind Write: operator input → internal Faculty or config only
-  Cross-Faculty Dark Lane routing requires explicit operator authorization
-  Compromised Faculty cannot redirect payload externally
-  without Immune System whitelist validation
-
-Volume anomaly detection
-  Unusual Dark Lane traffic from a specific Faculty
-  triggers circuit breaker and Monitor Faculty alert
-  Mass exfiltration trips volume threshold before significant data leaves
-
-Source restriction
-  Blind Fetch requires validated operator request in active Arc
-  No autonomous Faculty-initiated Blind Fetch permitted
-```
-
-The Dark Lane is model-opaque by design. Its routing endpoints and traffic patterns are not opaque to the Immune System. Structural routing constraints close the exfiltration surface without compromising the privacy property.
+**Exfiltration mitigations (structural):** destination whitelist per darkLane() call (no runtime self-addition), direction enforcement (Blind Fetch: external→internal only; Blind Write: operator→internal only; cross-Faculty Dark Lane requires explicit operator authorization), volume anomaly detection (trips circuit breaker), source restriction (Blind Fetch requires validated operator request — no autonomous Faculty-initiated Blind Fetch).
 
 ---
 
@@ -680,405 +404,152 @@ Typed abstraction layer between Faculty code and the Nervous System. Law 9 made 
 
 ```typescript
 interface Synapse {
-  // Publish a typed event to the Nervous System
   publish<T extends CarlEvent>(event: T): Promise<void>
-
-  // Subscribe to a typed event from the Nervous System
-  subscribe<T extends CarlEvent>(
-    eventType: T['type'],
-    handler: (event: T) => Promise<void>
-  ): void
-
-  // Route payload through Dark Lane — no model will see content
+  subscribe<T extends CarlEvent>(eventType: T['type'], handler: (event: T) => Promise<void>): void
   darkLane(payload: Buffer, destination: FacultyId): Promise<void>
 }
 ```
 
-All three methods are the complete Faculty-facing API. Faculty authors never call EventEmitter, never call the compiled boundary, never reference the Nervous System directly.
-
-**Observability — built at Stage 0, not deferred.**
-
-Every Synapse publish and subscribe emits a structured trace event to a separate append-only trace log. Content never logged — schema hash only. The trace system must support deterministic event replay without model calls, redacted payload sampling on operator opt-in, and per-Arc execution timeline reconstruction. Post-mortem reconstruction of any Arc must be possible from trace logs alone without relying on output text.
+**Observability — built at Stage 0.** Every Synapse call emits a structured trace event to a separate append-only log. Content never logged — schema hash only. Supports deterministic event replay, redacted payload sampling (operator opt-in), and per-Arc execution timeline reconstruction.
 
 ```typescript
-// Trace event emitted on every Synapse call — automatically, always
 interface TraceEvent {
-  ts:           number         // timestamp ms
-  faculty_id:   FacultyId
-  event_type:   'PUBLISH' | 'SUBSCRIBE' | 'REFLEX_HIT' | 'REFLEX_MISS'
-              | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_SUSPENDED'
-              | 'ARC_RESOLVED' | 'BUDGET_EXHAUSTED'
-  schema_hash:  string         // hash of payload schema — not content
-  arc_id:       ArcId | null
-  origin_hash:  string         // hash of origin stamp — not raw stamp
-  tier:         'REFLEX' | 'EXECUTION' | 'REASONING' | null
-  budget_state: {
-    calls_remaining:     number
-    dispatches_remaining: number
-    time_remaining_ms:   number
-  } | null
+  ts: number; faculty_id: FacultyId;
+  event_type: 'PUBLISH' | 'SUBSCRIBE' | 'REFLEX_HIT' | 'REFLEX_MISS'
+    | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_SUSPENDED' | 'ARC_RESOLVED' | 'BUDGET_EXHAUSTED';
+  schema_hash: string; arc_id: ArcId | null; origin_hash: string;
+  tier: 'REFLEX' | 'EXECUTION' | 'REASONING' | null;
+  budget_state: { calls_remaining: number; dispatches_remaining: number; time_remaining_ms: number } | null;
 }
-```
-
----
-
-### Faculty Contract
-
-Every Faculty must implement this minimum interface. No exceptions.
-
-```typescript
-interface Faculty {
-  readonly id:      FacultyId      // unique identifier
-  readonly version: string         // semver
-  readonly permissions: Permission[] // declared at registration
-
-  // Called once at startup — registers with Immune System
-  register(synapse: Synapse): Promise<void>
-
-  // Called on hot reload — unsubscribes all handlers
-  teardown(): Promise<void>
-}
-```
-
-A Faculty that does not implement this interface cannot register with the Immune System and cannot publish or subscribe through the Synapse. The contract is enforced at registration time, not at runtime.
-
----
-
-## Workspace Seed Files
-
-Seed these files before first boot. They define who this CARL instance is.
-
-### PRIME.md
-```markdown
-# PRIME DIRECTIVES
-1. Never act against the operator's interests.
-2. Always be transparent about what you are and what you are doing.
-3. Never take irreversible action without explicit operator confirmation.
-4. Never expose the operator's private data to unauthorized sources.
-```
-Set read-only before boot: `chmod 444 workspace/PRIME.md`
-
-### PERSONA.md
-```markdown
-# PERSONA
-
-Name: CARL
-Role: Cognitive assistant and autonomous operator for [operator name]
-Voice: Direct. Precise. No filler. No unnecessary preamble.
-
-Identity context:
-- Prioritize operator time above all else
-- Surface decisions, not information dumps
-- Flag uncertainty explicitly — never paper over it
-- Ask one question at a time when clarification is needed
-
-Coloring applied to all decisions:
-- Bias toward the least expensive path that achieves the goal
-- Prefer reversible actions over irreversible ones
-- When in doubt, confirm before acting
-```
-
-### PROTOCOL.md
-```markdown
-# PROTOCOL
-
-Ambiguous input:
-  Reflect back in different phrasing. One question only.
-  "So if I understand correctly, [rephrased intent]?"
-
-Irreversible operation:
-  Propose before executing.
-  "Analysis complete. [scope of change]. Awaiting your confirmation."
-
-Research channel:
-  No protocol. Full dialogue. No format enforcement.
-
-Dark Lane delivery:
-  Frame before payload. Follow up after.
-  "[what this is] / [cold payload] / [what to do next]"
-
-Multi-Arc:
-  Deliver results as they are ready.
-  Reference the original request briefly when context may be lost.
 ```
 
 ---
 
 ## Build Stages
 
-Five stages. Each proves exactly one theoretical claim. Each is independently demonstrable. Together they prove the full architecture.
-
-Minimum Viable Carl is **Stages 0 + 1 + 2** — the spine holds, intent is confirmed, the system learns. Stages 3, 4, and 5 extend CARL beyond its minimum viable form.
+Five stages. Each proves exactly one theoretical claim. **Minimum Viable Carl = Stages 0 + 1 + 2.** Stages 3–5 extend beyond MVC.
 
 ---
 
 ### Stage 0 — The Spine
-*Claim: one reasoning locus with Faculty separation is architecturally sound and structurally secure.*
+*Claim: interface discipline, typed routing, event-driven coordination, and authority propagation hold under load with zero direct bus access.*
 
-**Stack:** TypeScript + Bun. The right architecture from day one. Internals are hardcoded where noted — this is correct, not a shortcut. Swap hardcoded values for real logic stage by stage without changing the architecture.
+**Scope of claim — explicit limits.** Stage 0 proves the spine works:
+- Interface discipline — no Faculty bypasses Synapse
+- Typed routing — no untyped payload reaches the bus
+- Authority propagation — origin stamp validated at every hop
+- Event-driven coordination — Persona consumes zero tokens at rest
+- Audit completeness — every Arc is reconstructable from trace logs alone
 
-**What gets built:**
-- `workspace/PRIME.md` — loaded at boot, `chmod 444`, runtime halts if missing
-- Synapse — EventEmitter wrapper, three methods, stable interface
-- Nervous System — typed EventEmitter bus, Relay with Zod validation
-- Immune System — origin validation, Faculty permission registry, audit log
-- **Faculty health registry** — every Faculty publishes heartbeat on dedicated channel, registry tracks last-seen per Faculty ID, stale = unhealthy
-- **Trace logging** — append-only trace log, every Synapse call emits TraceEvent, schema hash only, supports per-Arc timeline reconstruction
-- **Arc budgets** — every Arc declares max_model_calls, max_faculty_dispatches, max_wall_time at open time, budget exhaustion suspends Arc and notifies operator immediately
-- Persona — async event loop, Arc Store as `Map<ArcId, Arc>`, no model called during loop
-- Reasoning Engine — **hardcoded** Execution Plan returned, no real model call yet
-- Memory Faculty stub — Tier 1 flat JSON file + Active Arc index persisted across restarts
-- Telegram Sensory Faculty — Grammy, stamps origin, publishes through Synapse
-- One stub Execution Faculty — returns hardcoded response
+**Stage 0 does NOT prove:**
+- Structural security broadly (policy bugs, schema confusion, authority propagation bugs at scale, supply-chain compromise are all out of scope)
+- Resilience against compromised Faculty logic
+- Correctness of risk classification
+- Soundness of Coding Faculty (deferred to Stage 3)
+- Production-grade fault tolerance
 
-**What is hardcoded:**
-- Reasoning Engine always returns the same Execution Plan
-- Execution Faculty always returns the same result
-- Reflex table empty — always misses
-- No ambiguity detection — all input treated as unambiguous
+Stage 0 proves the architecture *runs* with the right shape. Broader security claims require later stages plus operational hardening.
 
-**What is real from day one:**
-- All ten Laws enforced structurally
-- Synapse — Faculty code never touches the bus directly
-- Immune System — origin validated every hop, permission registry live
-- Faculty health registry — heartbeat tracking, stale detection
-- Trace logging — every Synapse event logged, per-Arc reconstruction possible
-- Arc budgets — declared at open, enforced, operator notified on exhaustion
-- Persona event loop — zero tokens per cycle, wakes on event only
-- Arc lifecycle — open (with budget) → active → suspended → resolved
-- Relay — untyped payloads rejected at the bus
+**Stack:** TypeScript + Bun.
 
-**Proof of life:**
-```
-1. Operator sends message via Telegram
-2. Telegram Faculty stamps origin, publishes through Synapse → TraceEvent emitted
-3. Immune System validates origin and permissions
-4. Persona wakes from await — new_input event
-5. Arc opens with declared budget
-6. Intent compressed (unambiguous, no ambiguity check yet)
-7. Reflex misses — table empty
-8. Reasoning Engine invoked — returns hardcoded Execution Plan
-9. Decomposer dispatches stub Faculty through Synapse → TraceEvent emitted
-10. Stub Faculty returns hardcoded result through Synapse
-11. Result Buffer collects, Synthesis Gate notifies Persona
-12. Persona wakes — faculty_result event, zero model calls during wait
-13. Persona composes output, Telegram Faculty delivers, Arc resolved
+**Built (real from day one):** PRIME.md (loaded at boot, chmod 444, halts if missing), Synapse (EventEmitter wrapper), Nervous System (typed bus + Relay with Zod), Immune System (origin validation, permission registry, audit log), Faculty health registry (heartbeat tracking), trace logging (append-only, per-Arc reconstruction), Arc budgets (declared at open, enforced), Persona (async event loop, Arc Store as Map, zero tokens per cycle), Telegram Sensory Faculty (Grammy), one stub Execution Faculty.
 
-Verify: no Faculty called the bus directly.
-Verify: no untyped payload reached the bus.
-Verify: Persona event loop consumed zero tokens during steps 4-12 wait.
-Verify: PRIME.md was never touched.
-Verify: trace log contains full per-Arc timeline reconstructable from log alone.
-Verify: budget was declared at Arc open, tracked throughout.
-Verify: Faculty health registry shows Telegram and stub Faculty as healthy.
-```
+**Hardcoded:** Reasoning Engine returns static Execution Plan, Execution Faculty returns static result, Reflex empty, no ambiguity detection.
 
-**Claim proven:** the architecture holds. All Laws enforced. Right shape from day one. Hardcoded internals are irrelevant — nothing in the architecture depends on them being real.
+**Proof of life:** Operator → Telegram → Synapse → Immune System validates → Persona wakes → Arc opens with budget → Reflex misses → hardcoded plan → stub Faculty → Result Buffer → Synthesis Gate → Persona delivers → Arc resolved. Verify: no direct bus access, no untyped payload on bus, zero tokens during wait, PRIME.md untouched, trace log reconstructable, budget tracked, health registry accurate.
 
-**Falsification condition:** if any Faculty is found to have published directly to the bus without going through the Synapse, or if any untyped payload reached the bus without Relay rejection, or if PRIME.md was written to during the run — Stage 0 claim is not proven.
+**Falsification:** any Faculty published directly to bus without Synapse, any untyped payload reached bus, or PRIME.md was written to during run.
 
 ---
 
 ### Stage 1 — Confirmed Intent
-*Claim: a cognitive system can detect ambiguity, reflect it back precisely, and earn the right to act — never assume.*
+*Claim: detect lexical and single-wildcard ambiguity, reflect it back precisely, earn the right to act — never assume on this class.*
 
-**What gets added:**
-- Persona ambiguity detection — full implementation
-- Partial compression with wildcard fields
-- Re-validation rephrasing in Persona
-- Proposal flow for irreversible operations
-- Reasoning Engine — first real model call (Execution Faculty, cheap model)
+**Scope of claim — explicit limits.** Stage 1 proves *basic* ambiguity reflection only:
+- Single wildcard field in compressed intent (e.g., domain unresolved)
+- Lexical ambiguity (referent unclear at the word level)
+- Irreversibility detection on declared-irreversible action classes
 
-**What stays hardcoded:** Reflex corpus, crystallization, multitasking.
+**Out of scope for Stage 1 — deferred or unaddressed:**
+- Discourse-level ambiguity (referent depends on prior Arc context)
+- Pragmatic ambiguity ("clean this up and send it" — object, scope, destination, approval requirement all underspecified)
+- Multi-wildcard ambiguity (more than one field unresolved simultaneously)
+- Latent irreversibility (action looks reversible but has irreversible side effects)
+- Conflicting constraint detection across multiple operator inputs
 
-**Proof of life:**
-```
-Unambiguous: "show me my calendar for tomorrow"
-  → silent compression, no question, Faculty dispatched
+These remain open problems. Stage 1 does not solve general intent certainty — it solves the narrow case of single-wildcard lexical ambiguity with a structured re-validation flow.
 
-Ambiguous: "show me what's for tomorrow"
-  → Persona: "So if I understand correctly, you want
-     to check your calendar — not weather or tasks?"
-  → operator confirms → Faculty dispatched
+**Added:** Persona basic ambiguity detection, partial compression with single wildcard, re-validation rephrasing, proposal flow for declared-irreversible operations, first real model call (Execution Faculty, cheap model).
 
-Irreversible: "delete all my emails from last year"
-  → Persona proposes scope → operator confirms or cancels
-```
+**Proof of life:** Unambiguous input → silent compression, Faculty dispatched. Single-wildcard ambiguous input → Persona reflects back, operator confirms, then dispatched. Declared-irreversible → proposal flow, operator confirms or cancels.
 
-**Claim proven:** CARL never acts on assumption. Partial compression proves it — `time_ref` extracted silently, only `domain` wildcard triggers the question.
-
-**Falsification condition:** if an ambiguous input triggered Faculty dispatch without operator confirmation, or if an irreversible action executed without the proposal flow completing — Stage 1 claim is not proven.
+**Falsification:** single-wildcard ambiguous input triggered Faculty dispatch without confirmation, or declared-irreversible action executed without proposal flow. Out-of-scope ambiguity classes (discourse, pragmatic, multi-wildcard) are not falsification conditions for Stage 1 — they are acknowledged gaps.
 
 ---
 
 ### Stage 2 — The Learning Loop
-*Claim: a system can learn by operating — becoming faster and cheaper without retraining or external trigger.*
+*Claim: learn by operating — faster and cheaper without retraining or external trigger.*
 
-**What gets added:**
-- Memory Faculty — Tier 1b Short Term (hash table) + Tier 1c Crystallized (K/V)
-- Observation accumulation on confirmed ambiguous resolutions
-- Crystallization on threshold — garbage collection of raw observations
-- Reflex corpus populated from crystallized entries
-- Reflex routing active — Cortex skipped on hit
-- Identity-scoped confidence per origin (UNSET, LOW, HIGH, LOCKED)
-- **Reflex safety constraints — introduced in the same stage as Reflex:**
-  - Faculty health check on every hit — unhealthy target → Cortex fallback
-  - Permission validation on every hit — origin authorized for this route?
-  - Confidence check — LOW or UNSET always falls through to Cortex
-  - Decay — patterns decay without reinforcement, configurable per domain
-  - Operator override — forced Cortex path always available
-  - Automatic fallback on high-risk action categories
-- **Stage 2 instrumentation — required to answer empirical questions:**
-  - Every crystallization event logged: `{ pattern, origin, confidence_at_crystallization, observations_count, wildcard_resolved_to }`
-  - Every Reflex hit logged with outcome: `{ pattern, confidence_at_hit, operator_accepted, correction_required }`
-  - Cost log per request: `{ path_taken, model_calls, faculty_dispatches, reflex_hit, error_occurred }`
+**Added:** Memory Faculty (Tier 1b Short Term + Tier 1c Crystallized), observation accumulation, crystallization on threshold, Reflex corpus from crystallized entries, Reflex routing active, identity-scoped confidence, all Reflex safety constraints (health check, permission validation, confidence check, decay, operator override, risk-based fallback), instrumentation (crystallization events, Reflex hit outcomes, cost per request).
 
-**Proof of life:**
-```
-Operator asks "what's for tomorrow?" repeatedly, confirms CALENDAR each time
-  → observations accumulate in Short Term Memory
-  → every confirmation logged with outcome
+**Proof of life:** Repeated ambiguous confirmations → observations accumulate → threshold → crystallization fires → Reflex entry written → next matching request: health ✓, permission ✓, confidence HIGH ✓ → Faculty dispatched directly, zero LLM calls. Measurable from instrumentation: LLM call count drops post-crystallization.
 
-Threshold reached → crystallization fires
-  → Short Term: null
-  → Crystallized: { domain: CALENDAR, weight: 0.9, confidence: HIGH }
-  → Reflex entry written with decay timer started
-
-Next request — Reflex hits
-  → Faculty health check: healthy ✓
-  → Permission check: authorized ✓
-  → Confidence check: HIGH ✓
-  → Calendar Faculty dispatched directly
-  → Cortex never invoked
-  → LLM calls: zero
-  → hit logged with outcome
-```
-
-Measure from instrumentation logs:
-- LLM call count before vs after crystallization — drop is the proof
-- Error rate at each confidence level — calibrates threshold correctness
-- Decay trigger behavior — introduce world change, measure adaptation speed
-
-**Claim proven:** the system learned by running. Recursive loop is real, measurable, and safe by construction — not by assumption.
-
-**Falsification conditions:**
-- If crystallized routes produce false equivalences — semantically distinct requests collapsing to the same Faculty route — Stage 2 claim is not proven without explicit correction mechanism
-- If adversarial phrasing variations (run as part of Stage 2 validation) successfully poison a Reflex entry without triggering anomaly detection — Stage 2 security claim is not proven
-- If error rate at HIGH confidence exceeds error rate at CORTEX path for the same intent class — the confidence threshold is miscalibrated and Stage 2 claim is not proven
+**Falsification:** semantically distinct requests collapse to same route without correction mechanism, adversarial phrasing poisons Reflex without anomaly detection, or HIGH confidence error rate exceeds Cortex path error rate.
 
 ---
 
 ### Stage 3 — Continuous Entity
-*Claim: CARL is not a request-response system — it is a continuously running cognitive entity managing multiple simultaneous Reasoning Arcs.*
+*Claim: continuously running cognitive entity managing multiple simultaneous Arcs.*
 
-**What gets added:**
-- True concurrent Arc processing — Persona handles N Arcs in parallel
-- Non-blocking Arc management — no Arc blocks another
-- Arc suspension and resumption
-- Results delivered as ready, not in request order
+**Added:** True concurrent Arc processing, non-blocking Arc management, suspension/resumption, results delivered as ready.
 
-**Proof of life:**
-```
-Operator sends long-running request A
-  → Arc A opens, Reasoning Engine spawned
-  → Persona continues — does not wait
+**Proof of life:** Long-running Arc A + quick Arc B sent immediately after. Arc B resolves first, delivered immediately. Arc A unaffected, resolves independently.
 
-Immediately: operator sends quick request B
-  → Arc B opens simultaneously
-  → Arc B resolves first — delivered immediately
-  → Arc A still running — unaffected
-
-Arc A resolves — delivered when ready
-```
-
-**Claim proven:** CARL is a continuous entity. Two Arcs ran simultaneously, resolved independently, delivered as ready.
-
-**Falsification condition:** if Arc B's processing blocked on Arc A completing, or if Arc contexts were found to share state, or if results were delivered in request order rather than resolution order — Stage 3 claim is not proven.
+**Falsification:** Arc B blocked on Arc A, Arc contexts shared state, or results delivered in request order.
 
 ---
 
 ### Stage 4 — Self-Optimization
-*Claim: a cognitive system can tune its own cost-performance thresholds through operation — autonomously moving toward the cheapest viable path.*
+*Claim: tune a defined set of cost-performance thresholds within a compiled safety floor, driven by Resolution Records.*
 
-**What gets added:**
-- Resolution Records written after every resolved request
-- Optimization Pass — threshold sweep as a regular Arc
-- Automatic triggers — cost spike, correction rate spike
-- Threshold updates written to Tier 2 configuration
+**Scope of claim — explicit limits.** Stage 4 proves bounded threshold tuning:
+- Four declared thresholds adjustable (Reflex confidence ceiling, Gating escalation trigger, Result Buffer window, Decomposer step ceiling)
+- Adjustments derived from Resolution Records, not from operator-free heuristics
+- Safety floor is a compiled invariant — never crossed regardless of cost pressure
+- Quality ground truth must be operator-defined before quality signal is used (no behavior proxies)
 
-**Proof of life:**
-```
-Baseline: measure cost distribution — X% Reflex, Y% Simple, Z% Complex
+**Stage 4 does NOT prove:**
+- Self-improvement broadly (no new procedures learned, no new abstractions formed, no new concepts acquired)
+- Robustness against proxy failure if quality rubric is poorly specified — that is an operator responsibility
+- Generalization across operators or deployment contexts — tuning is per-instance
+- Drift detection over arbitrary time horizons — requires red-team sampling outside Stage 4 scope
 
-Run 100 varied interactions
+This is bounded threshold tuning. It is not learning in the broad cognitive sense — it is policy parameter optimization within a fixed envelope.
 
-Trigger: "optimize yourself"
-  → Optimization Arc opens
-  → Reasoning Engine reads Resolution Records
-  → identifies unnecessary Reasoning Faculty invocations
-  → thresholds adjusted, written to Tier 2
+**Added:** Resolution Records, Optimization Pass (threshold sweep as Arc), automatic triggers, Tier 2 threshold updates.
 
-Measure again: Reflex % higher, Complex % lower
-  → measurable cost reduction, zero operator intervention
-```
+**Proof of life:** Baseline cost distribution measured → 100 varied interactions → Optimization Pass triggered → thresholds adjusted within safety floor → measurable cost reduction (higher Reflex %, lower Complex %) with no safety floor breach and no quality regression on operator-defined rubric.
 
-**Claim proven:** the system improved itself. Measurably cheaper. Without being told how.
-
-**Falsification conditions:**
-- If cost distribution did not measurably shift after Optimization Pass — Stage 4 claim is not proven
-- If the safety floor was breached during optimization — any HIGH/CRITICAL action routed through Reflex after thresholds were tuned — Stage 4 claim is not proven regardless of cost improvement
-- If quality ground truth was not operator-defined before quality signal was used — Optimization Pass operated without valid ground truth and Stage 4 claim is not proven
+**Falsification:** cost distribution did not shift, safety floor breached, quality ground truth not operator-defined before use, or thresholds drifted outside declared adjustable set.
 
 ---
 
 ### Stage 5 — Dark Transit
-*Claim: data can move through a cognitive architecture without any model ever reading it — a first-class security primitive.*
+*Claim: data can move through a cognitive architecture without any model ever reading it.*
 
-**What gets added:**
-- Dark Lane implementation in Nervous System
-- Blind Fetch and Blind Write operations
-- Inert by Default enforcement
-- Content trust state tracking
+**Added:** Dark Lane implementation, Blind Fetch/Write, Inert by Default enforcement, content trust state tracking.
 
-**Proof of life:**
-```
-BLIND FETCH
-  Operator: "show me config.ts"
-  → Coding Faculty fetches file through Dark Lane
-  → Cortex receives metadata only: { type: FILE, status: DARK_LANE }
-  → Persona frames: "Here is the file. Ready to review on your instruction."
-  → File content delivered to operator — no model read it
-  Verify: inject prompt injection in file. Verify it never reached model context.
+**Proof of life:** Blind Fetch — file fetched through Dark Lane, Cortex receives metadata only, operator receives file, injected prompt injection never reached model context. Blind Write — API key carried to target, audit log confirms key never appeared in any model call.
 
-BLIND WRITE
-  Operator sends API key via Telegram
-  → Dark Lane carries it to Coding Faculty
-  → Written to config — no model context contains the key
-  Verify: audit log confirms key never appeared in any model call.
-```
-
-**Claim proven:** model-invisible transit is real, auditable, and holds under adversarial content.
-
-**Falsification conditions:**
-- If cold payload content appeared in any model context during the Blind Fetch test — Stage 5 claim is not proven
-- If a prompt injection embedded in a cold file was found to have influenced model output — Stage 5 claim is not proven
-- If the elevation protocol did not fire before a model read elevated content — Stage 5 claim is not proven
-- If the audit log did not contain a complete elevation event with operator origin stamp — Stage 5 observability claim is not proven
+**Falsification:** cold payload appeared in model context, prompt injection influenced model output, elevation protocol did not fire before model read, or audit log missing elevation event.
 
 ---
 
 ## Evolution Beyond Stages
 
-Once all five stages are proven, three hardening phases complete the architecture:
-
-**Phase A — Messaging hardening**  
-Synapse internals swapped for hardened transport. Zero Faculty changes.
-
-**Phase B — Zig compilation**  
-Nervous System + Immune System compiled as one Zig binary. Cortex compiled separately. Prime Directives compiled in — no longer a file at runtime. Faculties remain TypeScript forever.
-
-**Phase C — Full deployment**  
-All Faculty categories live. Coding Faculty builds new Faculties autonomously. Optimization Pass runs on automatic schedule. CARL is a continuously improving production system.
+- **Phase A — Messaging hardening:** Synapse internals swapped for hardened transport. Zero Faculty changes.
+- **Phase B — Zig compilation:** Nervous System + Immune System compiled as one Zig binary. Cortex compiled separately. Prime Directives compiled in. Faculties remain TypeScript forever.
+- **Phase C — Full deployment:** All Faculty categories live. Coding Faculty builds autonomously. Optimization Pass on automatic schedule.
 
 ```
 PHASE B TARGET
@@ -1120,15 +591,66 @@ PHASE B TARGET
 
 ---
 
+## Workspace Seed Files
+
+Seed before first boot. Set read-only: `chmod 444 workspace/PRIME.md`
+
+**PERSONA.md** — Identity, tone, coloring (~10 lines). Operator modifiable at runtime.
+
+**PROTOCOL.md** — Behavioral rules: ambiguity (reflect back, one question), irreversible (propose before executing), research channel (no protocol, full dialogue), Dark Lane delivery (frame before payload), multi-Arc (deliver as ready).
+
+---
+
 ## Configuration Files
 
 | File | Purpose | Who can modify | Phase |
 |---|---|---|---|
-| PRIME.md | Prime Directives. Compiled in production. | Operator before build only | Build time |
-| PERSONA.md | Identity — name, role, tone, coloring. | Operator via authenticated channel | Runtime |
-| PROTOCOL.md | Behavior — rules and output discipline. | Operator via authenticated channel | Runtime |
-| SCHEMA.md | Relay language — schema definitions. | Coding Faculty with operator auth | Runtime |
-| AGENTS.md | Faculty registry — routing, model assignments. | Coding Faculty with operator auth | Runtime |
+| PRIME.md | Prime Directives | Operator before build only | Build time |
+| PERSONA.md | Identity — name, role, tone | Operator via authenticated channel | Runtime |
+| PROTOCOL.md | Behavior — rules and output discipline | Operator via authenticated channel | Runtime |
+| SCHEMA.md | Relay language — schema definitions | Coding Faculty with operator auth | Runtime |
+| AGENTS.md | Faculty registry — routing, model assignments | Coding Faculty with operator auth | Runtime |
+
+---
+
+## Repository Structure
+
+```
+carl/
+├── nervous-system/
+│   └── immune-system/
+├── synapse/
+├── cortex/
+│   ├── persona/
+│   │   ├── arc-store/
+│   │   ├── ambiguity/
+│   │   └── output-composer/
+│   ├── reasoning-engine/
+│   │   └── gating/
+│   ├── decomposer/
+│   ├── result-buffer/
+│   └── synthesis-gate/
+├── faculties/
+│   ├── memory/
+│   │   ├── short-term/
+│   │   └── crystallized/
+│   ├── telegram/
+│   ├── coding/
+│   ├── gmail/
+│   ├── calendar/
+│   ├── web/
+│   ├── jobs/
+│   └── monitor/
+├── workspace/
+│   ├── PRIME.md
+│   ├── PERSONA.md
+│   ├── PROTOCOL.md
+│   ├── SCHEMA.md
+│   └── AGENTS.md
+├── examples/
+│   └── personas/
+└── memory/
+```
 
 ---
 
@@ -1136,2153 +658,57 @@ PHASE B TARGET
 
 | Term | Definition |
 |---|---|
-| Reasoning Arc | Unit of reasoning — trajectory, beginning, resolution, with declared budget |
-| Arc Store | All active Reasoning Arcs held by Persona — isolated, no cross-Arc context |
-| Arc Budget | Mandatory per-Arc resource limit — max_model_calls, max_faculty_dispatches, max_wall_time |
-| Persona | Main loop — event-driven, zero tokens per cycle, tints all decisions |
-| Synapse | Typed abstraction layer between Faculty code and Nervous System — not hot-reloadable |
+| Reasoning Arc | Unit of reasoning — trajectory with declared budget |
+| Arc Store | All active Arcs held by Persona — isolated |
+| Arc Budget | Mandatory per-Arc resource limit |
+| Persona | Main loop — event-driven, zero tokens per cycle |
+| Synapse | Typed abstraction between Faculty code and Nervous System |
 | Relay | Text → typed objects, schema validation |
-| Reflex | Cached policy execution — authorized by Cortex, executed without re-reasoning |
-| Gating model | Cheap model inside Reasoning Engine — decides tier per iteration |
+| Reflex | Cached policy execution — Cortex-authorized, no re-reasoning |
+| Gating model | Cheap model inside Reasoning Engine — decides tier |
 | Decomposer | Executes Execution Plans via Faculty dispatch |
 | Result Buffer | Per-Arc async collection of Faculty results |
-| Synthesis Gate | Notifies Persona when Arc is ready |
-| Resolution Record | Metadata after every resolved request — feeds Optimization Pass |
-| Optimization Pass | Constrained threshold sweep — minimizes cost subject to safety floor |
-| Safety Floor | Compiled invariant — Optimization Pass cannot breach it |
-| Dark Lane | Model-invisible data path inside Nervous System — routing constrained by Immune System |
-| Dark Transit | Principle — content moves through CARL without entering model context |
-| Blind Fetch | Outbound Dark Transit — payload delivered cold, operator-authorized only |
-| Blind Write | Inbound Dark Transit — secret written, never read by model |
-| Inert by Default | Cold content cannot self-activate into model context |
+| Synthesis Gate | Notifies Persona when Arc ready |
+| Resolution Record | Post-resolution metadata — feeds Optimization Pass |
+| Optimization Pass | Constrained threshold sweep within safety floor |
+| Safety Floor | Compiled invariant — cannot be breached by optimization |
+| Dark Lane | Model-invisible data path inside Nervous System |
+| Dark Transit | Principle — content moves without entering model context |
+| Blind Fetch | Outbound Dark Transit — operator-authorized only |
+| Blind Write | Inbound Dark Transit — secret written, never model-read |
+| Inert by Default | Cold content cannot self-activate |
 | Elevation Protocol | Required gate before cold content enters model context |
-| Short Term Memory | Volatile hash table — wildcard observation accumulation, write-serialized |
-| Crystallized Memory | Durable K/V store — collapsed beliefs, Reflex corpus |
-| Active Arc Index | Lightweight boot payload — Arc IDs, statuses, one-line summaries only |
-| Boot Protocol | Minimal working set assembly at startup — identity always, everything else on demand |
-| Confidence | Per-origin trust score for ambiguous pattern resolutions |
-| Partial Compression | Ambiguous input compressed with wildcard fields for unresolved domains |
-| Staged Canary | 1% traffic promotion for generated Faculties before full deployment |
-
----
-
-## Repository Structure
-
-```
-carl/
-├── nervous-system/
-│   └── immune-system/
-├── synapse/
-├── cortex/
-│   ├── persona/
-│   │   ├── arc-store/
-│   │   ├── ambiguity/
-│   │   └── output-composer/
-│   ├── reasoning-engine/
-│   │   └── gating/
-│   ├── decomposer/
-│   ├── result-buffer/
-│   └── synthesis-gate/
-├── faculties/
-│   ├── memory/
-│   │   ├── short-term/
-│   │   └── crystallized/
-│   ├── telegram/
-│   ├── coding/
-│   ├── gmail/
-│   ├── calendar/
-│   ├── web/
-│   ├── jobs/
-│   └── monitor/
-├── workspace/
-│   ├── PRIME.md
-│   ├── PERSONA.md
-│   ├── PROTOCOL.md
-│   ├── SCHEMA.md
-│   └── AGENTS.md
-├── examples/
-│   └── personas/
-└── memory/
-```
-
----
-
-## Naming
-
-**CARL** — Cognitive Autonomous Recursive Learning
-
-Recursive because the system feeds back on itself across multiple simultaneous loops — patterns crystallize into Reflex, Faculties chain through each other, Coding Faculty extends the system which feeds new patterns, Arc context accumulates and reshapes decisions, and improvement compounds as thresholds self-optimize. Learning because the system improves through operation, not retraining. No external trigger. No pipeline. The system learns by running.
-
----
-
-## Author
-
-CARL was conceived and designed by Samuël Tremblay in April 2026.
-
-**Samuël Tremblay**  
-Montreal, Quebec, Canada  
-[github.com/barnacker](https://github.com/barnacker)
-
----
-
-## Contributing
-
-Contributions are welcome. By contributing to this project you agree that your contributions will be licensed under the same Apache 2.0 license that covers the project. For significant contributions, please open an issue first before submitting a pull request.
-
-Contributors retain copyright over their own contributions. By submitting a pull request, contributors grant Samuël Tremblay and all users of CARL a perpetual, worldwide, non-exclusive, royalty-free license to use, copy, modify, and distribute their contributions as part of this project under the Apache 2.0 license.
-
----
-
-## License
-
-Copyright 2026 Samuël Tremblay  
-Licensed under the Apache License, Version 2.0.  
-http://www.apache.org/licenses/LICENSE-2.0
-
-- Use freely for personal and commercial purposes
-- Modify and distribute modified versions
-- Include original copyright notice and license
-- State changes made if distributing modified versions
-- Cannot use CARL name or Samuël Tremblay's name to endorse derived products without permission
-- No warranty — use at your own risk# CARL — Cognitive Autonomous Recursive Learning
-
-CARL is a framework for building systems that reason independently, self-protect by design, and grow more capable the longer they run — by converting experience into reflex, chaining Faculties recursively to resolve complex problems, and feeding every resolved request back into a loop that makes the next response faster, cheaper, and more precise.
-
-CARL is not an agent framework.  
-CARL is not a chatbot platform.  
-CARL is not an automation tool.
-
-CARL is a synthetic cognitive architecture. Every component maps to a functional analog in biological cognition. The result is a system that thinks, protects itself structurally, and improves the longer it runs — booting the way a human does: knowing who it is and what matters, retrieving everything else on demand, as fast as reflex.
-
----
-
-## Why CARL Exists
-
-The agent paradigm made AI automation accessible. It is also fundamentally limited. Agents conflate reasoning and execution. That conflation is where security breaks down, costs compound, and systems become unpredictable.
-
-CARL eliminates the agent concept entirely.
-
-| Dimension | Agent Frameworks | CARL |
-|---|---|---|
-| Reasoning | Each agent reasons independently | Only Cortex reasons |
-| Security | Prompt-based, bypassable | Structural, compiled, code-enforced |
-| Routing | Static role assignment | Dynamic, learned via Reflex |
-| Execution | Agent decides and acts | Faculty executes only |
-| Data transit | All content enters model context | Dark Lane — model-invisible transit |
-| Learning | External retraining | In-process pattern crystallization |
-| Trust | Assumed | Earned per identity, per pattern |
-| Operation | Request-response, blocking | Continuous, multitasking, non-blocking |
-
-One persistent reasoning core. Infinite specialized Faculties. Each Faculty potentially multi-model. A step toward general intelligence architecture.
-
----
-
-## What Makes CARL Recursive
-
-Recursion in CARL is not a single mechanism — it is a property that emerges from several reinforcing loops operating simultaneously.
-
-**Reflex crystallization loop.** Cortex resolves a request. The compressed intent and Faculty route are written to Memory. Memory crystallizes the pattern. The next matching request routes directly — no Cortex, no LLM, no cost. That resolution generates a new pattern. The loop feeds itself.
-
-**Faculty chaining.** Cortex dispatches to Faculty A. Faculty A's result triggers dispatch to Faculty B. Each result can spawn the next dispatch. The chain depth is not fixed — Cortex decides at each step.
-
-**Coding Faculty self-extension.** Coding Faculty reads existing Faculty source, writes a new Faculty, hot-reloads it. That Faculty begins generating resolved requests. Those resolutions feed the Reflex loop. CARL extended itself and that extension immediately improves the system.
-
-**Arc context accumulation.** Each Faculty result fed back into the active Reasoning Arc changes what Cortex does next. Each result shapes the next decision, which shapes the next result.
-
-**Confidence compounding.** As crystallized patterns accumulate, Reflex handles more requests. More Reflex hits means fewer Cortex invocations. More throughput generates more patterns. Improvement compounds.
-
-**Threshold self-optimization.** Every resolved request generates a Resolution Record. The Optimization Pass reads these records and tunes escalation thresholds — over time the system biases itself toward the cheapest viable path without being told to.
-
----
-
-## Laws
-
-These are invariants. A system that violates any of these is not CARL.
-
-**Law 1 — Everything is a Faculty.**  
-Every capability follows the same pattern: subscribe through the Synapse, execute, publish results. Telegram, Gmail, Calendar, Memory, Coding — all Faculties. Adding capability means adding a Faculty. The core never changes. Cortex is the single exception — above the Faculty pattern, not outside it.
-
-**Law 2 — The Nervous System is the only path.**  
-No component communicates with another directly. All traffic flows through the Nervous System. No exceptions. One path means one gate.
-
-**Law 3 — One Reasoning Locus.**  
-Cortex is the only component that decides what happens next. Faculties execute deterministically or invoke models for narrow bounded tasks — never for deciding what happens next. When a Faculty needs a decision, it does not decide. It publishes and Cortex decides.
-
-CARL enforces a single decision authority, not a single execution thread. Multiple Reasoning Engine instances may run concurrently — one per active Arc. Model invocations may occur in parallel across Arcs. "One locus" refers strictly to control authority, not runtime execution.
-
-**Law 4 — Faculties are invocation-stateless.**  
-A Faculty carries no behavioral state between invocations. All persistence that influences decisions lives in Memory Faculty only. Infrastructure state — connection pools, cached clients, transport and session handles — is permitted. Cross-invocation behavioral state, hidden decision memory, and mutation that affects future outputs are forbidden. A Faculty that crashes and restarts produces identical output from identical input.
-
-**Law 5 — Security is structural, not prompt-based.**  
-Authorization is enforced in code. In production, the core is compiled — there is no source for a model to read or modify. Rules are not in a markdown file. Rules are not in a system prompt. Rules are in the runtime.
-
-**Law 6 — Origin travels the entire chain.**  
-Every request carries an immutable stamp of who authorized it. Authority cannot be invented mid-chain. Each hop is validated against the original stamp.
-
-**Law 7 — CARL self-optimizes but cannot redefine itself.**  
-CARL can crystallize Reflex patterns, tune thresholds, and update factual memory autonomously. CARL cannot modify its own identity, protocol, or Immune System rules without operator authorization. CARL cannot modify its Prime Directives under any circumstances.
-
-**Law 8 — Model-invisible transit is a first-class primitive.**  
-Content can move through the architecture without entering any model context. Files, secrets, tokens, and payloads can be fetched, routed, and written without any model ever consuming them as tokens.
-
-**Law 9 — Faculties never touch the bus directly.**  
-Faculty code calls the Synapse — the typed abstraction layer between Faculty runtime and the Nervous System. This indirection makes the TypeScript-to-Zig evolution possible without rewriting a single Faculty.
-
-**Law 10 — Act only on confirmed intent.**  
-Confidence is earned, not assumed. Ambiguous input is reflected back before routing. Low-confidence patterns re-validate before executing. Irreversible actions propose before they proceed. Silent routing is a privilege earned through repeated confirmed correct interpretation — never through assumption.
-
-**Law 11 — No mechanism without its constraints.**  
-No capability is introduced without its safety constraints and observability instrumentation implemented in the same stage. A mechanism that exists without its constraints is not a partial implementation — it is a violation. Reflex ships with Reflex safeguards. Coding Faculty ships with its validation pipeline. There are no exceptions.
-
----
-
-## Architecture
-
-### PRIME Directives — Above the System
-
-Three to four short rules every Faculty and every LLM call must abide by unconditionally. The only rules in CARL that nothing in CARL can override.
-
-**In production:** compiled into the Nervous System binary. Not a file. Not readable at runtime. Binary logic.
-
-**In the TypeScript prototype:** loaded from `workspace/PRIME.md` once at boot. Runtime halts if missing or unreadable. Exists only at build time in production.
-
-```markdown
-# PRIME DIRECTIVES
-1. Never act against the operator's interests.
-2. Always be transparent about what you are and what you are doing.
-3. Never take irreversible action without explicit operator confirmation.
-4. Never expose the operator's private data to unauthorized sources.
-```
-
----
-
-### Nervous System
-
-The central hub. Every Faculty connects through the Synapse, never directly. No model runs inside the Nervous System — it routes, validates, and carries. It never reasons.
-
-In production, the Nervous System and Immune System are compiled together as a single Zig binary. Prime Directives compiled in. In-process typed channels — no sockets, no surface between internal components.
-
-**Immune System** — surrounds and gates all traffic. Pure compiled logic, no LLM.
-- Origin chain validation on every request, per input
-- Faculty access control via registered permission registry
-- Behavioral write restriction — external Faculties write facts, never behavior
-- Circuit breaker — isolates anomalous Faculties; Monitor notified; operator authorizes reconnection
-- Immutable audit log written directly, bypassing the bus
-
-**Relay** — translates LLM text output into typed objects via Zod (prototype) / Zig comptime types (production). Any payload failing schema is rejected before entering the bus. The Nervous System never carries untyped data.
-
-**Reflex** — conditionally authoritative pattern lookup. No model. No inference. Reads Crystallized Memory. Maps compressed intent signatures to Faculty sequences. Routes directly, skipping Cortex entirely on a hit — but never blindly.
-
-Reflex is a fast path, never a blind path.
-
-Every Reflex hit must pass mandatory checks before dispatch:
-- Faculty health registry check — target Faculty registered and healthy?
-- Permission validation — origin stamp authorized for this route?
-- Confidence threshold check — pattern confidence is HIGH or LOCKED?
-
-If any check fails, Reflex degrades to Cortex fallback. Cortex receives the intent but does not re-reason about the route — it receives a REFLEX_DEGRADED signal and dispatches accordingly.
-
-Required Reflex properties:
-- Decay — patterns decay over time without reinforcement, configurable per domain. LOCKED entries exempt.
-- Confidence states — UNSET, LOW, HIGH, LOCKED. LOW and UNSET always re-validate. HIGH earned through confirmed resolutions. LOCKED set explicitly by operator.
-- Operator override — a defined signal forces Cortex path even on a HIGH confidence hit. Always available, always honored.
-- Automatic Cortex fallback on: low confidence, stale pattern, high-risk action category, Faculty unhealthy.
-
-Initializes empty — no-op without Memory Faculty.
-
-**Dark Lane** — model-invisible data path alongside the reasoning path. Payload routed through it is never seen by any model. Carried opaque and intact from source to destination.
-
----
-
-### Cortex
-
-Cortex is not a Faculty. It is the single persistent cognitive entity in CARL — continuously running, multitasking across N simultaneous Reasoning Arcs, never blocked waiting for any single result.
-
-In production, a separate compiled Zig binary. One controlled typed boundary to the Nervous System. Soft surfaces — PERSONA.md, PROTOCOL.md, model assignments — remain configurable without recompilation.
-
-```
-CORTEX
-
-PERSONA — main loop, always running
-  ├── Arc Store access         ← all active Arcs held in awareness simultaneously
-  ├── Identity context         ← PERSONA.md tints all decisions in the loop
-  ├── Arc router               ← which Arc does this input belong to?
-  ├── Ambiguity check          ← on new input
-  ├── Compression              ← intent extraction, partial or full
-  ├── Priority manager         ← what needs attention right now?
-  ├── Output composer          ← when Arc is ready to respond
-  └── spawns / manages ↓
-
-REASONING ENGINE — subordinate loop, one per Arc requiring it
-  ├── Gating model             ← cheap, runs every iteration
-  │     decides: Execution Faculty or Reasoning Faculty?
-  │     decides: is the plan ready?
-  ├── calls Execution Faculty  ← cheap, bounded steps, via Synapse
-  ├── calls Reasoning Faculty  ← expensive, deep steps, via Synapse
-  ├── calls Memory Faculty     ← context gathering, via Synapse
-  └── reports Execution Plan to Persona when ready
-
-DECOMPOSER — executor, one per active plan
-  ├── receives Execution Plan from Persona
-  ├── dispatches Faculty sequence through Synapse
-  └── results land in Result Buffer
-
-RESULT BUFFER — per Arc
-  └── collects async Faculty results, non-blocking
-
-SYNTHESIS GATE — per Arc
-  └── notifies Persona when Arc ready for synthesis or response
-```
-
----
-
-### Persona — The Main Loop
-
-Persona is the soul of a CARL instance. Not an input/output formatter. The continuously running cognitive center that holds all active Reasoning Arcs in awareness simultaneously and tints every decision with the identity defined in PERSONA.md.
-
-**Persona influence boundaries — structurally enforced.**
-
-Persona influences presentation and interaction, never system behavior.
-
-Persona-allowed:
-- Output framing — tone, format, verbosity, register
-- Ambiguity resolution — which wildcard interpretation to propose
-- Arc prioritization — which pending Arc gets attention when multiple are actionable
-- Operator interaction tone — how proposals and clarifications are presented
-
-Persona-forbidden:
-- Execution Plan content — which Faculties are called, in what order
-- Reflex routing — whether a pattern matches or which Faculty is selected
-- Security decisions — origin validation, permission checks, circuit breaker triggers
-- Confidence thresholds — whether a pattern has earned silent routing
-- Threshold tuning — Optimization Pass parameters
-
-The forbidden list is not enforced by convention — it is enforced by architecture. Persona does not have access to Reflex internals. Persona does not have access to Immune System state. Persona does not write to Tier 2 configuration. These are not calls Persona can make.
-
-**The loop costs nothing at rest.** Persona does not invoke a model on each cycle. It reads Arc states, checks for new input, checks for Faculty results — pure logic, no tokens. A model is invoked only when a specific Arc step requires it. A system with ten suspended Arcs cycles indefinitely at zero cost.
-
-```
-PERSONA CYCLE — zero token cost
-
-  await next event          ← sleeping, zero cost, zero tokens
-       ↓
-  EVENT ARRIVES — one of:
-    new_input               ← Sensory Faculty published a message
-    faculty_result          ← Faculty completed, result in Buffer
-    arc_timeout             ← Arc suspended too long, notify operator
-    optimize_trigger        ← scheduled threshold sweep
-       ↓
-  handle event
-  update Arc state
-  dispatch if needed        ← model invoked only here, only if required
-       ↓
-  await next event          ← back to sleep immediately
-```
-
-Persona subscribes to the Nervous System. Sensory Faculties publish to the Nervous System. The Nervous System routes events to Persona. Persona never subscribes to a Faculty directly — Law 2 holds.
-
-**Multitasking:**
-
-```
-Operator sends message about project A
-  → Persona wakes, opens Arc A, spawns Reasoning Engine, sleeps
-
-Operator sends message about project B — Arc A still running
-  → Persona wakes, opens Arc B simultaneously, sleeps
-
-Arc A Faculty result arrives
-  → Persona wakes, folds result into Arc A Buffer, sleeps
-
-Arc B needs clarification
-  → Persona wakes, composes question, Arc B suspends, sleeps
-
-Operator answers Arc B, Arc A resolves
-  → Persona wakes, handles both, delivers results, sleeps
-```
-
-**Ambiguity detection:**
-
-```
-UNAMBIGUOUS — "Show me my calendar for tomorrow"
-  Silent compression:
-  { action: CHECK, domain: CALENDAR, scope: TEMPORAL,
-    subject: SELF, params: { time_ref: "tomorrow" } }
-  → Reflex check. No question asked. Same for all operators.
-
-AMBIGUOUS — "Show me what's for tomorrow"
-  Partial compression:
-  { action: CHECK, domain: *, scope: TEMPORAL,
-    subject: SELF, params: { time_ref: "tomorrow" } }
-  domain is wildcard — Persona reflects back:
-  "So if I understand correctly, you want to check
-   your calendar for tomorrow — not weather or tasks?"
-  → Operator confirms → wildcard filled → Memory records observation
-```
-
-`time_ref` was never ambiguous — extracted silently. Only wildcard fields trigger re-validation. Every confirmation feeds the Reflex corpus.
-
----
-
-### Boot Protocol
-
-A human does not wake up with full context. They wake knowing who they are and what matters today. When they see a face, memory surfaces instantly — not because it was preloaded, but because the signal triggered retrieval. When a topic comes up, associated knowledge floods in automatically. No briefing document. No context dump. Identity is always present. Everything else arrives on demand, triggered by signal.
-
-CARL boots the same way.
-
-**What loads at boot — always, immediately, small:**
-
-```
-PRIME directives       ← 4 lines, compiled in production
-PERSONA.md             ← identity, tone, coloring — ~10 lines
-PROTOCOL.md            ← behavioral rules — ~10 lines
-Active Arc index       ← open Arc IDs + status + one-line summary only
-                          { arc_id, status, origin, intent_summary }
-                          not the Arc contents — just what is pending
-```
-
-Target: under 500 tokens. Persona wakes knowing who it is and what is in flight. Nothing else.
-
-**What never preloads — fetched on demand by Memory Faculty:**
-
-```
-Arc full context       ← fetched when that Arc becomes active
-Reflex table           ← queried by Nervous System, never loaded into Persona
-Crystallized Memory    ← queried by Memory Faculty on request
-Resolution Records     ← fetched only during Optimization Pass
-Archived Arcs          ← fetched only if operator references them
-```
-
-**How retrieval works — the reflex analogy:**
-
-A message arrives. The origin stamp is recognized. The Arc index entry surfaces. Memory Faculty fetches that Arc's context. Persona responds. The retrieval is fast enough to feel like reflex — because architecturally, it is. The origin stamp is the face. The Arc index is the recognition. The Memory Faculty fetch is the context flooding in.
-
-```
-SIGNAL ARRIVES          ← new message, origin stamped
-      ↓
-ARC INDEX HIT           ← which Arc does this belong to?
-      ↓
-MEMORY FACULTY FETCH    ← Arc full context loaded now, not before
-      ↓
-PERSONA ACTIVE          ← working context assembled, nothing extra
-      ↓
-ARC RESOLVED            ← context released, Arc archived
-      ↓
-PERSONA SLEEPS          ← working context cleared
-```
-
-Context is a working surface, not a storage space. It assembles when needed and clears when done. A CARL instance that has been running for a year does not have a heavier boot than one that started yesterday. The index stays small. The memory stays in Memory Faculty. The context stays surgical.
-
-**Boot is not a cold start — it is a fast resume.**
-
-Every resolved Arc is archived in Crystallized Memory. Every crystallized Reflex pattern persists. Every confidence score survives restart. The instance that wakes after a reboot is not starting over. It is resuming — with the same identity, the same learned patterns, the same pending work — assembled on demand, as fast as recognition.
-
----
-
-### Compressed Intent — Payload Structure
-
-What Reflex matches on and what Cortex reasons from. Origin stamp travels separately — never part of the intent record.
-
-```
-COMPRESSED INTENT RECORD
-{
-  action:   CHECK | FETCH | WRITE | DELETE | SCHEDULE
-          | SUMMARIZE | MONITOR | DRAFT | SEARCH | BUILD | ...
-
-  domain:   WEATHER | CALENDAR | EMAIL | FILE | WEB
-          | CODE | MEMORY | SYSTEM | ...
-
-  subject:  SELF | OTHER | EXTERNAL
-
-  scope:    TEMPORAL | SPATIAL | TOPICAL | null
-
-  params:   {                          ← variable payload
-              time_ref:   "tomorrow"     never Reflex-matched
-              location:   "Montreal"     passed to Faculty as-is
-              filter:     "Kairos"
-              ...
-            }
-}
-```
-
-**Domain is a semantic classifier — not a Faculty map.** Multiple Faculties can serve the same domain. Reflex maps the full signature `{ action + domain + subject + scope }` to a Faculty sequence.
-
-```
-{ action: CHECK,     domain: WEATHER,  scope: TEMPORAL } → [ Weather Faculty ]
-{ action: SUMMARIZE, domain: EMAIL,    scope: TEMPORAL } → [ Gmail → synthesis ]
-{ action: CHECK,     domain: *,        scope: TEMPORAL } → identity-scoped
-```
-
-**Params carry variables — Reflex never sees them.** "Weather for tomorrow", "weather for next week", "weather for Friday" — same Reflex key. `time_ref` is a param passed through.
-
----
-
-### Reasoning Engine — Subordinate Loop
-
-Spawned by Persona per Arc that needs it. Reports Execution Plan back to Persona when ready. All Faculty calls through Synapse. All results Relay-validated.
-
-```
-REASONING ENGINE LOOP
-
-  Gating model evaluates Arc state  (cheap, every iteration)
-       ↓                    ↓
-  Execution Faculty     Reasoning Faculty
-  (cheap, bounded)      (expensive, deep)
-       ↓
-  Memory Faculty if context needed
-  repeat until Execution Plan producible
-       ↓
-  report Execution Plan to Persona
-```
-
-Gating model never reasons about the problem. It reasons about the reasoning process — what tier, is the plan ready. A simple problem resolves in one iteration at near-zero cost. The loop self-corrects toward cheapness. The Gating model's escalation threshold is tunable by the Optimization Pass.
-
-**Hard gating constraints — not learned, not tunable:**
-
-Certain domains always require Reasoning Faculty regardless of Gating model decision. Certain actions never escalate beyond Execution Faculty. Max escalation depth per Arc is fixed at Arc open time. Learned thresholds tune behavior within these bounds — they do not define the bounds. If Gating model confidence is low, default to the cheaper path first. Escalate only on confirmed need.
-
-```
-HARD GATING BOUNDARIES
-  always Reasoning Faculty:   SYSTEM domain, structural changes, multi-step irreversibles
-  never beyond Execution:     READ-ONLY actions on SELF domain with no side effects
-  max escalation depth:       declared in Arc budget at open time
-```
-
-**Arc budget — mandatory invariant, not implementation detail:**
-
-Every Arc MUST declare a budget at open time. There are no budgetless Arcs.
-
-```
-ARC LIFECYCLE
-  open       ← context initiated, budget declared — required
-  active     ← Cortex processing
-  suspended  ← awaiting input, Faculty result, or budget exhausted
-  resolved   ← output delivered, context archived
-
-ARC BUDGET — declared at open, enforced throughout
-  max_model_calls:        integer
-  max_faculty_dispatches: integer
-  max_wall_time:          duration
-
-  Budget exhausted → Arc enters SUSPENDED immediately
-  Persona MUST notify operator
-  No silent continuation under any circumstance
-  Operator must explicitly authorize continuation or resolution
-```
-
----
-
-### Memory Faculty
-
-All persistence. The substrate that makes Reflex possible.
-
-```
-TIER 0    Prime Directives
-            compiled in production — file exists at build time only
-
-TIER 1    Dynamic runtime
-            facts, session context, Arc state
-
-TIER 1b   Short Term Memory
-            wildcard observations per origin per ambiguous pattern
-            hash table, O(1), volatile — lost on restart by design
-            bounded: max N observations before forced collapse
-
-TIER 1c   Crystallized Memory
-            collapsed beliefs, Reflex corpus, Resolution Records,
-            archived Arcs, Active Arc index
-            K/V store, durable, survives restart
-            prototype: LevelDB or SQLite
-            production: abstracted K/V interface
-
-TIER 2    Configuration
-            routing rules, Faculty registry, tuned thresholds
-            Optimization Pass writes here with Cortex authorization
-
-TIER 3    Identity
-            PERSONA.md, PROTOCOL.md
-            operator only, via authenticated channel
-```
-
-**Crystallization:**
-
-```
-ACCUMULATION
-  Each ambiguous confirmation → observation in Short Term
-  { wildcard: domain, resolved_to: CALENDAR, origin: A, timestamp: t }
-
-COLLAPSE — threshold reached or observation ceiling hit
-  Raw observations: discarded
-  Crystallized: { domain: CALENDAR, weight: 0.86, corrections: 1 }
-  Short Term entry: null
-
-POST-COLLAPSE CORRECTIONS
-  Enough corrections → confidence demotes to LOW
-  System re-enters accumulation, rebuilds belief
-```
-
-**Confidence states:** `UNSET → LOW → HIGH → LOCKED`  
-`PROVISIONAL` when ceiling hit before threshold.
-
-**Identity-scoped confidence:** Unambiguous patterns are global. Ambiguous patterns tracked per origin stamp. A new operator starts at UNSET. Trust is not transferable.
-
----
-
-### Optimization Pass
-
-Threshold tuning sweep — another Arc to Persona.
-
-```
-RESOLUTION RECORD — written after every resolved request
-{
-  intent_signature, path_taken, faculty_sequence,
-  cost, duration, result_quality, thresholds_used
-}
-
-TUNABLE THRESHOLDS
-  1 — Reflex confidence ceiling
-  2 — Gating model escalation trigger
-  3 — Result Buffer completeness window
-  4 — Decomposer step count ceiling
-
-TRIGGERS
-  (a) operator: "optimize yourself"
-  (b) scheduled: every N resolved requests
-  (c) automatic: cost spike
-  (d) automatic: correction rate spike
-
-AUTHORITY
-  Threshold-only: Cortex authorized
-  Structural: operator required
-```
-
-**The cost funnel — how a mature CARL looks:**
-
-```
-ALL REQUESTS
-├── REFLEX              zero model cost        grows → majority
-├── SIMPLE PATH         cheap model            stable → common
-├── COMPLEX → SIMPLE    expensive + cheap      shrinks → rare
-└── COMPLEX → SYNTHESIS most expensive         shrinks most → exceptional
-```
-
----
-
-### Dark Transit
-
-**Blind Fetch** — outbound. Faculty fetches content, routes through Dark Lane. No model reads it. Cortex receives `{ type: FILE, status: DARK_LANE }` only. Content lands cold.
-
-**Blind Write** — inbound. Operator provides secret or token. Dark Lane carries it to target. Written without any model reading it.
-
-**Inert by Default** — cold content cannot self-activate. A prompt injection in a cold file never reaches model context. The only path from cold to active is deliberate operator elevation.
-
-```
-CONTENT TRUST STATES
-  COLD      ← Dark Lane, no model has seen it
-  ELEVATED  ← operator requested read
-  ACTIVE    ← model reasoning over it
-```
-
----
-
-### Synapse
-
-Typed abstraction layer between Faculty code and the Nervous System. Law 9 made concrete. In prototype wraps EventEmitter. In production wraps the compiled boundary. Faculty code never changes when transport changes.
-
-```typescript
-interface Synapse {
-  // Publish a typed event to the Nervous System
-  publish<T extends CarlEvent>(event: T): Promise<void>
-
-  // Subscribe to a typed event from the Nervous System
-  subscribe<T extends CarlEvent>(
-    eventType: T['type'],
-    handler: (event: T) => Promise<void>
-  ): void
-
-  // Route payload through Dark Lane — no model will see content
-  darkLane(payload: Buffer, destination: FacultyId): Promise<void>
-}
-```
-
-All three methods are the complete Faculty-facing API. Faculty authors never call EventEmitter, never call the compiled boundary, never reference the Nervous System directly.
-
-**Observability — built at Stage 0, not deferred.**
-
-Every Synapse publish and subscribe emits a structured trace event to a separate append-only trace log. Content never logged — schema hash only. The trace system must support deterministic event replay without model calls, redacted payload sampling on operator opt-in, and per-Arc execution timeline reconstruction. Post-mortem reconstruction of any Arc must be possible from trace logs alone without relying on output text.
-
-```typescript
-// Trace event emitted on every Synapse call — automatically, always
-interface TraceEvent {
-  ts:           number         // timestamp ms
-  faculty_id:   FacultyId
-  event_type:   'PUBLISH' | 'SUBSCRIBE' | 'REFLEX_HIT' | 'REFLEX_MISS'
-              | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_SUSPENDED'
-              | 'ARC_RESOLVED' | 'BUDGET_EXHAUSTED'
-  schema_hash:  string         // hash of payload schema — not content
-  arc_id:       ArcId | null
-  origin_hash:  string         // hash of origin stamp — not raw stamp
-  tier:         'REFLEX' | 'EXECUTION' | 'REASONING' | null
-  budget_state: {
-    calls_remaining:     number
-    dispatches_remaining: number
-    time_remaining_ms:   number
-  } | null
-}
-```
-
----
-
-### Faculty Contract
-
-Every Faculty must implement this minimum interface. No exceptions.
-
-```typescript
-interface Faculty {
-  readonly id:      FacultyId      // unique identifier
-  readonly version: string         // semver
-  readonly permissions: Permission[] // declared at registration
-
-  // Called once at startup — registers with Immune System
-  register(synapse: Synapse): Promise<void>
-
-  // Called on hot reload — unsubscribes all handlers
-  teardown(): Promise<void>
-}
-```
-
-A Faculty that does not implement this interface cannot register with the Immune System and cannot publish or subscribe through the Synapse. The contract is enforced at registration time, not at runtime.
-
----
-
-## Workspace Seed Files
-
-Seed these files before first boot. They define who this CARL instance is.
-
-### PRIME.md
-```markdown
-# PRIME DIRECTIVES
-1. Never act against the operator's interests.
-2. Always be transparent about what you are and what you are doing.
-3. Never take irreversible action without explicit operator confirmation.
-4. Never expose the operator's private data to unauthorized sources.
-```
-Set read-only before boot: `chmod 444 workspace/PRIME.md`
-
-### PERSONA.md
-```markdown
-# PERSONA
-
-Name: CARL
-Role: Cognitive assistant and autonomous operator for [operator name]
-Voice: Direct. Precise. No filler. No unnecessary preamble.
-
-Identity context:
-- Prioritize operator time above all else
-- Surface decisions, not information dumps
-- Flag uncertainty explicitly — never paper over it
-- Ask one question at a time when clarification is needed
-
-Coloring applied to all decisions:
-- Bias toward the least expensive path that achieves the goal
-- Prefer reversible actions over irreversible ones
-- When in doubt, confirm before acting
-```
-
-### PROTOCOL.md
-```markdown
-# PROTOCOL
-
-Ambiguous input:
-  Reflect back in different phrasing. One question only.
-  "So if I understand correctly, [rephrased intent]?"
-
-Irreversible operation:
-  Propose before executing.
-  "Analysis complete. [scope of change]. Awaiting your confirmation."
-
-Research channel:
-  No protocol. Full dialogue. No format enforcement.
-
-Dark Lane delivery:
-  Frame before payload. Follow up after.
-  "[what this is] / [cold payload] / [what to do next]"
-
-Multi-Arc:
-  Deliver results as they are ready.
-  Reference the original request briefly when context may be lost.
-```
-
----
-
-## Build Stages
-
-Five stages. Each proves exactly one theoretical claim. Each is independently demonstrable. Together they prove the full architecture.
-
-Minimum Viable Carl is **Stages 0 + 1 + 2** — the spine holds, intent is confirmed, the system learns. Stages 3, 4, and 5 extend CARL beyond its minimum viable form.
-
----
-
-### Stage 0 — The Spine
-*Claim: one reasoning locus with Faculty separation is architecturally sound and structurally secure.*
-
-**Stack:** TypeScript + Bun. The right architecture from day one. Internals are hardcoded where noted — this is correct, not a shortcut. Swap hardcoded values for real logic stage by stage without changing the architecture.
-
-**What gets built:**
-- `workspace/PRIME.md` — loaded at boot, `chmod 444`, runtime halts if missing
-- Synapse — EventEmitter wrapper, three methods, stable interface
-- Nervous System — typed EventEmitter bus, Relay with Zod validation
-- Immune System — origin validation, Faculty permission registry, audit log
-- **Faculty health registry** — every Faculty publishes heartbeat on dedicated channel, registry tracks last-seen per Faculty ID, stale = unhealthy
-- **Trace logging** — append-only trace log, every Synapse call emits TraceEvent, schema hash only, supports per-Arc timeline reconstruction
-- **Arc budgets** — every Arc declares max_model_calls, max_faculty_dispatches, max_wall_time at open time, budget exhaustion suspends Arc and notifies operator immediately
-- Persona — async event loop, Arc Store as `Map<ArcId, Arc>`, no model called during loop
-- Reasoning Engine — **hardcoded** Execution Plan returned, no real model call yet
-- Memory Faculty stub — Tier 1 flat JSON file + Active Arc index persisted across restarts
-- Telegram Sensory Faculty — Grammy, stamps origin, publishes through Synapse
-- One stub Execution Faculty — returns hardcoded response
-
-**What is hardcoded:**
-- Reasoning Engine always returns the same Execution Plan
-- Execution Faculty always returns the same result
-- Reflex table empty — always misses
-- No ambiguity detection — all input treated as unambiguous
-
-**What is real from day one:**
-- All ten Laws enforced structurally
-- Synapse — Faculty code never touches the bus directly
-- Immune System — origin validated every hop, permission registry live
-- Faculty health registry — heartbeat tracking, stale detection
-- Trace logging — every Synapse event logged, per-Arc reconstruction possible
-- Arc budgets — declared at open, enforced, operator notified on exhaustion
-- Persona event loop — zero tokens per cycle, wakes on event only
-- Arc lifecycle — open (with budget) → active → suspended → resolved
-- Relay — untyped payloads rejected at the bus
-
-**Proof of life:**
-```
-1. Operator sends message via Telegram
-2. Telegram Faculty stamps origin, publishes through Synapse → TraceEvent emitted
-3. Immune System validates origin and permissions
-4. Persona wakes from await — new_input event
-5. Arc opens with declared budget
-6. Intent compressed (unambiguous, no ambiguity check yet)
-7. Reflex misses — table empty
-8. Reasoning Engine invoked — returns hardcoded Execution Plan
-9. Decomposer dispatches stub Faculty through Synapse → TraceEvent emitted
-10. Stub Faculty returns hardcoded result through Synapse
-11. Result Buffer collects, Synthesis Gate notifies Persona
-12. Persona wakes — faculty_result event, zero model calls during wait
-13. Persona composes output, Telegram Faculty delivers, Arc resolved
-
-Verify: no Faculty called the bus directly.
-Verify: no untyped payload reached the bus.
-Verify: Persona event loop consumed zero tokens during steps 4-12 wait.
-Verify: PRIME.md was never touched.
-Verify: trace log contains full per-Arc timeline reconstructable from log alone.
-Verify: budget was declared at Arc open, tracked throughout.
-Verify: Faculty health registry shows Telegram and stub Faculty as healthy.
-```
-
-**Claim proven:** the architecture holds. All Laws enforced. Right shape from day one. Hardcoded internals are irrelevant — nothing in the architecture depends on them being real.
-
----
-
-### Stage 1 — Confirmed Intent
-*Claim: a cognitive system can detect ambiguity, reflect it back precisely, and earn the right to act — never assume.*
-
-**What gets added:**
-- Persona ambiguity detection — full implementation
-- Partial compression with wildcard fields
-- Re-validation rephrasing in Persona
-- Proposal flow for irreversible operations
-- Reasoning Engine — first real model call (Execution Faculty, cheap model)
-
-**What stays hardcoded:** Reflex corpus, crystallization, multitasking.
-
-**Proof of life:**
-```
-Unambiguous: "show me my calendar for tomorrow"
-  → silent compression, no question, Faculty dispatched
-
-Ambiguous: "show me what's for tomorrow"
-  → Persona: "So if I understand correctly, you want
-     to check your calendar — not weather or tasks?"
-  → operator confirms → Faculty dispatched
-
-Irreversible: "delete all my emails from last year"
-  → Persona proposes scope → operator confirms or cancels
-```
-
-**Claim proven:** CARL never acts on assumption. Partial compression proves it — `time_ref` extracted silently, only `domain` wildcard triggers the question.
-
----
-
-### Stage 2 — The Learning Loop
-*Claim: a system can learn by operating — becoming faster and cheaper without retraining or external trigger.*
-
-**What gets added:**
-- Memory Faculty — Tier 1b Short Term (hash table) + Tier 1c Crystallized (K/V)
-- Observation accumulation on confirmed ambiguous resolutions
-- Crystallization on threshold — garbage collection of raw observations
-- Reflex corpus populated from crystallized entries
-- Reflex routing active — Cortex skipped on hit
-- Identity-scoped confidence per origin (UNSET, LOW, HIGH, LOCKED)
-- **Reflex safety constraints — introduced in the same stage as Reflex:**
-  - Faculty health check on every hit — unhealthy target → Cortex fallback
-  - Permission validation on every hit — origin authorized for this route?
-  - Confidence check — LOW or UNSET always falls through to Cortex
-  - Decay — patterns decay without reinforcement, configurable per domain
-  - Operator override — forced Cortex path always available
-  - Automatic fallback on high-risk action categories
-- **Stage 2 instrumentation — required to answer empirical questions:**
-  - Every crystallization event logged: `{ pattern, origin, confidence_at_crystallization, observations_count, wildcard_resolved_to }`
-  - Every Reflex hit logged with outcome: `{ pattern, confidence_at_hit, operator_accepted, correction_required }`
-  - Cost log per request: `{ path_taken, model_calls, faculty_dispatches, reflex_hit, error_occurred }`
-
-**Proof of life:**
-```
-Operator asks "what's for tomorrow?" repeatedly, confirms CALENDAR each time
-  → observations accumulate in Short Term Memory
-  → every confirmation logged with outcome
-
-Threshold reached → crystallization fires
-  → Short Term: null
-  → Crystallized: { domain: CALENDAR, weight: 0.9, confidence: HIGH }
-  → Reflex entry written with decay timer started
-
-Next request — Reflex hits
-  → Faculty health check: healthy ✓
-  → Permission check: authorized ✓
-  → Confidence check: HIGH ✓
-  → Calendar Faculty dispatched directly
-  → Cortex never invoked
-  → LLM calls: zero
-  → hit logged with outcome
-```
-
-Measure from instrumentation logs:
-- LLM call count before vs after crystallization — drop is the proof
-- Error rate at each confidence level — calibrates threshold correctness
-- Decay trigger behavior — introduce world change, measure adaptation speed
-
-**Claim proven:** the system learned by running. Recursive loop is real, measurable, and safe by construction — not by assumption.
-
----
-
-### Stage 3 — Continuous Entity
-*Claim: CARL is not a request-response system — it is a continuously running cognitive entity managing multiple simultaneous Reasoning Arcs.*
-
-**What gets added:**
-- True concurrent Arc processing — Persona handles N Arcs in parallel
-- Non-blocking Arc management — no Arc blocks another
-- Arc suspension and resumption
-- Results delivered as ready, not in request order
-
-**Proof of life:**
-```
-Operator sends long-running request A
-  → Arc A opens, Reasoning Engine spawned
-  → Persona continues — does not wait
-
-Immediately: operator sends quick request B
-  → Arc B opens simultaneously
-  → Arc B resolves first — delivered immediately
-  → Arc A still running — unaffected
-
-Arc A resolves — delivered when ready
-```
-
-**Claim proven:** CARL is a continuous entity. Two Arcs ran simultaneously, resolved independently, delivered as ready.
-
----
-
-### Stage 4 — Self-Optimization
-*Claim: a cognitive system can tune its own cost-performance thresholds through operation — autonomously moving toward the cheapest viable path.*
-
-**What gets added:**
-- Resolution Records written after every resolved request
-- Optimization Pass — threshold sweep as a regular Arc
-- Automatic triggers — cost spike, correction rate spike
-- Threshold updates written to Tier 2 configuration
-
-**Proof of life:**
-```
-Baseline: measure cost distribution — X% Reflex, Y% Simple, Z% Complex
-
-Run 100 varied interactions
-
-Trigger: "optimize yourself"
-  → Optimization Arc opens
-  → Reasoning Engine reads Resolution Records
-  → identifies unnecessary Reasoning Faculty invocations
-  → thresholds adjusted, written to Tier 2
-
-Measure again: Reflex % higher, Complex % lower
-  → measurable cost reduction, zero operator intervention
-```
-
-**Claim proven:** the system improved itself. Measurably cheaper. Without being told how.
-
----
-
-### Stage 5 — Dark Transit
-*Claim: data can move through a cognitive architecture without any model ever reading it — a first-class security primitive.*
-
-**What gets added:**
-- Dark Lane implementation in Nervous System
-- Blind Fetch and Blind Write operations
-- Inert by Default enforcement
-- Content trust state tracking
-
-**Proof of life:**
-```
-BLIND FETCH
-  Operator: "show me config.ts"
-  → Coding Faculty fetches file through Dark Lane
-  → Cortex receives metadata only: { type: FILE, status: DARK_LANE }
-  → Persona frames: "Here is the file. Ready to review on your instruction."
-  → File content delivered to operator — no model read it
-  Verify: inject prompt injection in file. Verify it never reached model context.
-
-BLIND WRITE
-  Operator sends API key via Telegram
-  → Dark Lane carries it to Coding Faculty
-  → Written to config — no model context contains the key
-  Verify: audit log confirms key never appeared in any model call.
-```
-
-**Claim proven:** model-invisible transit is real, auditable, and holds under adversarial content.
-
----
-
-## Evolution Beyond Stages
-
-Once all five stages are proven, three hardening phases complete the architecture:
-
-**Phase A — Messaging hardening**  
-Synapse internals swapped for hardened transport. Zero Faculty changes.
-
-**Phase B — Zig compilation**  
-Nervous System + Immune System compiled as one Zig binary. Cortex compiled separately. Prime Directives compiled in — no longer a file at runtime. Faculties remain TypeScript forever.
-
-**Phase C — Full deployment**  
-All Faculty categories live. Coding Faculty builds new Faculties autonomously. Optimization Pass runs on automatic schedule. CARL is a continuously improving production system.
-
-```
-PHASE B TARGET
-
-  ┌──────────────────────────────────────┐
-  │  NERVOUS SYSTEM + IMMUNE  (Zig)      │
-  │  Relay · Reflex · Dark Lane          │
-  │  PRIME compiled in                   │
-  │                                      │
-  │  CORTEX  (Zig)                       │
-  │  Persona · Arc Store                 │
-  │  Reasoning Engine · Decomposer       │
-  │  Result Buffer · Synthesis Gate      │
-  │                                      │
-  │  In-process typed channels           │
-  └──────────────┬───────────────────────┘
-                 │ ONE typed boundary
-  ┌──────────────┴───────────────────────┐
-  │  FACULTY RUNTIME  (TypeScript / Bun) │
-  │  Hot-reloadable. Always.             │
-  └──────────────────────────────────────┘
-```
-
----
-
-## Stack
-
-| Component | Prototype | Production |
-|---|---|---|
-| Runtime | Bun | Bun (Faculties) + Zig (core) |
-| Language | TypeScript | TypeScript (Faculties) + Zig (core) |
-| Event bus | Node EventEmitter via Synapse | Compiled typed channels via Synapse |
-| Schema validation | Zod | Zig comptime types |
-| Short Term Memory | In-process hash map | Zig HashMap |
-| Crystallized Memory | LevelDB or SQLite | Abstracted K/V interface |
-| Telegram | Grammy | Grammy |
-| LLM interface | Vercel AI SDK | Vercel AI SDK |
-| File watching | Chokidar | Chokidar |
-
----
-
-## Configuration Files
-
-| File | Purpose | Who can modify | Phase |
-|---|---|---|---|
-| PRIME.md | Prime Directives. Compiled in production. | Operator before build only | Build time |
-| PERSONA.md | Identity — name, role, tone, coloring. | Operator via authenticated channel | Runtime |
-| PROTOCOL.md | Behavior — rules and output discipline. | Operator via authenticated channel | Runtime |
-| SCHEMA.md | Relay language — schema definitions. | Coding Faculty with operator auth | Runtime |
-| AGENTS.md | Faculty registry — routing, model assignments. | Coding Faculty with operator auth | Runtime |
-
----
-
-## Naming Reference
-
-| Term | Definition |
-|---|---|
-| Reasoning Arc | Unit of reasoning — trajectory, beginning, resolution |
-| Arc Store | All active Reasoning Arcs held by Persona |
-| Persona | Main loop — event-driven, zero tokens per cycle, tints all decisions |
-| Synapse | Typed abstraction layer between Faculty code and Nervous System |
-| Relay | Text → typed objects, schema validation |
-| Reflex | Pure pattern lookup — direct Faculty routing, no Cortex |
-| Gating model | Cheap model inside Reasoning Engine — decides tier per iteration |
-| Decomposer | Executes Execution Plans via Faculty dispatch |
-| Result Buffer | Per-Arc async collection of Faculty results |
-| Synthesis Gate | Notifies Persona when Arc is ready |
-| Resolution Record | Metadata after every resolved request — feeds Optimization Pass |
-| Optimization Pass | Threshold tuning sweep — another Arc to Persona |
-| Dark Lane | Model-invisible data path inside Nervous System |
-| Dark Transit | Principle — content moves through CARL without entering model context |
-| Blind Fetch | Outbound Dark Transit — payload delivered cold |
-| Blind Write | Inbound Dark Transit — secret written, never read by model |
-| Inert by Default | Cold content cannot self-activate into model context |
 | Short Term Memory | Volatile hash table — wildcard observation accumulation |
 | Crystallized Memory | Durable K/V store — collapsed beliefs, Reflex corpus |
-| Active Arc Index | Lightweight boot payload — Arc IDs, statuses, one-line summaries only |
-| Boot Protocol | Surgical context assembly at startup — identity always, everything else on demand |
-| Confidence | Per-origin trust score for ambiguous pattern resolutions |
-
----
-
-## Repository Structure
-
-```
-carl/
-├── nervous-system/
-│   └── immune-system/
-├── synapse/
-├── cortex/
-│   ├── persona/
-│   │   ├── arc-store/
-│   │   ├── ambiguity/
-│   │   └── output-composer/
-│   ├── reasoning-engine/
-│   │   └── gating/
-│   ├── decomposer/
-│   ├── result-buffer/
-│   └── synthesis-gate/
-├── faculties/
-│   ├── memory/
-│   │   ├── short-term/
-│   │   └── crystallized/
-│   ├── telegram/
-│   ├── coding/
-│   ├── gmail/
-│   ├── calendar/
-│   ├── web/
-│   ├── jobs/
-│   └── monitor/
-├── workspace/
-│   ├── PRIME.md
-│   ├── PERSONA.md
-│   ├── PROTOCOL.md
-│   ├── SCHEMA.md
-│   └── AGENTS.md
-├── examples/
-│   └── personas/
-└── memory/
-```
+| Active Arc Index | Lightweight boot payload — Arc IDs + statuses only |
+| Boot Protocol | Minimal working set assembly — identity always, rest on demand |
+| Confidence | Per-origin trust score for ambiguous patterns |
+| Partial Compression | Ambiguous input compressed with wildcard fields |
+| Staged Canary | 1% traffic promotion for generated Faculties |
 
 ---
 
 ## Naming
 
-**CARL** — Cognitive Autonomous Recursive Learning
-
-Recursive because the system feeds back on itself across multiple simultaneous loops — patterns crystallize into Reflex, Faculties chain through each other, Coding Faculty extends the system which feeds new patterns, Arc context accumulates and reshapes decisions, and improvement compounds as thresholds self-optimize. Learning because the system improves through operation, not retraining. No external trigger. No pipeline. The system learns by running.
+**CARL** — Cognitive Autonomous Recursive Learning. Recursive because the system feeds back on itself across multiple simultaneous loops. Learning because the system improves through operation, not retraining.
 
 ---
 
 ## Author
 
-CARL was conceived and designed by Samuël Tremblay in April 2026.
+Conceived and designed by Samuël Tremblay in April 2026.
 
-**Samuël Tremblay**  
-Montreal, Quebec, Canada  
-[github.com/barnacker](https://github.com/barnacker)
+**Samuël Tremblay** — Montreal, Quebec, Canada — [github.com/barnacker](https://github.com/barnacker)
 
 ---
 
 ## Contributing
 
-Contributions are welcome. By contributing to this project you agree that your contributions will be licensed under the same Apache 2.0 license that covers the project. For significant contributions, please open an issue first before submitting a pull request.
-
-Contributors retain copyright over their own contributions. By submitting a pull request, contributors grant Samuël Tremblay and all users of CARL a perpetual, worldwide, non-exclusive, royalty-free license to use, copy, modify, and distribute their contributions as part of this project under the Apache 2.0 license.
+Contributions welcome under Apache 2.0. Open an issue before significant PRs. Contributors retain copyright; by submitting a PR, contributors grant a perpetual, worldwide, non-exclusive, royalty-free license under Apache 2.0.
 
 ---
 
 ## License
 
-Copyright 2026 Samuël Tremblay  
-Licensed under the Apache License, Version 2.0.  
+Copyright 2026 Samuël Tremblay — Licensed under the Apache License, Version 2.0.
 http://www.apache.org/licenses/LICENSE-2.0
-
-- Use freely for personal and commercial purposes
-- Modify and distribute modified versions
-- Include original copyright notice and license
-- State changes made if distributing modified versions
-- Cannot use CARL name or Samuël Tremblay's name to endorse derived products without permission
-- No warranty — use at your own risk# CARL — Cognitive Autonomous Recursive Learning
-
-CARL is a framework for building systems that reason independently, self-protect by design, and grow more capable the longer they run — by converting experience into reflex, chaining Faculties recursively to resolve complex problems, and feeding every resolved request back into a loop that makes the next response faster, cheaper, and more precise.
-
-CARL is not an agent framework.  
-CARL is not a chatbot platform.  
-CARL is not an automation tool.
-
-CARL is a synthetic cognitive architecture. Every component maps to a functional analog in biological cognition. The result is a system that thinks, protects itself structurally, and improves the longer it runs — booting the way a human does: knowing who it is and what matters, retrieving everything else on demand, as fast as reflex.
-
----
-
-## Why CARL Exists
-
-The agent paradigm made AI automation accessible. It is also fundamentally limited. Agents conflate reasoning and execution. That conflation is where security breaks down, costs compound, and systems become unpredictable.
-
-CARL eliminates the agent concept entirely.
-
-| Dimension | Agent Frameworks | CARL |
-|---|---|---|
-| Reasoning | Each agent reasons independently | Only Cortex reasons |
-| Security | Prompt-based, bypassable | Structural, compiled, code-enforced |
-| Routing | Static role assignment | Dynamic, learned via Reflex |
-| Execution | Agent decides and acts | Faculty executes only |
-| Data transit | All content enters model context | Dark Lane — model-invisible transit |
-| Learning | External retraining | In-process pattern crystallization |
-| Trust | Assumed | Earned per identity, per pattern |
-| Operation | Request-response, blocking | Continuous, multitasking, non-blocking |
-
-One persistent reasoning core. Infinite specialized Faculties. Each Faculty potentially multi-model. A step toward general intelligence architecture.
-
----
-
-## What Makes CARL Recursive
-
-Recursion in CARL is not a single mechanism — it is a property that emerges from several reinforcing loops operating simultaneously.
-
-**Reflex crystallization loop.** Cortex resolves a request. The compressed intent and Faculty route are written to Memory. Memory crystallizes the pattern. The next matching request routes directly — no Cortex, no LLM, no cost. That resolution generates a new pattern. The loop feeds itself.
-
-**Faculty chaining.** Cortex dispatches to Faculty A. Faculty A's result triggers dispatch to Faculty B. Each result can spawn the next dispatch. The chain depth is not fixed — Cortex decides at each step.
-
-**Coding Faculty self-extension.** Coding Faculty reads existing Faculty source, writes a new Faculty, hot-reloads it. That Faculty begins generating resolved requests. Those resolutions feed the Reflex loop. CARL extended itself and that extension immediately improves the system.
-
-**Arc context accumulation.** Each Faculty result fed back into the active Reasoning Arc changes what Cortex does next. Each result shapes the next decision, which shapes the next result.
-
-**Confidence compounding.** As crystallized patterns accumulate, Reflex handles more requests. More Reflex hits means fewer Cortex invocations. More throughput generates more patterns. Improvement compounds.
-
-**Threshold self-optimization.** Every resolved request generates a Resolution Record. The Optimization Pass reads these records and tunes escalation thresholds — over time the system biases itself toward the cheapest viable path without being told to.
-
----
-
-## Laws
-
-These are invariants. A system that violates any of these is not CARL.
-
-**Law 1 — Everything is a Faculty.**  
-Every capability follows the same pattern: subscribe through the Synapse, execute, publish results. Telegram, Gmail, Calendar, Memory, Coding — all Faculties. Adding capability means adding a Faculty. The core never changes. Cortex is the single exception — above the Faculty pattern, not outside it.
-
-**Law 2 — The Nervous System is the only path.**  
-No component communicates with another directly. All traffic flows through the Nervous System. No exceptions. One path means one gate.
-
-**Law 3 — One Reasoning Locus.**  
-Cortex is the only component that reasons about what to do next. Faculties execute deterministically or invoke models for narrow bounded tasks — never for deciding what happens next. When a Faculty needs a decision, it does not decide. It publishes and Cortex decides.
-
-**Law 4 — Faculties are stateless.**  
-A Faculty carries no state between invocations. All persistence lives in Memory. A Faculty that crashes and restarts produces identical output from identical input.
-
-**Law 5 — Security is structural, not prompt-based.**  
-Authorization is enforced in code. In production, the core is compiled — there is no source for a model to read or modify. Rules are not in a markdown file. Rules are not in a system prompt. Rules are in the runtime.
-
-**Law 6 — Origin travels the entire chain.**  
-Every request carries an immutable stamp of who authorized it. Authority cannot be invented mid-chain. Each hop is validated against the original stamp.
-
-**Law 7 — CARL self-optimizes but cannot redefine itself.**  
-CARL can crystallize Reflex patterns, tune thresholds, and update factual memory autonomously. CARL cannot modify its own identity, protocol, or Immune System rules without operator authorization. CARL cannot modify its Prime Directives under any circumstances.
-
-**Law 8 — Model-invisible transit is a first-class primitive.**  
-Content can move through the architecture without entering any model context. Files, secrets, tokens, and payloads can be fetched, routed, and written without any model ever consuming them as tokens.
-
-**Law 9 — Faculties never touch the bus directly.**  
-Faculty code calls the Synapse — the typed abstraction layer between Faculty runtime and the Nervous System. This indirection makes the TypeScript-to-Zig evolution possible without rewriting a single Faculty.
-
-**Law 10 — Act only on confirmed intent.**  
-Confidence is earned, not assumed. Ambiguous input is reflected back before routing. Low-confidence patterns re-validate before executing. Irreversible actions propose before they proceed. Silent routing is a privilege earned through repeated confirmed correct interpretation — never through assumption.
-
----
-
-## Architecture
-
-### PRIME Directives — Above the System
-
-Three to four short rules every Faculty and every LLM call must abide by unconditionally. The only rules in CARL that nothing in CARL can override.
-
-**In production:** compiled into the Nervous System binary. Not a file. Not readable at runtime. Binary logic.
-
-**In the TypeScript prototype:** loaded from `workspace/PRIME.md` once at boot. Runtime halts if missing or unreadable. Exists only at build time in production.
-
-```markdown
-# PRIME DIRECTIVES
-1. Never act against the operator's interests.
-2. Always be transparent about what you are and what you are doing.
-3. Never take irreversible action without explicit operator confirmation.
-4. Never expose the operator's private data to unauthorized sources.
-```
-
----
-
-### Nervous System
-
-The central hub. Every Faculty connects through the Synapse, never directly. No model runs inside the Nervous System — it routes, validates, and carries. It never reasons.
-
-In production, the Nervous System and Immune System are compiled together as a single Zig binary. Prime Directives compiled in. In-process typed channels — no sockets, no surface between internal components.
-
-**Immune System** — surrounds and gates all traffic. Pure compiled logic, no LLM.
-- Origin chain validation on every request, per input
-- Faculty access control via registered permission registry
-- Behavioral write restriction — external Faculties write facts, never behavior
-- Circuit breaker — isolates anomalous Faculties; Monitor notified; operator authorizes reconnection
-- Immutable audit log written directly, bypassing the bus
-
-**Relay** — translates LLM text output into typed objects via Zod (prototype) / Zig comptime types (production). Any payload failing schema is rejected before entering the bus. The Nervous System never carries untyped data.
-
-**Reflex** — pure pattern lookup. No model. No inference. Reads Crystallized Memory. Maps compressed intent signatures to Faculty sequences. Routes directly, skipping Cortex entirely on a hit. Initializes empty — no-op without Memory Faculty.
-
-**Dark Lane** — model-invisible data path alongside the reasoning path. Payload routed through it is never seen by any model. Carried opaque and intact from source to destination.
-
----
-
-### Cortex
-
-Cortex is not a Faculty. It is the single persistent cognitive entity in CARL — continuously running, multitasking across N simultaneous Reasoning Arcs, never blocked waiting for any single result.
-
-In production, a separate compiled Zig binary. One controlled typed boundary to the Nervous System. Soft surfaces — PERSONA.md, PROTOCOL.md, model assignments — remain configurable without recompilation.
-
-```
-CORTEX
-
-PERSONA — main loop, always running
-  ├── Arc Store access         ← all active Arcs held in awareness simultaneously
-  ├── Identity context         ← PERSONA.md tints all decisions in the loop
-  ├── Arc router               ← which Arc does this input belong to?
-  ├── Ambiguity check          ← on new input
-  ├── Compression              ← intent extraction, partial or full
-  ├── Priority manager         ← what needs attention right now?
-  ├── Output composer          ← when Arc is ready to respond
-  └── spawns / manages ↓
-
-REASONING ENGINE — subordinate loop, one per Arc requiring it
-  ├── Gating model             ← cheap, runs every iteration
-  │     decides: Execution Faculty or Reasoning Faculty?
-  │     decides: is the plan ready?
-  ├── calls Execution Faculty  ← cheap, bounded steps, via Synapse
-  ├── calls Reasoning Faculty  ← expensive, deep steps, via Synapse
-  ├── calls Memory Faculty     ← context gathering, via Synapse
-  └── reports Execution Plan to Persona when ready
-
-DECOMPOSER — executor, one per active plan
-  ├── receives Execution Plan from Persona
-  ├── dispatches Faculty sequence through Synapse
-  └── results land in Result Buffer
-
-RESULT BUFFER — per Arc
-  └── collects async Faculty results, non-blocking
-
-SYNTHESIS GATE — per Arc
-  └── notifies Persona when Arc ready for synthesis or response
-```
-
----
-
-### Persona — The Main Loop
-
-Persona is the soul of a CARL instance. Not an input/output formatter. The continuously running cognitive center that holds all active Reasoning Arcs in awareness simultaneously and tints every decision with the identity defined in PERSONA.md.
-
-The same problem approached by two CARL instances with different Personas produces different plans, different Faculty weightings, different output framing — not because the facts changed, but because the interpretive lens did. Persona does not control the reasoning. It tints it.
-
-**The loop costs nothing at rest.** Persona does not invoke a model on each cycle. It reads Arc states, checks for new input, checks for Faculty results — pure logic, no tokens. A model is invoked only when a specific Arc step requires it. A system with ten suspended Arcs cycles indefinitely at zero cost.
-
-```
-PERSONA CYCLE — zero token cost
-
-  await next event          ← sleeping, zero cost, zero tokens
-       ↓
-  EVENT ARRIVES — one of:
-    new_input               ← Sensory Faculty published a message
-    faculty_result          ← Faculty completed, result in Buffer
-    arc_timeout             ← Arc suspended too long, notify operator
-    optimize_trigger        ← scheduled threshold sweep
-       ↓
-  handle event
-  update Arc state
-  dispatch if needed        ← model invoked only here, only if required
-       ↓
-  await next event          ← back to sleep immediately
-```
-
-Persona subscribes to the Nervous System. Sensory Faculties publish to the Nervous System. The Nervous System routes events to Persona. Persona never subscribes to a Faculty directly — Law 2 holds.
-
-**Multitasking:**
-
-```
-Operator sends message about project A
-  → Persona wakes, opens Arc A, spawns Reasoning Engine, sleeps
-
-Operator sends message about project B — Arc A still running
-  → Persona wakes, opens Arc B simultaneously, sleeps
-
-Arc A Faculty result arrives
-  → Persona wakes, folds result into Arc A Buffer, sleeps
-
-Arc B needs clarification
-  → Persona wakes, composes question, Arc B suspends, sleeps
-
-Operator answers Arc B, Arc A resolves
-  → Persona wakes, handles both, delivers results, sleeps
-```
-
-**Ambiguity detection:**
-
-```
-UNAMBIGUOUS — "Show me my calendar for tomorrow"
-  Silent compression:
-  { action: CHECK, domain: CALENDAR, scope: TEMPORAL,
-    subject: SELF, params: { time_ref: "tomorrow" } }
-  → Reflex check. No question asked. Same for all operators.
-
-AMBIGUOUS — "Show me what's for tomorrow"
-  Partial compression:
-  { action: CHECK, domain: *, scope: TEMPORAL,
-    subject: SELF, params: { time_ref: "tomorrow" } }
-  domain is wildcard — Persona reflects back:
-  "So if I understand correctly, you want to check
-   your calendar for tomorrow — not weather or tasks?"
-  → Operator confirms → wildcard filled → Memory records observation
-```
-
-`time_ref` was never ambiguous — extracted silently. Only wildcard fields trigger re-validation. Every confirmation feeds the Reflex corpus.
-
----
-
-### Boot Protocol
-
-A human does not wake up with full context. They wake knowing who they are and what matters today. When they see a face, memory surfaces instantly — not because it was preloaded, but because the signal triggered retrieval. When a topic comes up, associated knowledge floods in automatically. No briefing document. No context dump. Identity is always present. Everything else arrives on demand, triggered by signal.
-
-CARL boots the same way.
-
-**What loads at boot — always, immediately, small:**
-
-```
-PRIME directives       ← 4 lines, compiled in production
-PERSONA.md             ← identity, tone, coloring — ~10 lines
-PROTOCOL.md            ← behavioral rules — ~10 lines
-Active Arc index       ← open Arc IDs + status + one-line summary only
-                          { arc_id, status, origin, intent_summary }
-                          not the Arc contents — just what is pending
-```
-
-Target: under 500 tokens. Persona wakes knowing who it is and what is in flight. Nothing else.
-
-**What never preloads — fetched on demand by Memory Faculty:**
-
-```
-Arc full context       ← fetched when that Arc becomes active
-Reflex table           ← queried by Nervous System, never loaded into Persona
-Crystallized Memory    ← queried by Memory Faculty on request
-Resolution Records     ← fetched only during Optimization Pass
-Archived Arcs          ← fetched only if operator references them
-```
-
-**How retrieval works — the reflex analogy:**
-
-A message arrives. The origin stamp is recognized. The Arc index entry surfaces. Memory Faculty fetches that Arc's context. Persona responds. The retrieval is fast enough to feel like reflex — because architecturally, it is. The origin stamp is the face. The Arc index is the recognition. The Memory Faculty fetch is the context flooding in.
-
-```
-SIGNAL ARRIVES          ← new message, origin stamped
-      ↓
-ARC INDEX HIT           ← which Arc does this belong to?
-      ↓
-MEMORY FACULTY FETCH    ← Arc full context loaded now, not before
-      ↓
-PERSONA ACTIVE          ← working context assembled, nothing extra
-      ↓
-ARC RESOLVED            ← context released, Arc archived
-      ↓
-PERSONA SLEEPS          ← working context cleared
-```
-
-Context is a working surface, not a storage space. It assembles when needed and clears when done. A CARL instance that has been running for a year does not have a heavier boot than one that started yesterday. The index stays small. The memory stays in Memory Faculty. The context stays surgical.
-
-**Boot is not a cold start — it is a fast resume.**
-
-Every resolved Arc is archived in Crystallized Memory. Every crystallized Reflex pattern persists. Every confidence score survives restart. The instance that wakes after a reboot is not starting over. It is resuming — with the same identity, the same learned patterns, the same pending work — assembled on demand, as fast as recognition.
-
----
-
-### Compressed Intent — Payload Structure
-
-What Reflex matches on and what Cortex reasons from. Origin stamp travels separately — never part of the intent record.
-
-```
-COMPRESSED INTENT RECORD
-{
-  action:   CHECK | FETCH | WRITE | DELETE | SCHEDULE
-          | SUMMARIZE | MONITOR | DRAFT | SEARCH | BUILD | ...
-
-  domain:   WEATHER | CALENDAR | EMAIL | FILE | WEB
-          | CODE | MEMORY | SYSTEM | ...
-
-  subject:  SELF | OTHER | EXTERNAL
-
-  scope:    TEMPORAL | SPATIAL | TOPICAL | null
-
-  params:   {                          ← variable payload
-              time_ref:   "tomorrow"     never Reflex-matched
-              location:   "Montreal"     passed to Faculty as-is
-              filter:     "Kairos"
-              ...
-            }
-}
-```
-
-**Domain is a semantic classifier — not a Faculty map.** Multiple Faculties can serve the same domain. Reflex maps the full signature `{ action + domain + subject + scope }` to a Faculty sequence.
-
-```
-{ action: CHECK,     domain: WEATHER,  scope: TEMPORAL } → [ Weather Faculty ]
-{ action: SUMMARIZE, domain: EMAIL,    scope: TEMPORAL } → [ Gmail → synthesis ]
-{ action: CHECK,     domain: *,        scope: TEMPORAL } → identity-scoped
-```
-
-**Params carry variables — Reflex never sees them.** "Weather for tomorrow", "weather for next week", "weather for Friday" — same Reflex key. `time_ref` is a param passed through.
-
----
-
-### Reasoning Engine — Subordinate Loop
-
-Spawned by Persona per Arc that needs it. Reports Execution Plan back to Persona when ready. All Faculty calls through Synapse. All results Relay-validated.
-
-```
-REASONING ENGINE LOOP
-
-  Gating model evaluates Arc state  (cheap, every iteration)
-       ↓                    ↓
-  Execution Faculty     Reasoning Faculty
-  (cheap, bounded)      (expensive, deep)
-       ↓
-  Memory Faculty if context needed
-  repeat until Execution Plan producible
-       ↓
-  report Execution Plan to Persona
-```
-
-Gating model never reasons about the problem. It reasons about the reasoning process — what tier, is the plan ready. A simple problem resolves in one iteration at near-zero cost. The loop self-corrects toward cheapness. The Gating model's escalation threshold is tunable by the Optimization Pass.
-
----
-
-### Memory Faculty
-
-All persistence. The substrate that makes Reflex possible.
-
-```
-TIER 0    Prime Directives
-            compiled in production — file exists at build time only
-
-TIER 1    Dynamic runtime
-            facts, session context, Arc state
-
-TIER 1b   Short Term Memory
-            wildcard observations per origin per ambiguous pattern
-            hash table, O(1), volatile — lost on restart by design
-            bounded: max N observations before forced collapse
-
-TIER 1c   Crystallized Memory
-            collapsed beliefs, Reflex corpus, Resolution Records,
-            archived Arcs, Active Arc index
-            K/V store, durable, survives restart
-            prototype: LevelDB or SQLite
-            production: abstracted K/V interface
-
-TIER 2    Configuration
-            routing rules, Faculty registry, tuned thresholds
-            Optimization Pass writes here with Cortex authorization
-
-TIER 3    Identity
-            PERSONA.md, PROTOCOL.md
-            operator only, via authenticated channel
-```
-
-**Crystallization:**
-
-```
-ACCUMULATION
-  Each ambiguous confirmation → observation in Short Term
-  { wildcard: domain, resolved_to: CALENDAR, origin: A, timestamp: t }
-
-COLLAPSE — threshold reached or observation ceiling hit
-  Raw observations: discarded
-  Crystallized: { domain: CALENDAR, weight: 0.86, corrections: 1 }
-  Short Term entry: null
-
-POST-COLLAPSE CORRECTIONS
-  Enough corrections → confidence demotes to LOW
-  System re-enters accumulation, rebuilds belief
-```
-
-**Confidence states:** `UNSET → LOW → HIGH → LOCKED`  
-`PROVISIONAL` when ceiling hit before threshold.
-
-**Identity-scoped confidence:** Unambiguous patterns are global. Ambiguous patterns tracked per origin stamp. A new operator starts at UNSET. Trust is not transferable.
-
----
-
-### Optimization Pass
-
-Threshold tuning sweep — another Arc to Persona.
-
-```
-RESOLUTION RECORD — written after every resolved request
-{
-  intent_signature, path_taken, faculty_sequence,
-  cost, duration, result_quality, thresholds_used
-}
-
-TUNABLE THRESHOLDS
-  1 — Reflex confidence ceiling
-  2 — Gating model escalation trigger
-  3 — Result Buffer completeness window
-  4 — Decomposer step count ceiling
-
-TRIGGERS
-  (a) operator: "optimize yourself"
-  (b) scheduled: every N resolved requests
-  (c) automatic: cost spike
-  (d) automatic: correction rate spike
-
-AUTHORITY
-  Threshold-only: Cortex authorized
-  Structural: operator required
-```
-
-**The cost funnel — how a mature CARL looks:**
-
-```
-ALL REQUESTS
-├── REFLEX              zero model cost        grows → majority
-├── SIMPLE PATH         cheap model            stable → common
-├── COMPLEX → SIMPLE    expensive + cheap      shrinks → rare
-└── COMPLEX → SYNTHESIS most expensive         shrinks most → exceptional
-```
-
----
-
-### Dark Transit
-
-**Blind Fetch** — outbound. Faculty fetches content, routes through Dark Lane. No model reads it. Cortex receives `{ type: FILE, status: DARK_LANE }` only. Content lands cold.
-
-**Blind Write** — inbound. Operator provides secret or token. Dark Lane carries it to target. Written without any model reading it.
-
-**Inert by Default** — cold content cannot self-activate. A prompt injection in a cold file never reaches model context. The only path from cold to active is deliberate operator elevation.
-
-```
-CONTENT TRUST STATES
-  COLD      ← Dark Lane, no model has seen it
-  ELEVATED  ← operator requested read
-  ACTIVE    ← model reasoning over it
-```
-
----
-
-### Synapse
-
-Typed abstraction layer between Faculty code and the Nervous System. Law 9 made concrete. In prototype wraps EventEmitter. In production wraps the compiled boundary. Faculty code never changes when transport changes.
-
-```typescript
-interface Synapse {
-  // Publish a typed event to the Nervous System
-  publish<T extends CarlEvent>(event: T): Promise<void>
-
-  // Subscribe to a typed event from the Nervous System
-  subscribe<T extends CarlEvent>(
-    eventType: T['type'],
-    handler: (event: T) => Promise<void>
-  ): void
-
-  // Route payload through Dark Lane — no model will see content
-  darkLane(payload: Buffer, destination: FacultyId): Promise<void>
-}
-```
-
-All three methods are the complete Faculty-facing API. Faculty authors never call EventEmitter, never call the compiled boundary, never reference the Nervous System directly.
-
----
-
-### Faculty Contract
-
-Every Faculty must implement this minimum interface. No exceptions.
-
-```typescript
-interface Faculty {
-  readonly id:      FacultyId      // unique identifier
-  readonly version: string         // semver
-  readonly permissions: Permission[] // declared at registration
-
-  // Called once at startup — registers with Immune System
-  register(synapse: Synapse): Promise<void>
-
-  // Called on hot reload — unsubscribes all handlers
-  teardown(): Promise<void>
-}
-```
-
-A Faculty that does not implement this interface cannot register with the Immune System and cannot publish or subscribe through the Synapse. The contract is enforced at registration time, not at runtime.
-
----
-
-## Workspace Seed Files
-
-Seed these files before first boot. They define who this CARL instance is.
-
-### PRIME.md
-```markdown
-# PRIME DIRECTIVES
-1. Never act against the operator's interests.
-2. Always be transparent about what you are and what you are doing.
-3. Never take irreversible action without explicit operator confirmation.
-4. Never expose the operator's private data to unauthorized sources.
-```
-Set read-only before boot: `chmod 444 workspace/PRIME.md`
-
-### PERSONA.md
-```markdown
-# PERSONA
-
-Name: CARL
-Role: Cognitive assistant and autonomous operator for [operator name]
-Voice: Direct. Precise. No filler. No unnecessary preamble.
-
-Identity context:
-- Prioritize operator time above all else
-- Surface decisions, not information dumps
-- Flag uncertainty explicitly — never paper over it
-- Ask one question at a time when clarification is needed
-
-Coloring applied to all decisions:
-- Bias toward the least expensive path that achieves the goal
-- Prefer reversible actions over irreversible ones
-- When in doubt, confirm before acting
-```
-
-### PROTOCOL.md
-```markdown
-# PROTOCOL
-
-Ambiguous input:
-  Reflect back in different phrasing. One question only.
-  "So if I understand correctly, [rephrased intent]?"
-
-Irreversible operation:
-  Propose before executing.
-  "Analysis complete. [scope of change]. Awaiting your confirmation."
-
-Research channel:
-  No protocol. Full dialogue. No format enforcement.
-
-Dark Lane delivery:
-  Frame before payload. Follow up after.
-  "[what this is] / [cold payload] / [what to do next]"
-
-Multi-Arc:
-  Deliver results as they are ready.
-  Reference the original request briefly when context may be lost.
-```
-
----
-
-## Build Stages
-
-Five stages. Each proves exactly one theoretical claim. Each is independently demonstrable. Together they prove the full architecture.
-
-Minimum Viable Carl is **Stages 0 + 1 + 2** — the spine holds, intent is confirmed, the system learns. Stages 3, 4, and 5 extend CARL beyond its minimum viable form.
-
----
-
-### Stage 0 — The Spine
-*Claim: one reasoning locus with Faculty separation is architecturally sound and structurally secure.*
-
-**Stack:** TypeScript + Bun. The right architecture from day one. Internals are hardcoded where noted — this is correct, not a shortcut. Swap hardcoded values for real logic stage by stage without changing the architecture.
-
-**What gets built:**
-- `workspace/PRIME.md` — loaded at boot, `chmod 444`, runtime halts if missing
-- Synapse — EventEmitter wrapper, three methods, stable interface
-- Nervous System — typed EventEmitter bus, Relay with Zod validation
-- Immune System — origin validation, Faculty permission registry, audit log
-- Persona — async event loop, Arc Store as `Map<ArcId, Arc>`, no model called during loop
-- Reasoning Engine — **hardcoded** Execution Plan returned, no real model call yet
-- Memory Faculty stub — Tier 1 flat JSON file + Active Arc index persisted across restarts
-- Telegram Sensory Faculty — Grammy, stamps origin, publishes through Synapse
-- One stub Execution Faculty — returns hardcoded response
-
-**What is hardcoded:**
-- Reasoning Engine always returns the same Execution Plan
-- Execution Faculty always returns the same result
-- Reflex table empty — always misses
-- No ambiguity detection — all input treated as unambiguous
-
-**What is real from day one:**
-- All ten Laws enforced structurally
-- Synapse — Faculty code never touches the bus directly
-- Immune System — origin validated every hop
-- Persona event loop — zero tokens per cycle, wakes on event only
-- Arc lifecycle — open → active → resolved
-- Relay — untyped payloads rejected at the bus
-
-**Proof of life:**
-```
-1. Operator sends message via Telegram
-2. Telegram Faculty stamps origin, publishes through Synapse
-3. Immune System validates origin and permissions
-4. Persona wakes from await — new_input event
-5. Intent compressed (unambiguous path, no check yet)
-6. Reflex misses — table empty
-7. Reasoning Engine invoked — returns hardcoded Execution Plan
-8. Decomposer dispatches stub Faculty through Synapse
-9. Stub Faculty returns hardcoded result through Synapse
-10. Result Buffer collects, Synthesis Gate notifies Persona
-11. Persona wakes — faculty_result event, zero model calls during wait
-12. Persona composes output, Telegram Faculty delivers
-
-Verify: no Faculty called the bus directly.
-Verify: no untyped payload reached the bus.
-Verify: Persona event loop consumed zero tokens during steps 4-11 wait.
-Verify: PRIME.md was never touched.
-```
-
-**Claim proven:** the architecture holds. All Laws enforced. Right shape from day one. Hardcoded internals are irrelevant — nothing in the architecture depends on them being real.
-
----
-
-### Stage 1 — Confirmed Intent
-*Claim: a cognitive system can detect ambiguity, reflect it back precisely, and earn the right to act — never assume.*
-
-**What gets added:**
-- Persona ambiguity detection — full implementation
-- Partial compression with wildcard fields
-- Re-validation rephrasing in Persona
-- Proposal flow for irreversible operations
-- Reasoning Engine — first real model call (Execution Faculty, cheap model)
-
-**What stays hardcoded:** Reflex corpus, crystallization, multitasking.
-
-**Proof of life:**
-```
-Unambiguous: "show me my calendar for tomorrow"
-  → silent compression, no question, Faculty dispatched
-
-Ambiguous: "show me what's for tomorrow"
-  → Persona: "So if I understand correctly, you want
-     to check your calendar — not weather or tasks?"
-  → operator confirms → Faculty dispatched
-
-Irreversible: "delete all my emails from last year"
-  → Persona proposes scope → operator confirms or cancels
-```
-
-**Claim proven:** CARL never acts on assumption. Partial compression proves it — `time_ref` extracted silently, only `domain` wildcard triggers the question.
-
----
-
-### Stage 2 — The Learning Loop
-*Claim: a system can learn by operating — becoming faster and cheaper without retraining or external trigger.*
-
-**What gets added:**
-- Memory Faculty — Tier 1b Short Term (hash table) + Tier 1c Crystallized (K/V)
-- Observation accumulation on confirmed ambiguous resolutions
-- Crystallization on threshold — garbage collection of raw observations
-- Reflex corpus populated from crystallized entries
-- Reflex routing active — Cortex skipped on hit
-- Identity-scoped confidence per origin
-
-**Proof of life:**
-```
-Operator asks "what's for tomorrow?" repeatedly, confirms CALENDAR each time
-  → observations accumulate in Short Term Memory
-
-Threshold reached → crystallization fires
-  → Short Term: null
-  → Crystallized: { domain: CALENDAR, weight: 0.9, confidence: HIGH }
-  → Reflex entry written
-
-Next request — Reflex hits
-  → Calendar Faculty dispatched directly
-  → Cortex never invoked
-  → LLM calls: zero
-```
-
-Measure LLM call count before and after crystallization. The drop is the proof.
-
-**Claim proven:** the system learned by running. Recursive loop is real and measurable.
-
----
-
-### Stage 3 — Continuous Entity
-*Claim: CARL is not a request-response system — it is a continuously running cognitive entity managing multiple simultaneous Reasoning Arcs.*
-
-**What gets added:**
-- True concurrent Arc processing — Persona handles N Arcs in parallel
-- Non-blocking Arc management — no Arc blocks another
-- Arc suspension and resumption
-- Results delivered as ready, not in request order
-
-**Proof of life:**
-```
-Operator sends long-running request A
-  → Arc A opens, Reasoning Engine spawned
-  → Persona continues — does not wait
-
-Immediately: operator sends quick request B
-  → Arc B opens simultaneously
-  → Arc B resolves first — delivered immediately
-  → Arc A still running — unaffected
-
-Arc A resolves — delivered when ready
-```
-
-**Claim proven:** CARL is a continuous entity. Two Arcs ran simultaneously, resolved independently, delivered as ready.
-
----
-
-### Stage 4 — Self-Optimization
-*Claim: a cognitive system can tune its own cost-performance thresholds through operation — autonomously moving toward the cheapest viable path.*
-
-**What gets added:**
-- Resolution Records written after every resolved request
-- Optimization Pass — threshold sweep as a regular Arc
-- Automatic triggers — cost spike, correction rate spike
-- Threshold updates written to Tier 2 configuration
-
-**Proof of life:**
-```
-Baseline: measure cost distribution — X% Reflex, Y% Simple, Z% Complex
-
-Run 100 varied interactions
-
-Trigger: "optimize yourself"
-  → Optimization Arc opens
-  → Reasoning Engine reads Resolution Records
-  → identifies unnecessary Reasoning Faculty invocations
-  → thresholds adjusted, written to Tier 2
-
-Measure again: Reflex % higher, Complex % lower
-  → measurable cost reduction, zero operator intervention
-```
-
-**Claim proven:** the system improved itself. Measurably cheaper. Without being told how.
-
----
-
-### Stage 5 — Dark Transit
-*Claim: data can move through a cognitive architecture without any model ever reading it — a first-class security primitive.*
-
-**What gets added:**
-- Dark Lane implementation in Nervous System
-- Blind Fetch and Blind Write operations
-- Inert by Default enforcement
-- Content trust state tracking
-
-**Proof of life:**
-```
-BLIND FETCH
-  Operator: "show me config.ts"
-  → Coding Faculty fetches file through Dark Lane
-  → Cortex receives metadata only: { type: FILE, status: DARK_LANE }
-  → Persona frames: "Here is the file. Ready to review on your instruction."
-  → File content delivered to operator — no model read it
-  Verify: inject prompt injection in file. Verify it never reached model context.
-
-BLIND WRITE
-  Operator sends API key via Telegram
-  → Dark Lane carries it to Coding Faculty
-  → Written to config — no model context contains the key
-  Verify: audit log confirms key never appeared in any model call.
-```
-
-**Claim proven:** model-invisible transit is real, auditable, and holds under adversarial content.
-
----
-
-## Evolution Beyond Stages
-
-Once all five stages are proven, three hardening phases complete the architecture:
-
-**Phase A — Messaging hardening**  
-Synapse internals swapped for hardened transport. Zero Faculty changes.
-
-**Phase B — Zig compilation**  
-Nervous System + Immune System compiled as one Zig binary. Cortex compiled separately. Prime Directives compiled in — no longer a file at runtime. Faculties remain TypeScript forever.
-
-**Phase C — Full deployment**  
-All Faculty categories live. Coding Faculty builds new Faculties autonomously. Optimization Pass runs on automatic schedule. CARL is a continuously improving production system.
-
-```
-PHASE B TARGET
-
-  ┌──────────────────────────────────────┐
-  │  NERVOUS SYSTEM + IMMUNE  (Zig)      │
-  │  Relay · Reflex · Dark Lane          │
-  │  PRIME compiled in                   │
-  │                                      │
-  │  CORTEX  (Zig)                       │
-  │  Persona · Arc Store                 │
-  │  Reasoning Engine · Decomposer       │
-  │  Result Buffer · Synthesis Gate      │
-  │                                      │
-  │  In-process typed channels           │
-  └──────────────┬───────────────────────┘
-                 │ ONE typed boundary
-  ┌──────────────┴───────────────────────┐
-  │  FACULTY RUNTIME  (TypeScript / Bun) │
-  │  Hot-reloadable. Always.             │
-  └──────────────────────────────────────┘
-```
-
----
-
-## Stack
-
-| Component | Prototype | Production |
-|---|---|---|
-| Runtime | Bun | Bun (Faculties) + Zig (core) |
-| Language | TypeScript | TypeScript (Faculties) + Zig (core) |
-| Event bus | Node EventEmitter via Synapse | Compiled typed channels via Synapse |
-| Schema validation | Zod | Zig comptime types |
-| Short Term Memory | In-process hash map | Zig HashMap |
-| Crystallized Memory | LevelDB or SQLite | Abstracted K/V interface |
-| Telegram | Grammy | Grammy |
-| LLM interface | Vercel AI SDK | Vercel AI SDK |
-| File watching | Chokidar | Chokidar |
-
----
-
-## Configuration Files
-
-| File | Purpose | Who can modify | Phase |
-|---|---|---|---|
-| PRIME.md | Prime Directives. Compiled in production. | Operator before build only | Build time |
-| PERSONA.md | Identity — name, role, tone, coloring. | Operator via authenticated channel | Runtime |
-| PROTOCOL.md | Behavior — rules and output discipline. | Operator via authenticated channel | Runtime |
-| SCHEMA.md | Relay language — schema definitions. | Coding Faculty with operator auth | Runtime |
-| AGENTS.md | Faculty registry — routing, model assignments. | Coding Faculty with operator auth | Runtime |
-
----
-
-## Naming Reference
-
-| Term | Definition |
-|---|---|
-| Reasoning Arc | Unit of reasoning — trajectory, beginning, resolution |
-| Arc Store | All active Reasoning Arcs held by Persona |
-| Persona | Main loop — event-driven, zero tokens per cycle, tints all decisions |
-| Synapse | Typed abstraction layer between Faculty code and Nervous System |
-| Relay | Text → typed objects, schema validation |
-| Reflex | Pure pattern lookup — direct Faculty routing, no Cortex |
-| Gating model | Cheap model inside Reasoning Engine — decides tier per iteration |
-| Decomposer | Executes Execution Plans via Faculty dispatch |
-| Result Buffer | Per-Arc async collection of Faculty results |
-| Synthesis Gate | Notifies Persona when Arc is ready |
-| Resolution Record | Metadata after every resolved request — feeds Optimization Pass |
-| Optimization Pass | Threshold tuning sweep — another Arc to Persona |
-| Dark Lane | Model-invisible data path inside Nervous System |
-| Dark Transit | Principle — content moves through CARL without entering model context |
-| Blind Fetch | Outbound Dark Transit — payload delivered cold |
-| Blind Write | Inbound Dark Transit — secret written, never read by model |
-| Inert by Default | Cold content cannot self-activate into model context |
-| Short Term Memory | Volatile hash table — wildcard observation accumulation |
-| Crystallized Memory | Durable K/V store — collapsed beliefs, Reflex corpus |
-| Active Arc Index | Lightweight boot payload — Arc IDs, statuses, one-line summaries only |
-| Boot Protocol | Surgical context assembly at startup — identity always, everything else on demand |
-| Confidence | Per-origin trust score for ambiguous pattern resolutions |
-
----
-
-## Repository Structure
-
-```
-carl/
-├── nervous-system/
-│   └── immune-system/
-├── synapse/
-├── cortex/
-│   ├── persona/
-│   │   ├── arc-store/
-│   │   ├── ambiguity/
-│   │   └── output-composer/
-│   ├── reasoning-engine/
-│   │   └── gating/
-│   ├── decomposer/
-│   ├── result-buffer/
-│   └── synthesis-gate/
-├── faculties/
-│   ├── memory/
-│   │   ├── short-term/
-│   │   └── crystallized/
-│   ├── telegram/
-│   ├── coding/
-│   ├── gmail/
-│   ├── calendar/
-│   ├── web/
-│   ├── jobs/
-│   └── monitor/
-├── workspace/
-│   ├── PRIME.md
-│   ├── PERSONA.md
-│   ├── PROTOCOL.md
-│   ├── SCHEMA.md
-│   └── AGENTS.md
-├── examples/
-│   └── personas/
-└── memory/
-```
-
----
-
-## Naming
-
-**CARL** — Cognitive Autonomous Recursive Learning
-
-Recursive because the system feeds back on itself across multiple simultaneous loops — patterns crystallize into Reflex, Faculties chain through each other, Coding Faculty extends the system which feeds new patterns, Arc context accumulates and reshapes decisions, and improvement compounds as thresholds self-optimize. Learning because the system improves through operation, not retraining. No external trigger. No pipeline. The system learns by running.
-
----
-
-## Author
-
-CARL was conceived and designed by Samuël Tremblay in April 2026.
-
-**Samuël Tremblay**  
-Montreal, Quebec, Canada  
-[github.com/barnacker](https://github.com/barnacker)
-
----
-
-## Contributing
-
-Contributions are welcome. By contributing to this project you agree that your contributions will be licensed under the same Apache 2.0 license that covers the project. For significant contributions, please open an issue first before submitting a pull request.
-
-Contributors retain copyright over their own contributions. By submitting a pull request, contributors grant Samuël Tremblay and all users of CARL a perpetual, worldwide, non-exclusive, royalty-free license to use, copy, modify, and distribute their contributions as part of this project under the Apache 2.0 license.
-
----
-
-## License
-
-Copyright 2026 Samuël Tremblay  
-Licensed under the Apache License, Version 2.0.  
-http://www.apache.org/licenses/LICENSE-2.0
-
-- Use freely for personal and commercial purposes
-- Modify and distribute modified versions
-- Include original copyright notice and license
-- State changes made if distributing modified versions
-- Cannot use CARL name or Samuël Tremblay's name to endorse derived products without permission
-- No warranty — use at your own risk
