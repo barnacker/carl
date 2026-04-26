@@ -749,15 +749,156 @@ All named invariants in this document, collected for reference and automated ver
 
 ---
 
+## Appendix A: Quick Reference
+
+#### A.1 Arc Lifecycle (State Machine)
+**States** (initial → terminal):  
+`OPEN → ACTIVE → (SUSPENDED | CONTESTED) → RESOLVED`
+
+**Text Diagram** (Mermaid — paste into any Mermaid renderer):
+```mermaid
+stateDiagram-v2
+    [*] --> OPEN
+    OPEN --> ACTIVE: Persona dispatch + budget OK
+    OPEN --> CONTESTED: Resource conflict
+    ACTIVE --> ACTIVE: Faculty result arrives
+    ACTIVE --> SUSPENDED: Await input / Faculty / budget exhaust
+    ACTIVE --> CONTESTED: Mid-Arc write conflict
+    ACTIVE --> RESOLVED: Synthesis complete
+    CONTESTED --> SUSPENDED: SERIALIZE
+    CONTESTED --> RESOLVED: CANCEL
+    CONTESTED --> ACTIVE: OVERRIDE / MERGE (operator)
+    SUSPENDED --> ACTIVE: Input arrives + budget OK
+    SUSPENDED --> RESOLVED: Cancel / timeout
+    RESOLVED --> [*]
+```
+
+**Key Invariants**:
+- INV-ARC-1: ACTIVE/SUSPENDED always has budget (or pending extension)
+- INV-ARC-3: No simultaneous write claims on same resource
+- Forbidden: RESOLVED → anything; silent resolutions
+
+#### A.2 Confidence Lifecycle (State Machine)
+**States** (initial: UNSET):
+`UNSET → LOW → (HIGH | PROVISIONAL) → (LOCKED)`
+
+**Text Diagram**:
+```mermaid
+stateDiagram-v2
+    [*] --> UNSET
+    UNSET --> LOW: First resolution
+    LOW --> LOW: More observations
+    LOW --> HIGH: Threshold + diversity + rate OK
+    LOW --> PROVISIONAL: Ceiling hit early
+    PROVISIONAL --> HIGH: Operator approve
+    PROVISIONAL --> LOW: Operator reject
+    HIGH --> LOCKED: Operator lock
+    HIGH --> LOW: Decay or corrections
+    LOCKED --> HIGH: Operator unlock
+    HIGH --> LOW: Decay (non-LOCKED)
+    [*] --> UNSET: Operator forced reset
+```
+
+**Key Rules**:
+- HIGH/LOCKED requires ≥M distinct origins
+- Velocity >N/hour → forced PROVISIONAL
+- LOCKED exempt from decay
+
+#### A.3 Content Trust Lifecycle
+```mermaid
+stateDiagram-v2
+    [*] --> COLD: Dark Lane / storage
+    COLD --> ELEVATED: Elevation protocol (operator + scans)
+    ELEVATED --> ACTIVE: Cortex reads into Arc
+    COLD --> COLD: Pure Dark Lane routing
+    ACTIVE --> [*]
+```
+
+**Invariant**: COLD content never enters any model context.
+
+#### A.4 Faculty Health
+```mermaid
+stateDiagram-v2
+    [*] --> HEALTHY: register()
+    HEALTHY --> UNHEALTHY: Missed heartbeat
+    HEALTHY --> ISOLATED: Circuit breaker
+    UNHEALTHY --> HEALTHY: Heartbeat resumes
+    UNHEALTHY --> ISOLATED: Timeout
+    ISOLATED --> HEALTHY: Operator only
+```
+
+Reflex **never** routes to UNHEALTHY or ISOLATED.
+
+#### A.5 System Evolution Boundary — Promotion Lifecycle (13 steps)
+**Sequential gates** (GENERATED → … → PROMOTED):
+
+```mermaid
+flowchart LR
+    GENERATED --> VALIDATED[2. Static Analysis]
+    VALIDATED --> DIFFED[3. Capability Diff]
+    DIFFED --> AUDITED[4. Dep Audit]
+    AUDITED --> RESOURCED[5. Resource Ceilings]
+    RESOURCED --> NETWORK_OK[6. Network Policy]
+    NETWORK_OK --> SANDBOXED[7. Sandbox Test]
+    SANDBOXED --> ATTESTED[8. Build Attestation]
+    ATTESTED --> MIGRATED[9. Migration Proof]
+    MIGRATED --> QUARANTINED[10. Observation Quarantine]
+    QUARANTINED --> APPROVED[11. Operator Approve]
+    APPROVED --> CANARY[12. 1% Canary]
+    CANARY --> PROMOTED[Full Traffic]
+    CANARY -.-> ROLLED_BACK[Error Spike]
+    PROMOTED -.-> ROLLED_BACK
+    AnyFail --> REJECTED
+```
+
+**Critical**: No skipping. Operator gate at step 11 is mandatory.
+
+#### A.6 Reflex Dispatch Flow (9 Steps)
+**Linear gate chain** — any failure → Cortex fallback.
+
+```mermaid
+flowchart TD
+    A[Incoming CompressedIntent] --> B[RISK GATE<br/>HIGH/CRITICAL?]
+    B -->|Yes| Cortex[Cortex Fallback]
+    B -->|No| C[PARAM SENSITIVITY GATE]
+    C -->|Sensitive| Cortex
+    C -->|No| D[SIGNATURE LOOKUP<br/>in Tier 1c]
+    D -->|Miss| Cortex
+    D -->|Hit| E[CONFIDENCE GATE<br/>HIGH/LOCKED?]
+    E -->|No| Cortex
+    E -->|Yes| F[DECAY CHECK]
+    F -->|Decayed| Cortex
+    F -->|OK| G[FACULTY HEALTH CHECK]
+    G -->|Unhealthy| Cortex
+    G -->|OK| H[PERMISSION CHECK]
+    H -->|Fail| Cortex
+    H -->|OK| I[OPERATOR OVERRIDE?]
+    I -->|Yes| Cortex
+    I -->|No| J[DISPATCH<br/>faculty_sequence via Synapse]
+    J --> Success[REFLEX_HIT — Zero LLM cost]
+```
+
+**Reflex Signature**: `hash(action, domain, subject, scope, param_class)`  
+**Never** includes `params`, `origin`, `risk`, or runtime values.
+
+#### A.7 Risk Taxonomy (Quick Lookup)
+| Risk | Reflex Allowed? | Proposal Flow | Operator Confirm | Examples |
+|------|------------------|---------------|------------------|----------|
+| **LOW** | Yes (HIGH/LOCKED conf) | No | No | Read-only, summarize |
+| **ELEVATED** | Yes (HIGH/LOCKED) | Recommended | No | Reversible SELF writes |
+| **HIGH** | **No** (always bypass) | **Mandatory** | No | External writes, scheduling |
+| **CRITICAL** | **No** | **Mandatory** | **Yes** | Deletes ALL, identity changes, config |
+
+**Invariant**: Risk only **raises**, never lowers.
+
+---
+
 ## Document History
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 1.0 | 2026-04-15 | Samuël Tremblay | Initial formal specification derived from README.md after three rounds of adversarial review |
-
----
-
-## Appendix A: Quick Reference
+| 1.1 | 2026-04-25 | Samuël Tremblay | Appendix, Quick Reference and Diagrams |
 
 ---
 
