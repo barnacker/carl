@@ -16,18 +16,18 @@ Each named state machine is the authoritative definition for its lifecycle. A co
 
 ---
 
-### 1.1 Arc Lifecycle
+### 1.1 Arc Lifecycle (Elastic Model)
 
+Arcs are trajectories with **Synaptic Weight ($W$)** and **Temporal Decay ($\lambda$)**.
 An Arc is a unit of reasoning with a declared budget. Every Arc exists in exactly one state at any time.
 
 ```
 STATES
-  OPEN        Arc created, budget declared, resource_claims registered
-  ACTIVE      Cortex processing (Reasoning Engine spawned or result being synthesized)
-  CONTESTED   Resource conflict detected with another Arc
-  SUSPENDED   Awaiting: operator input, Faculty result, budget exhaustion resolution,
-              or contested resource resolution
-  RESOLVED    Output delivered, context archived to Tier 1c
+  OPEN        Initial state
+  ACTIVE      Focus state (Cortex processing)
+  DEFERRED    The "Cognitive Debt" state (Signal suppressed, awaiting resource gap)
+  RESOLVED    Terminal state (Success)
+  ABSORBED    Forgetting state (Debt flushed due to decay)
 
 INITIAL STATE:  OPEN
 TERMINAL STATE: RESOLVED
