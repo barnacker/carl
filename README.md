@@ -1,6 +1,6 @@
 # CARL — Cognitive Autonomous Recursive Learning
 
-CARL is a control architecture for AI systems that need to reason persistently, act safely, and improve through operation rather than retraining. Its central design choice is the separation of *decision policy* (centralized, audited, traceable to one authority) from *execution* (distributed, bounded, replaceable). Every other property follows from that separation.
+CARL is a control architecture for AI systems that need to reason persistently, act safely, and improve through operation rather than retraining. Its central design choice is the separation of *decision policy* (Cortex) from *execution* (Faculties), mediated by a Nervous System that acts as a signal filter. Every other property follows from that separation. It adopts a **Biological Focus**, replacing traditional software locking mechanisms with **Competitive Inhibition** and **Temporal Decay**. CARL might forget to finish something, but not the way you are used to with Agents... mor like a human that has too much to do at one time... you don't really have to re-prompt all over again like an Agent; but rather, after the rush of tasks he might suddently remember and go finish that or you might have to nudge him depending on how long he was overwhelmed with tasks (Temporal Decay), like you, he remembers you asked, he was just too busy doing something else.
 
 CARL claims structural control properties by design, not security by declaration. Compiled boundaries, typed interfaces, audit trails, and operator-gated lifecycles close specific classes of attack surface. They do not produce security as a property by virtue of existing. Security requires implementation correctness, ongoing validation, operational monitoring, and adversarial testing — none of which the document alone can provide. Where this document says "structural" or "compiled," it means *one defense among several required*, not *defense complete*.
 
@@ -8,15 +8,15 @@ The biological terminology — Cortex, Nervous System, Immune System, Faculty, R
 
 | Dimension | Agent Frameworks | CARL |
 |---|---|---|
-| Reasoning | Each agent reasons independently | Only Cortex originates decision policy |
-| Security | Prompt-based, bypassable | Structural, compiled, code-enforced |
-| Routing | Static role assignment | Dynamic, learned via Reflex caching |
-| Execution | Agent decides and acts | Faculty executes Cortex-derived plans only |
-| Data transit | All content enters model context | Dark Lane — model-invisible transit |
-| Learning | External retraining | In-process route caching + threshold tuning |
-| Trust | Assumed | Earned per identity, per pattern, per origin |
-| Operation | Request-response, blocking | Continuous, multitasking, non-blocking |
-| Self-modification | Ad hoc or absent | System Evolution Boundary with operator-gated lifecycle |
+| **1. Reasoning** | Each agent reasons independently | Only Cortex originates decision policy |
+| **2. Security** | Prompt-based, bypassable | **Structural:** Compiled core, Typed routing |
+| **3. Conflict** | N/A / Software Errors | **Lateral Inhibition:** Signal weight determines priority |
+| **4. Routing** | Static role assignment | Dynamic, learned via Reflex caching |
+| **5. Data Transit** | All content enters model context | **Dark Lane:** Model-invisible payload transit |
+| **6. Learning** | External retraining | In-process caching + **Memory Nudges** |
+| **7. Trust** | Assumed | Earned per identity, pattern, and origin |
+| **8. Operation** | Request-response (Blocking) | **Temporal Elasticity:** Continuous, multi-tasking |
+| **9. Self-Mod** | Ad hoc or absent | System Evolution Boundary (13-step gated) |
 
 In agent frameworks, each agent reasons about what it should do next and acts on that reasoning. In CARL, Faculties execute what Cortex derived — they do not decide what happens next. Cortex is the only component authorized to originate or change decision policy. Security boundaries are structural, routing is centralized, and self-modification is isolated to a separate trust tier (the System Evolution Boundary) with its own lifecycle precisely because it operates on the architecture itself rather than on the world.
 
