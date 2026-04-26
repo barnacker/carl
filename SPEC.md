@@ -6,6 +6,8 @@ The README says what CARL does and why. This document says what CARL must do and
 
 **Document status:** specification-level. Not implementation-level. Implementation may refine types, add fields, or split structures — but may not violate any invariant, transition rule, or authority boundary defined here.
 
+**See [Appendix A: Quick Reference](#appendix-a-quick-reference) for state machines, diagrams, and dispatch flows.**
+
 ---
 
 ## 1. State Machines
@@ -752,6 +754,10 @@ All named invariants in this document, collected for reference and automated ver
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 1.0 | 2026-04-15 | Samuël Tremblay | Initial formal specification derived from README.md after three rounds of adversarial review |
+
+---
+
+## Appendix A: Quick Reference
 
 ---
 
