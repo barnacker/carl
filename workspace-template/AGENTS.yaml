@@ -1,0 +1,42 @@
+faculties:
+  memory:
+    enabled: true
+    version: "0.1.0"
+    grantedCapabilities:
+      actions: ["READ", "WRITE", "QUERY"]
+      domains: ["MEMORY"]
+      dataClasses: ["OBSERVATION", "ARC_RECORD", "REFLEX_ENTRY"]
+      filesystem:
+        read: ["runtime/memory/**"]
+        write:
+          - "runtime/memory/observation-log/**"
+          - "runtime/memory/short-term/**"
+          - "runtime/memory/crystallized/**"
+      network:
+        outbound: []
+      secrets:
+        read: []
+      resources:
+        maxCpuMsPerArc: 500
+        maxMemoryMb: 256
+        maxOpenFiles: 32
+        maxWallTimeMs: 2000
+  stub:
+    enabled: true
+    version: "0.1.0"
+    grantedCapabilities:
+      actions: ["READ"]
+      domains: ["SYSTEM"]
+      dataClasses: ["STUB_REQUEST"]
+      filesystem:
+        read: []
+        write: []
+      network:
+        outbound: []
+      secrets:
+        read: []
+      resources:
+        maxCpuMsPerArc: 100
+        maxMemoryMb: 64
+        maxOpenFiles: 4
+        maxWallTimeMs: 1000

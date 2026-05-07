@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "declaration": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "schemas/**/*.ts",
+    "synapse/**/*.ts",
+    "nervous-system/**/*.ts",
+    "cortex/**/*.ts",
+    "faculties/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "runtime"
+  ]
+}

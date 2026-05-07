@@ -23,8 +23,9 @@ coverage/
 !.env.example
 
 # Local runtime state
-workspace/
-memory/
+/workspace/
+/memory/
+/runtime/
 .cache/
 
 # Zig build artifacts
