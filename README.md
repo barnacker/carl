@@ -97,6 +97,17 @@ CARL uses two related inhibition terms with different scope.
 
 The distinction matters operationally: Competitive Inhibition describes the global scheduling behavior; Lateral Inhibition describes the local suppression operation used to enforce that schedule. Neither term implies unsupervised deletion of work. `ABSORBED` is auditable cognitive debt flushed by decay, not silent success.
 
+**Attention arbitration.** Operator input can change the priority surface without erasing current work. If a new operator request arrives while another Arc is active, Persona first checks whether the active Arc is at a safe yield point. Safe yield points include waiting for Faculty result, waiting for operator input, waiting for resource availability, budget exhaustion, or completion of a bounded already-authorized execution step.
+
+If the active Arc is safe to yield, CARL may defer it and activate the new Arc. If the active Arc is not safe to yield, Persona offers attention choices:
+
+1. defer the current Arc and activate the new Arc now;
+2. finish the current step first;
+3. capture the new request as next — `OPEN → DEFERRED(reason=ATTENTION_QUEUED)` with operator-recency weight while the current Arc remains `ACTIVE`;
+4. merge the new request into the current Arc only after operator confirmation of the merged intent.
+
+`DEFERRED` suppresses Cortex focus, not auditability. Already-dispatched bounded Faculty work may continue and publish results into the Arc buffer, but a deferred Arc cannot silently perform new Cortex reasoning, expand its plan, execute irreversible action, or extend budget. If a deferred Arc reaches a clarification or proposal step, it remains `DEFERRED(reason=OPERATOR_INPUT_REQUIRED)` and Persona queues the notification until attention priority allows surfacing it, unless the question is urgent or safety-relevant.
+
 ---
 
 ## Laws

@@ -42,13 +42,13 @@ TERMINAL STATES: RESOLVED, ABSORBED
 | From | To | Trigger | Guard | Required Effect |
 |---|---|---|---|---|
 | OPEN | ACTIVE | Persona dispatches Arc to Reasoning Engine | Budget declared and no resource gap blocks focus | TraceEvent ARC_OPEN and ARC_ACTIVE emitted |
-| OPEN | DEFERRED | Higher-weight Arc, missing operator input, dependency, budget wait, or resource gap blocks focus | Arc remains recoverable and auditable | Arc recorded as cognitive debt; Persona notified if operator action is required |
+| OPEN | DEFERRED | Higher-weight Arc, missing operator input, dependency, budget wait, resource gap, or operator-directed queueing blocks focus | Arc remains recoverable and auditable | Arc recorded as cognitive debt; Persona notified if operator action is required |
 | ACTIVE | ACTIVE | Faculty result arrives | Arc budget not exhausted | Result into Result Buffer; TraceEvent emitted |
 | ACTIVE | DEFERRED | Awaiting operator input | Ambiguity detected or proposal flow initiated | Persona composes question; processing pauses audibly |
 | ACTIVE | DEFERRED | Awaiting Faculty result | Faculty dispatched, result pending | Non-blocking; other Arcs continue |
 | ACTIVE | DEFERRED | Budget exhausted | Any budget dimension reaches zero | TraceEvent BUDGET_EXHAUSTED; Persona notifies operator immediately |
 | ACTIVE | DEFERRED | Resource gap detected | Required resource unavailable inside declared budget | Arc becomes cognitive debt; Persona notified if operator action is required |
-| ACTIVE | DEFERRED | Competitive Inhibition suppresses Arc | Higher-weight eligible Arc preempts focus; Arc remains recoverable | Processing paused; effective weight continues to decay/reinforce |
+| ACTIVE | DEFERRED | Competitive Inhibition suppresses Arc | Higher-weight eligible Arc preempts focus; Arc remains recoverable | Processing paused; already-dispatched bounded Faculty work may continue, but no new Cortex reasoning or decisions occur while deferred; effective weight continues to decay/reinforce |
 | ACTIVE | RESOLVED | Synthesis Gate signals complete | All required Faculty results received; output composed | Resolution Record written; context archived to Tier 1c; resources released |
 | DEFERRED | ACTIVE | Awaited input/result arrives, resource gap closes, priority gap opens, or operator authorizes continuation | Budget not exhausted or operator extends budget | Reasoning resumes |
 | DEFERRED | ABSORBED | Temporal Decay reaches absorption threshold | No reinforcement before configured decay limit | Cognitive debt archived; operator may restart with new signal |
@@ -71,6 +71,31 @@ TERMINAL STATES: RESOLVED, ABSORBED
 - `INV-ARC-4`: Arc context is isolated. No Arc can read or write another Arc's Result Buffer, working context, or intermediate state. Cross-Arc data flows only through Memory Faculty (Tier 1c).
 - `INV-ARC-5`: Every DEFERRED Arc remains auditable as cognitive debt until it transitions to ACTIVE or ABSORBED.
 - `INV-ARC-6`: ABSORBED is terminal and never equivalent to successful resolution. It requires a new operator signal to restart work.
+- `INV-ARC-7`: DEFERRED can carry a reason code, but reason codes are metadata only. They do not add Arc states or bypass the five-state lifecycle.
+- `INV-ARC-8`: DEFERRED Arcs cannot originate new Cortex reasoning, plan expansion, irreversible action, or budget extension. Already-dispatched bounded Faculty work may finish and publish results into the Arc buffer.
+
+**Deferral reasons:**
+
+| Reason | Meaning | Default attention behavior |
+|---|---|---|
+| `ATTENTION_QUEUED` | Operator supplied a new Arc while another Arc retained focus | New Arc waits as next eligible work, with operator-recency weight |
+| `ATTENTION_PREEMPTED` | Former active Arc yielded focus to a higher-weight Arc | Deferred Arc waits until priority gap opens or operator authorizes continuation |
+| `FACULTY_PENDING` | Already-dispatched Faculty work has not returned | Faculty may complete; Cortex reasoning remains paused |
+| `OPERATOR_INPUT_REQUIRED` | Clarification or proposal approval is required | Queue notification; surface when active Arc yields unless urgent or safety-relevant |
+| `RESOURCE_GAP` | Required resource is unavailable inside declared budget | Wait for resource availability or operator authorization |
+| `BUDGET_EXHAUSTED` | Arc reached declared budget | Notify operator; no silent continuation |
+| `PRIORITY_SUPPRESSED` | Lower-weight Arc inhibited by stronger eligible Arc | Wait until weight/priority surface changes |
+
+**Attention arbitration when new operator input arrives:**
+
+If the current Arc is at a safe yield point, CARL may defer it and activate the new Arc without additional confirmation. Safe yield points include waiting for Faculty result, waiting for operator input, waiting for resource availability, budget exhaustion, or completion of a bounded already-authorized execution step.
+
+If the current Arc is not at a safe yield point, Persona presents an explicit attention choice:
+
+1. Defer current Arc and activate new Arc now.
+2. Finish the current step first.
+3. Capture the new Arc as deferred next: `OPEN → DEFERRED(reason=ATTENTION_QUEUED)` with operator-recency weight, leaving the current Arc `ACTIVE`.
+4. Merge the new input into the current Arc, only after operator confirmation of the merged intent.
 
 ---
 
@@ -833,7 +858,7 @@ All named invariants in this document, collected for reference and automated ver
 stateDiagram-v2
     [*] --> OPEN
     OPEN --> ACTIVE: Persona dispatch + budget OK
-    OPEN --> DEFERRED: Blocked at open / inhibited
+    OPEN --> DEFERRED: Blocked at open / queued as next / inhibited
     ACTIVE --> ACTIVE: Faculty result arrives
     ACTIVE --> DEFERRED: Await input / Faculty / budget / resource gap / inhibition
     ACTIVE --> RESOLVED: Synthesis complete
@@ -989,6 +1014,15 @@ export const RiskLevel = z.enum(['LOW', 'ELEVATED', 'HIGH', 'CRITICAL'])
 export const ConfidenceState = z.enum(['UNSET', 'LOW', 'PROVISIONAL', 'HIGH', 'LOCKED'])
 export const RoutingTier = z.enum(['REFLEX', 'EXECUTION', 'REASONING'])
 export const ArcState = z.enum(['OPEN', 'ACTIVE', 'DEFERRED', 'RESOLVED', 'ABSORBED'])
+export const DeferralReason = z.enum([
+  'ATTENTION_QUEUED',
+  'ATTENTION_PREEMPTED',
+  'FACULTY_PENDING',
+  'OPERATOR_INPUT_REQUIRED',
+  'RESOURCE_GAP',
+  'BUDGET_EXHAUSTED',
+  'PRIORITY_SUPPRESSED',
+])
 
 export const Id = z.string().min(1)
 export const Hash = z.string().regex(/^[a-f0-9]{64}$/)
