@@ -23,15 +23,13 @@ An Arc is a unit of reasoning with a declared budget. Every Arc exists in exactl
 
 **Competitive Inhibition** is the system-level priority competition between Arcs. Effective signal strength is a function of Synaptic Weight, Temporal Decay, resource availability, and operator interventions. The strongest eligible signal receives processing focus.
 
-**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc receives focus, competing lower-weight signals may transition to `SUSPENDED` or `DEFERRED`; this suppresses processing, not auditability. If Temporal Decay exhausts a deferred Arc's recoverability, it transitions to `ABSORBED`.
+**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc receives focus, competing lower-weight signals may transition to `DEFERRED`; this suppresses processing, not auditability. If Temporal Decay exhausts a deferred Arc's recoverability, it transitions to `ABSORBED`.
 
 ```
 STATES
   OPEN        Initial state. Arc exists, budget and resource claims declared.
   ACTIVE      Focus state. Cortex/Reasoning Engine is processing the Arc.
-  SUSPENDED   Recoverable pause. Awaiting operator input, Faculty result, budget extension, or contention resolution.
-  CONTESTED   Resource conflict state. Operator must resolve via SERIALIZE, CANCEL, MERGE, or OVERRIDE.
-  DEFERRED    Cognitive Debt state. Signal suppressed by Competitive Inhibition, awaiting resource gap or priority change.
+  DEFERRED    Cognitive Debt state. Signal suppressed by Competitive Inhibition, blocked by dependency, or awaiting operator input/resource availability.
   RESOLVED    Terminal success/cancel state. Resolution Record written where applicable.
   ABSORBED    Terminal forgetting state. Debt flushed due to Temporal Decay; requires new operator signal to restart.
 
@@ -41,26 +39,19 @@ TERMINAL STATES: RESOLVED, ABSORBED
 
 **Transition table:**
 
-| From | To | Trigger | Guard | Side effects |
+| From | To | Trigger | Guard | Required Effect |
 |---|---|---|---|---|
-| OPEN | ACTIVE | Persona dispatches Arc to Reasoning Engine | Budget declared, resource_claims registered, no resource conflict | TraceEvent ARC_OPEN emitted |
-| OPEN | CONTESTED | Resource conflict detected at open time | Another Arc holds write claim on claimed resource | Persona notified; operator resolution required |
-| OPEN | DEFERRED | Higher-weight Arc suppresses newly opened Arc | Budget declared; signal below active threshold | Arc recorded as cognitive debt; no dispatch |
+| OPEN | ACTIVE | Persona dispatches Arc to Reasoning Engine | Budget declared, resource_claims registered, no blocking conflict | TraceEvent ARC_OPEN and ARC_ACTIVE emitted |
+| OPEN | DEFERRED | Higher-weight Arc, missing operator input, dependency, budget wait, or write conflict blocks dispatch | Arc remains recoverable and auditable | Arc recorded as cognitive debt; Persona notified if operator action is required |
 | ACTIVE | ACTIVE | Faculty result arrives | Arc budget not exhausted | Result into Result Buffer; TraceEvent emitted |
-| ACTIVE | SUSPENDED | Awaiting operator input | Ambiguity detected or proposal flow initiated | Persona composes question |
-| ACTIVE | SUSPENDED | Awaiting Faculty result | Faculty dispatched, result pending | Non-blocking; other Arcs continue |
-| ACTIVE | SUSPENDED | Budget exhausted | Any budget dimension reaches zero | TraceEvent BUDGET_EXHAUSTED; Persona notifies operator immediately |
-| ACTIVE | CONTESTED | Write claim conflict detected mid-execution | Another Arc requests write on held resource, or escalation from read to write conflicts | Arc suspended; operator resolution required |
+| ACTIVE | DEFERRED | Awaiting operator input | Ambiguity detected or proposal flow initiated | Persona composes question; processing pauses audibly |
+| ACTIVE | DEFERRED | Awaiting Faculty result | Faculty dispatched, result pending | Non-blocking; other Arcs continue |
+| ACTIVE | DEFERRED | Budget exhausted | Any budget dimension reaches zero | TraceEvent BUDGET_EXHAUSTED; Persona notifies operator immediately |
+| ACTIVE | DEFERRED | Write claim conflict detected | Another Arc holds or requests incompatible write claim | Automatic execution blocked; operator resolution required |
 | ACTIVE | DEFERRED | Competitive Inhibition suppresses Arc | Higher-weight eligible Arc preempts focus; Arc remains recoverable | Processing paused; effective weight continues to decay/reinforce |
 | ACTIVE | RESOLVED | Synthesis Gate signals complete | All required Faculty results received; output composed | Resolution Record written; context archived to Tier 1c; resources released |
-| CONTESTED | SUSPENDED | Operator selects SERIALIZE | Operator explicitly chooses wait | Arc waits for conflicting Arc to resolve |
-| CONTESTED | RESOLVED | Operator selects CANCEL | Operator explicitly cancels this Arc | Resources released; no output |
-| CONTESTED | ACTIVE | Operator selects OVERRIDE or MERGE | Operator explicitly approves continuation | For MERGE: combined intent confirmed by operator before execution |
-| SUSPENDED | ACTIVE | Awaited input/result arrives or operator authorizes continuation | Budget not exhausted (or operator extends budget) | Reasoning resumes |
-| SUSPENDED | DEFERRED | Awaited result arrives below focus threshold | Competing Arc has higher effective signal | Arc becomes cognitive debt |
-| SUSPENDED | RESOLVED | Operator cancels or timeout | Explicit operator cancel or configured timeout | Partial results archived if any |
-| DEFERRED | ACTIVE | Priority gap opens or operator raises priority | Effective signal crosses focus threshold before decay limit | Reasoning resumes |
-| DEFERRED | SUSPENDED | External dependency or operator input required | Arc cannot proceed without input/result | Persona records paused state |
+| DEFERRED | ACTIVE | Awaited input/result arrives, resource conflict is resolved, priority gap opens, or operator authorizes continuation | Budget not exhausted or operator extends budget | Reasoning resumes |
+| DEFERRED | RESOLVED | Operator cancels or configured timeout cancels | Explicit operator cancel or configured timeout | Partial results archived if any; resources released |
 | DEFERRED | ABSORBED | Temporal Decay reaches absorption threshold | No reinforcement before configured decay limit | Cognitive debt archived; operator may restart with new signal |
 
 **Forbidden transitions:**
@@ -69,17 +60,17 @@ TERMINAL STATES: RESOLVED, ABSORBED
 |---|---|---|
 | RESOLVED | Any | Terminal state. No resurrection. Reference archived Arc via Memory Faculty. |
 | ABSORBED | Any | Terminal decay state. New operator signal opens a new Arc; no resurrection. |
-| SUSPENDED | RESOLVED | Without operator action (cancel or timeout). No silent resolution. |
-| CONTESTED | ACTIVE | Without operator resolution. No silent contention bypass. |
+| DEFERRED | ACTIVE | Without awaited input/result, resource availability, priority gap, or explicit operator authorization. No silent bypass. |
+| DEFERRED | RESOLVED | Without operator action or configured timeout. No silent resolution. |
 | Any | OPEN | OPEN is initial only. No re-opening. |
 
 **Invariants:**
 
-- `INV-ARC-1`: Every Arc in ACTIVE or SUSPENDED state has a non-zero budget in at least one dimension, OR has operator-authorized budget extension pending.
+- `INV-ARC-1`: Every Arc in ACTIVE state has a non-zero budget in at least one dimension, OR has operator-authorized budget extension pending.
 - `INV-ARC-2`: Every Arc in RESOLVED state has a Resolution Record in Tier 1c.
 - `INV-ARC-3`: No two Arcs hold simultaneous write claims on the same resource key.
 - `INV-ARC-4`: Arc context is isolated. No Arc can read or write another Arc's Result Buffer, working context, or intermediate state. Cross-Arc data flows only through Memory Faculty (Tier 1c).
-- `INV-ARC-5`: Every DEFERRED Arc remains auditable as cognitive debt until it transitions to ACTIVE, SUSPENDED, or ABSORBED.
+- `INV-ARC-5`: Every DEFERRED Arc remains auditable as cognitive debt until it transitions to ACTIVE, RESOLVED, or ABSORBED.
 - `INV-ARC-6`: ABSORBED is terminal and never equivalent to successful resolution. It requires a new operator signal to restart work.
 
 ---
@@ -610,7 +601,7 @@ TraceEvent {
 TraceEventType = enum {
   PUBLISH, SUBSCRIBE, DARK_LANE,
   REFLEX_HIT, REFLEX_MISS, REFLEX_DEGRADED, REFLEX_BYPASS, REFLEX_OVERRIDE,
-  ARC_OPEN, ARC_ACTIVE, ARC_SUSPENDED, ARC_CONTESTED, ARC_DEFERRED, ARC_RESOLVED, ARC_ABSORBED,
+  ARC_OPEN, ARC_ACTIVE, ARC_DEFERRED, ARC_RESOLVED, ARC_ABSORBED,
   BUDGET_EXHAUSTED, BUDGET_EXTENDED,
   FACULTY_HEALTHY, FACULTY_UNHEALTHY, FACULTY_ISOLATED, FACULTY_RECONNECTED,
   CONFIDENCE_TRANSITION,
@@ -738,7 +729,7 @@ Constants serve four purposes:
 | `ABSORPTION_DECAY_MULTIPLIER` | `4` | DEFERRED → ABSORBED | Absorption requires longer inactivity than ordinary Reflex demotion |
 | `DEFAULT_MAX_MODEL_CALLS` | `8` | Arc budget | Operator may extend explicitly |
 | `DEFAULT_MAX_FACULTY_DISPATCHES` | `16` | Arc budget | Must never exceed declared Arc budget |
-| `DEFAULT_MAX_WALL_TIME_MS` | `300000` | Arc budget | Exhaustion suspends; no silent continuation |
+| `DEFAULT_MAX_WALL_TIME_MS` | `300000` | Arc budget | Exhaustion defers; no silent continuation |
 | `TRACE_RETENTION_DAYS_HOT` | `30` | Trace replay | Cold archive must preserve hash-chain integrity |
 | `CANARY_TRAFFIC_PERCENT` | `1` | SEB staged canary | Full promotion requires clean canary window |
 | `CANARY_CLEAN_WINDOW_CYCLES` | `100` | SEB staged canary | Error spike rolls back automatically |
@@ -782,11 +773,11 @@ All named invariants in this document, collected for reference and automated ver
 
 | ID | Section | Statement |
 |---|---|---|
-| INV-ARC-1 | 1.1 | Every Arc in ACTIVE/SUSPENDED has non-zero budget or pending extension |
+| INV-ARC-1 | 1.1 | Every Arc in ACTIVE has non-zero budget or pending extension |
 | INV-ARC-2 | 1.1 | Every RESOLVED Arc has a Resolution Record in Tier 1c |
 | INV-ARC-3 | 1.1 | No two Arcs hold simultaneous write claims on same resource |
 | INV-ARC-4 | 1.1 | Arc context is isolated; no cross-Arc reads/writes |
-| INV-ARC-5 | 1.1 | DEFERRED remains auditable cognitive debt until active, suspended, or absorbed |
+| INV-ARC-5 | 1.1 | DEFERRED remains auditable cognitive debt until active, resolved, or absorbed |
 | INV-ARC-6 | 1.1 | ABSORBED is terminal and never equivalent to successful resolution |
 | INV-CONF-1 | 1.2 | HIGH/LOCKED requires minimum M distinct origins |
 | INV-CONF-2 | 1.2 | Every confidence transition logged to Tier 1a |
@@ -836,39 +827,30 @@ All named invariants in this document, collected for reference and automated ver
 
 #### A.1 Arc Lifecycle (State Machine)
 **States** (initial → terminal):  
-`OPEN → ACTIVE → (SUSPENDED | CONTESTED | DEFERRED) → (RESOLVED | ABSORBED)`
+`OPEN → ACTIVE → DEFERRED → (ACTIVE | RESOLVED | ABSORBED)`
 
 **Text Diagram** (Mermaid — paste into any Mermaid renderer):
 ```mermaid
 stateDiagram-v2
     [*] --> OPEN
     OPEN --> ACTIVE: Persona dispatch + budget OK
-    OPEN --> CONTESTED: Resource conflict
-    OPEN --> DEFERRED: Suppressed at open
+    OPEN --> DEFERRED: Blocked at open / inhibited
     ACTIVE --> ACTIVE: Faculty result arrives
-    ACTIVE --> SUSPENDED: Await input / Faculty / budget exhaust
-    ACTIVE --> CONTESTED: Mid-Arc write conflict
-    ACTIVE --> DEFERRED: Inhibited by stronger Arc
+    ACTIVE --> DEFERRED: Await input / Faculty / budget / conflict / inhibition
     ACTIVE --> RESOLVED: Synthesis complete
-    DEFERRED --> ACTIVE: Priority gap / reinforcement
-    DEFERRED --> SUSPENDED: Await dependency
+    DEFERRED --> ACTIVE: Input / result / resource / priority gap / operator authorization
+    DEFERRED --> RESOLVED: Cancel / timeout
     DEFERRED --> ABSORBED: Decay threshold
-    CONTESTED --> SUSPENDED: SERIALIZE
-    CONTESTED --> RESOLVED: CANCEL
-    CONTESTED --> ACTIVE: OVERRIDE / MERGE (operator)
-    SUSPENDED --> ACTIVE: Input arrives + budget OK
-    SUSPENDED --> DEFERRED: Below focus threshold
-    SUSPENDED --> RESOLVED: Cancel / timeout
     RESOLVED --> [*]
     ABSORBED --> [*]
 ```
 
 **Key Invariants**:
-- INV-ARC-1: ACTIVE/SUSPENDED always has budget (or pending extension)
+- INV-ARC-1: ACTIVE always has budget (or pending extension)
 - INV-ARC-3: No simultaneous write claims on same resource
 - INV-ARC-5: DEFERRED remains auditable cognitive debt
 - INV-ARC-6: ABSORBED is terminal and not success
-- Forbidden: RESOLVED/ABSORBED → anything; silent resolutions
+- Forbidden: RESOLVED/ABSORBED → anything; silent resolutions or silent reactivation
 
 #### A.2 Confidence Lifecycle (State Machine)
 **States** (initial: UNSET):
@@ -1008,7 +990,7 @@ export const ScopeEnum = z.enum(['TEMPORAL', 'SPATIAL', 'TOPICAL'])
 export const RiskLevel = z.enum(['LOW', 'ELEVATED', 'HIGH', 'CRITICAL'])
 export const ConfidenceState = z.enum(['UNSET', 'LOW', 'PROVISIONAL', 'HIGH', 'LOCKED'])
 export const RoutingTier = z.enum(['REFLEX', 'EXECUTION', 'REASONING'])
-export const ArcState = z.enum(['OPEN', 'ACTIVE', 'SUSPENDED', 'CONTESTED', 'DEFERRED', 'RESOLVED', 'ABSORBED'])
+export const ArcState = z.enum(['OPEN', 'ACTIVE', 'DEFERRED', 'RESOLVED', 'ABSORBED'])
 
 export const Id = z.string().min(1)
 export const Hash = z.string().regex(/^[a-f0-9]{64}$/)
@@ -1062,7 +1044,7 @@ export const TraceEvent = z.object({
   event_type: z.enum([
     'PUBLISH', 'SUBSCRIBE', 'DARK_LANE',
     'REFLEX_HIT', 'REFLEX_MISS', 'REFLEX_DEGRADED', 'REFLEX_BYPASS', 'REFLEX_OVERRIDE',
-    'ARC_OPEN', 'ARC_ACTIVE', 'ARC_SUSPENDED', 'ARC_CONTESTED', 'ARC_DEFERRED', 'ARC_RESOLVED', 'ARC_ABSORBED',
+    'ARC_OPEN', 'ARC_ACTIVE', 'ARC_DEFERRED', 'ARC_RESOLVED', 'ARC_ABSORBED',
     'BUDGET_EXHAUSTED', 'BUDGET_EXTENDED',
     'FACULTY_HEALTHY', 'FACULTY_UNHEALTHY', 'FACULTY_ISOLATED', 'FACULTY_RECONNECTED',
     'CONFIDENCE_TRANSITION',
@@ -1109,7 +1091,7 @@ Prototype rule: schema changes must update replay fixtures and TESTING.md accept
 |---|---|---|---|
 | 1.0 | 2026-04-15 | Samuël Tremblay | Initial formal specification derived from README.md after three rounds of adversarial review |
 | 1.1 | 2026-04-25 | Samuël Tremblay | Appendix, Quick Reference and Diagrams |
-| 1.2 | 2026-05-07 | CARL-01 | Arc lifecycle alignment, inhibition definitions, configuration constants, schema appendix, and testing harness reference |
+| 1.2 | 2026-05-07 | CARL-01 | Arc lifecycle alignment with deprecated pause/conflict states removed, inhibition definitions, configuration constants, schema appendix, and testing harness reference |
 
 ---
 

@@ -91,9 +91,9 @@ Each loop is *recursive in the system-level sense* — output feeds back into in
 
 CARL uses two related inhibition terms with different scope.
 
-**Competitive Inhibition** is the system-level priority competition between active Reasoning Arcs. Each Arc carries Synaptic Weight (`W`) and Temporal Decay (`λ`). The Arc with the strongest effective signal receives processing focus; weaker signals may be suspended or deferred without being erased. This replaces request-response blocking with weighted, interruptible attention.
+**Competitive Inhibition** is the system-level priority competition between active Reasoning Arcs. Each Arc carries Synaptic Weight (`W`) and Temporal Decay (`λ`). The Arc with the strongest effective signal receives processing focus; weaker signals may be deferred without being erased. This replaces request-response blocking with weighted, interruptible attention.
 
-**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc gains focus, neighboring or competing lower-weight signals are suppressed into `SUSPENDED` or `DEFERRED` states until their weight rises, the active Arc resolves, or operator input changes the priority surface. Temporal Decay lowers unattended signal strength over time; if decay exhausts recoverability, the Arc may become `ABSORBED` and require a new operator signal to restart.
+**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc gains focus, neighboring or competing lower-weight signals are deferred until their weight rises, the active Arc resolves, or operator input changes the priority surface. Temporal Decay lowers unattended signal strength over time; if decay exhausts recoverability, the Arc may become `ABSORBED` and require a new operator signal to restart.
 
 The distinction matters operationally: Competitive Inhibition describes the global scheduling behavior; Lateral Inhibition describes the local suppression operation used to enforce that schedule. Neither term implies unsupervised deletion of work. `ABSORBED` is auditable cognitive debt flushed by decay, not silent success.
 
@@ -215,7 +215,7 @@ The continuously running cognitive center that holds all active Reasoning Arcs i
 
 **Persona influences presentation and interaction, never system behavior.** Allowed: output framing (tone, format, verbosity), ambiguity resolution (which wildcard interpretation to propose), Arc prioritization, operator interaction tone. Forbidden (enforced by architecture, not convention): Execution Plan content, Reflex routing, security decisions, confidence thresholds, threshold tuning. Persona does not have access to Reflex internals or Immune System state.
 
-**The loop costs nothing at rest.** No model invoked per cycle — pure logic reads of Arc states, new input, Faculty results. A model is invoked only when a specific Arc step requires it. Ten suspended Arcs cycle indefinitely at zero cost.
+**The loop costs nothing at rest.** No model invoked per cycle — pure logic reads of Arc states, new input, Faculty results. A model is invoked only when a specific Arc step requires it. Ten deferred Arcs cycle indefinitely at zero cost.
 
 ```
 PERSONA CYCLE — zero token cost
@@ -303,19 +303,19 @@ Gating model (cheap, every iteration) decides tier — Execution Faculty (cheap,
 
 **Hard gating constraints (not learned, not tunable):** certain domains always require Reasoning Faculty (SYSTEM domain, structural changes, multi-step irreversibles), certain actions never escalate beyond Execution (READ-ONLY on SELF with no side effects), max escalation depth declared in Arc budget at open time.
 
-**Arc budget — mandatory invariant:** every Arc declares `max_model_calls`, `max_faculty_dispatches`, `max_wall_time`, and `resource_claims` at open time. Budget exhausted → Arc suspends immediately, Persona notifies operator. No silent continuation. Operator must explicitly authorize continuation or resolution.
+**Arc budget — mandatory invariant:** every Arc declares `max_model_calls`, `max_faculty_dispatches`, `max_wall_time`, and `resource_claims` at open time. Budget exhausted → Arc defers immediately, Persona notifies operator. No silent continuation. Operator must explicitly authorize continuation or resolution.
 
-**Resource arbitration — multi-Arc contention semantics.** Concurrent Arcs sharing external resources require explicit arbitration. Arc isolation prevents context bleed; it does not prevent write conflicts on shared external state.
+**Resource arbitration — multi-Arc conflict semantics.** Concurrent Arcs sharing external resources require explicit arbitration. Arc isolation prevents context bleed; it does not prevent write conflicts on shared external state.
 
 Every Arc declares `resource_claims` at open time — the set of external resources it intends to read or modify (e.g., `calendar:operator_main`, `file:/path/to/x`, `email_thread:abc123`, `memory:fact:project_status`). The Immune System maintains a per-resource lock registry. Lock semantics:
 
 - **Read claim** — multiple concurrent reads permitted. No conflict.
-- **Write claim** — exclusive. A second Arc requesting write claim on a held resource enters CONTESTED state.
+- **Write claim** — exclusive. A second Arc requesting write claim on a held resource is rejected for automatic execution and routed to Persona for operator resolution.
 - **Read-then-write claim** — escalates from read to write at modification point. Conflict detected at escalation.
 
 ```
-CONTESTED ARC RESOLUTION
-  CONTESTED Arc → suspended immediately, Persona notified
+WRITE CONFLICT RESOLUTION
+  Conflicting Arc → automatic execution blocked, Persona notified
   Persona presents conflict to operator with both Arc summaries
   Operator decides:
     SERIALIZE  → second Arc waits for first to resolve, then proceeds
@@ -323,16 +323,16 @@ CONTESTED ARC RESOLUTION
     MERGE      → both Arcs collapsed into a single Arc with combined intent
                  (operator must confirm merged intent before execution)
     OVERRIDE   → second Arc proceeds, first Arc rolled back if reversible
-                 or suspended for operator review if not
-  No silent contention resolution — operator authority required for all four outcomes.
+                 or blocked for operator review if not
+  No silent conflict resolution — operator authority required for all four outcomes.
 ```
 
-**Memory write conflicts** — Tier 1 writes are already serialized through a single write queue per Memory Faculty. Cross-Arc memory updates with conflicting values on the same key trigger CONTESTED resolution as above. Last-write-wins is forbidden for shared keys.
+**Memory write conflicts** — Tier 1 writes are already serialized through a single write queue per Memory Faculty. Cross-Arc memory updates with conflicting values on the same key trigger write conflict resolution as above. Last-write-wins is forbidden for shared keys.
 
 **Optimistic concurrency for low-risk reads** — read claims do not lock; reads complete immediately. If a write claim arrives while a read-claim Arc is mid-execution and the read is from a key the writer modifies, the reader receives a STALE_READ signal and Persona decides whether to re-read or surface the inconsistency to the operator.
 
 ```
-ARC LIFECYCLE:  OPEN → ACTIVE → [SUSPENDED | CONTESTED | DEFERRED] → [ACTIVE | RESOLVED | ABSORBED]
+ARC LIFECYCLE:  OPEN → ACTIVE → [DEFERRED | RESOLVED | ABSORBED]
 ```
 
 ---
@@ -608,8 +608,8 @@ interface Synapse {
 interface TraceEvent {
   ts: number; faculty_id: FacultyId;
   event_type: 'PUBLISH' | 'SUBSCRIBE' | 'REFLEX_HIT' | 'REFLEX_MISS'
-    | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_SUSPENDED' | 'ARC_CONTESTED'
-    | 'ARC_DEFERRED' | 'ARC_RESOLVED' | 'ARC_ABSORBED' | 'BUDGET_EXHAUSTED';
+    | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_ACTIVE' | 'ARC_DEFERRED'
+    | 'ARC_RESOLVED' | 'ARC_ABSORBED' | 'BUDGET_EXHAUSTED';
   schema_hash: string; arc_id: ArcId | null; origin_hash: string;
   tier: 'REFLEX' | 'EXECUTION' | 'REASONING' | null;
   budget_state: { calls_remaining: number; dispatches_remaining: number; time_remaining_ms: number } | null;
@@ -632,7 +632,7 @@ Five stages. Each proves exactly one theoretical claim. **Minimum Viable Carl = 
 | Immune System | Required | Required | Required | Required | Required | Required | Yes | Origin, permission, risk, audit enforcement |
 | Trace/audit logging | Required | Required | Required | Required | Required | Required | Yes | Acceptance harness depends on replayability |
 | Persona event loop | Required | Required | Required | Required | Required | Required | Yes | Zero-token rest loop from Stage 0 |
-| Arc budgets + resource claims | Required | Required | Required | Required | Required | Required | Yes | Budget and contention semantics are MVC |
+| Arc budgets + resource claims | Required | Required | Required | Required | Required | Required | Yes | Budget and conflict semantics are MVC |
 | Basic ambiguity flow | Stub | Required | Required | Required | Required | Required | Yes | Stage 1 proves confirmed intent |
 | Memory Faculty Tier 1a/1b/1c | Minimal | Minimal | Required | Required | Required | Required | Yes | Stage 2 makes persistence/reflex real |
 | Reflex corpus + dispatch | Empty | Empty | Required | Required | Required | Required | Yes | MVC requires Stage 2 |
@@ -913,7 +913,7 @@ carl/
 | Arc Store | All active Arcs held by Persona — isolated; no cross-Arc context bleed |
 | Arc Budget | Mandatory per-Arc resource limit — max_model_calls, max_faculty_dispatches, max_wall_time |
 | Resource Claims | Per-Arc declaration of external resources read or written; arbitrated by Immune System lock registry |
-| Contested Arc | Arc state when resource conflict detected — operator must resolve via SERIALIZE, CANCEL, MERGE, or OVERRIDE |
+| Write Conflict | Resource conflict requiring operator resolution via SERIALIZE, CANCEL, MERGE, or OVERRIDE |
 | Stale Read | Signal returned to read-claim Arc when a write-claim Arc modifies a key it read |
 | Persona | Main loop — event-driven, zero tokens per cycle, presentation/interaction layer only |
 | Synapse | Typed abstraction between Faculty code and Nervous System; Faculty-facing API |
