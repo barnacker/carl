@@ -1,0 +1,38 @@
+# OS/editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# JavaScript / TypeScript dependencies and builds
+node_modules/
+dist/
+build/
+coverage/
+.bun/
+.turbo/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local runtime state
+workspace/
+memory/
+.cache/
+
+# Zig build artifacts
+.zig-cache/
+zig-out/
+
+# Python helper environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
