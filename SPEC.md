@@ -21,16 +21,22 @@ Each named state machine is the authoritative definition for its lifecycle. A co
 Arcs are trajectories with **Synaptic Weight ($W$)** and **Temporal Decay ($\lambda$)**.
 An Arc is a unit of reasoning with a declared budget. Every Arc exists in exactly one state at any time.
 
+**Competitive Inhibition** is the system-level priority competition between Arcs. Effective signal strength is a function of Synaptic Weight, Temporal Decay, resource availability, and operator interventions. The strongest eligible signal receives processing focus.
+
+**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc receives focus, competing lower-weight signals may transition to `SUSPENDED` or `DEFERRED`; this suppresses processing, not auditability. If Temporal Decay exhausts a deferred Arc's recoverability, it transitions to `ABSORBED`.
+
 ```
 STATES
-  OPEN        Initial state
-  ACTIVE      Focus state (Cortex processing)
-  DEFERRED    The "Cognitive Debt" state (Signal suppressed, awaiting resource gap)
-  RESOLVED    Terminal state (Success)
-  ABSORBED    Forgetting state (Debt flushed due to decay)
+  OPEN        Initial state. Arc exists, budget and resource claims declared.
+  ACTIVE      Focus state. Cortex/Reasoning Engine is processing the Arc.
+  SUSPENDED   Recoverable pause. Awaiting operator input, Faculty result, budget extension, or contention resolution.
+  CONTESTED   Resource conflict state. Operator must resolve via SERIALIZE, CANCEL, MERGE, or OVERRIDE.
+  DEFERRED    Cognitive Debt state. Signal suppressed by Competitive Inhibition, awaiting resource gap or priority change.
+  RESOLVED    Terminal success/cancel state. Resolution Record written where applicable.
+  ABSORBED    Terminal forgetting state. Debt flushed due to Temporal Decay; requires new operator signal to restart.
 
 INITIAL STATE:  OPEN
-TERMINAL STATE: RESOLVED
+TERMINAL STATES: RESOLVED, ABSORBED
 ```
 
 **Transition table:**
@@ -39,23 +45,30 @@ TERMINAL STATE: RESOLVED
 |---|---|---|---|---|
 | OPEN | ACTIVE | Persona dispatches Arc to Reasoning Engine | Budget declared, resource_claims registered, no resource conflict | TraceEvent ARC_OPEN emitted |
 | OPEN | CONTESTED | Resource conflict detected at open time | Another Arc holds write claim on claimed resource | Persona notified; operator resolution required |
+| OPEN | DEFERRED | Higher-weight Arc suppresses newly opened Arc | Budget declared; signal below active threshold | Arc recorded as cognitive debt; no dispatch |
 | ACTIVE | ACTIVE | Faculty result arrives | Arc budget not exhausted | Result into Result Buffer; TraceEvent emitted |
 | ACTIVE | SUSPENDED | Awaiting operator input | Ambiguity detected or proposal flow initiated | Persona composes question |
 | ACTIVE | SUSPENDED | Awaiting Faculty result | Faculty dispatched, result pending | Non-blocking; other Arcs continue |
 | ACTIVE | SUSPENDED | Budget exhausted | Any budget dimension reaches zero | TraceEvent BUDGET_EXHAUSTED; Persona notifies operator immediately |
 | ACTIVE | CONTESTED | Write claim conflict detected mid-execution | Another Arc requests write on held resource, or escalation from read to write conflicts | Arc suspended; operator resolution required |
+| ACTIVE | DEFERRED | Competitive Inhibition suppresses Arc | Higher-weight eligible Arc preempts focus; Arc remains recoverable | Processing paused; effective weight continues to decay/reinforce |
 | ACTIVE | RESOLVED | Synthesis Gate signals complete | All required Faculty results received; output composed | Resolution Record written; context archived to Tier 1c; resources released |
 | CONTESTED | SUSPENDED | Operator selects SERIALIZE | Operator explicitly chooses wait | Arc waits for conflicting Arc to resolve |
 | CONTESTED | RESOLVED | Operator selects CANCEL | Operator explicitly cancels this Arc | Resources released; no output |
 | CONTESTED | ACTIVE | Operator selects OVERRIDE or MERGE | Operator explicitly approves continuation | For MERGE: combined intent confirmed by operator before execution |
 | SUSPENDED | ACTIVE | Awaited input/result arrives or operator authorizes continuation | Budget not exhausted (or operator extends budget) | Reasoning resumes |
+| SUSPENDED | DEFERRED | Awaited result arrives below focus threshold | Competing Arc has higher effective signal | Arc becomes cognitive debt |
 | SUSPENDED | RESOLVED | Operator cancels or timeout | Explicit operator cancel or configured timeout | Partial results archived if any |
+| DEFERRED | ACTIVE | Priority gap opens or operator raises priority | Effective signal crosses focus threshold before decay limit | Reasoning resumes |
+| DEFERRED | SUSPENDED | External dependency or operator input required | Arc cannot proceed without input/result | Persona records paused state |
+| DEFERRED | ABSORBED | Temporal Decay reaches absorption threshold | No reinforcement before configured decay limit | Cognitive debt archived; operator may restart with new signal |
 
 **Forbidden transitions:**
 
 | From | To | Reason |
 |---|---|---|
 | RESOLVED | Any | Terminal state. No resurrection. Reference archived Arc via Memory Faculty. |
+| ABSORBED | Any | Terminal decay state. New operator signal opens a new Arc; no resurrection. |
 | SUSPENDED | RESOLVED | Without operator action (cancel or timeout). No silent resolution. |
 | CONTESTED | ACTIVE | Without operator resolution. No silent contention bypass. |
 | Any | OPEN | OPEN is initial only. No re-opening. |
@@ -66,6 +79,8 @@ TERMINAL STATE: RESOLVED
 - `INV-ARC-2`: Every Arc in RESOLVED state has a Resolution Record in Tier 1c.
 - `INV-ARC-3`: No two Arcs hold simultaneous write claims on the same resource key.
 - `INV-ARC-4`: Arc context is isolated. No Arc can read or write another Arc's Result Buffer, working context, or intermediate state. Cross-Arc data flows only through Memory Faculty (Tier 1c).
+- `INV-ARC-5`: Every DEFERRED Arc remains auditable as cognitive debt until it transitions to ACTIVE, SUSPENDED, or ABSORBED.
+- `INV-ARC-6`: ABSORBED is terminal and never equivalent to successful resolution. It requires a new operator signal to restart work.
 
 ---
 
@@ -595,7 +610,7 @@ TraceEvent {
 TraceEventType = enum {
   PUBLISH, SUBSCRIBE, DARK_LANE,
   REFLEX_HIT, REFLEX_MISS, REFLEX_DEGRADED, REFLEX_BYPASS, REFLEX_OVERRIDE,
-  ARC_OPEN, ARC_ACTIVE, ARC_SUSPENDED, ARC_CONTESTED, ARC_RESOLVED,
+  ARC_OPEN, ARC_ACTIVE, ARC_SUSPENDED, ARC_CONTESTED, ARC_DEFERRED, ARC_RESOLVED, ARC_ABSORBED,
   BUDGET_EXHAUSTED, BUDGET_EXTENDED,
   FACULTY_HEALTHY, FACULTY_UNHEALTHY, FACULTY_ISOLATED, FACULTY_RECONNECTED,
   CONFIDENCE_TRANSITION,
@@ -697,7 +712,71 @@ BOOT SEQUENCE — strictly ordered
 
 ---
 
-## 12. Invariant Index
+
+## 12. Configuration Constants
+
+Configuration constants are named values used by the prototype harness and early implementation to make invariants executable. They are not universal claims about all CARL deployments. Production deployments may tune them by domain, but must preserve the safety relationships and authority boundaries below.
+
+### 12.1 Purpose
+
+Constants serve four purposes:
+
+1. make proof obligations testable before production tuning exists;
+2. expose hidden assumptions as named values;
+3. keep safety-relevant defaults conservative;
+4. separate prototype convention from compiled production policy.
+
+### 12.2 Prototype Defaults
+
+| Constant | Prototype default | Used by | Safety note |
+|---|---:|---|---|
+| `MIN_ORIGIN_DIVERSITY` | `3` | Confidence HIGH/LOCKED promotion | Prevents single-origin poisoning from reaching Reflex confidence |
+| `MAX_PATTERN_OBSERVATIONS_PER_HOUR` | `10` | Accumulation velocity anomaly | Exceeding this forces PROVISIONAL and operator review |
+| `CRYSTALLIZATION_THRESHOLD` | `5` | LOW → HIGH confidence | Must be evaluated after origin diversity and rate checks |
+| `PROVISIONAL_OBSERVATION_CEILING` | `25` | LOW → PROVISIONAL | Prevents indefinite accumulation without promotion or review |
+| `DEFAULT_DECAY_WINDOW_HOURS` | `168` | Reflex confidence decay | Domain-specific in production; LOCKED exempt |
+| `ABSORPTION_DECAY_MULTIPLIER` | `4` | DEFERRED → ABSORBED | Absorption requires longer inactivity than ordinary Reflex demotion |
+| `DEFAULT_MAX_MODEL_CALLS` | `8` | Arc budget | Operator may extend explicitly |
+| `DEFAULT_MAX_FACULTY_DISPATCHES` | `16` | Arc budget | Must never exceed declared Arc budget |
+| `DEFAULT_MAX_WALL_TIME_MS` | `300000` | Arc budget | Exhaustion suspends; no silent continuation |
+| `TRACE_RETENTION_DAYS_HOT` | `30` | Trace replay | Cold archive must preserve hash-chain integrity |
+| `CANARY_TRAFFIC_PERCENT` | `1` | SEB staged canary | Full promotion requires clean canary window |
+| `CANARY_CLEAN_WINDOW_CYCLES` | `100` | SEB staged canary | Error spike rolls back automatically |
+
+### 12.3 Production Guidance
+
+Production values should be declared per deployment and per domain where risk differs. Example: calendar-read Reflex patterns may tolerate a shorter decay window than external-write proposal patterns. Any production value that weakens a safety relationship requires explicit operator approval and an audit entry.
+
+Safety relationships that must hold regardless of numeric value:
+
+- `MIN_ORIGIN_DIVERSITY >= 2` for any path to HIGH confidence.
+- HIGH/CRITICAL risk bypasses Reflex regardless of confidence.
+- `ABSORPTION_DECAY_MULTIPLIER > 1`; absorption cannot occur before ordinary decay.
+- `DEFAULT_MAX_FACULTY_DISPATCHES <= arc_budget.max_faculty_dispatches` for any derived Decomposer ceiling.
+- `CANARY_TRAFFIC_PERCENT < 100`; SEB promotion must pass a partial-traffic stage before full promotion.
+
+### 12.4 Configurability
+
+Prototype constants may live in Tier 2 configuration. Production safety floors are compiled or operator-controlled depending on blast radius:
+
+| Value class | Prototype location | Production authority |
+|---|---|---|
+| Safety floor values | Tier 2 config with test guard | Compiled or operator-only |
+| Domain decay windows | Tier 2 config | Operator-modifiable, audited |
+| Arc budget defaults | Tier 2 config | Operator-modifiable, audited |
+| Optimization tunables | Tier 2 config | Optimization Pass may adjust only within floor |
+| Risk assignment rules | Immune System config/code | Compiled or operator-only; never Optimization |
+
+### 12.5 Safety Notes
+
+- Defaults are conservative starting points, not empirical proof.
+- Lowering thresholds to reduce cost is forbidden if it weakens any safety floor.
+- All threshold changes must appear in TraceEvent or audit output.
+- A missing constant is a boot/configuration failure, not permission to fall back to an implicit unsafe default.
+
+---
+
+## 13. Invariant Index
 
 All named invariants in this document, collected for reference and automated verification.
 
@@ -707,6 +786,8 @@ All named invariants in this document, collected for reference and automated ver
 | INV-ARC-2 | 1.1 | Every RESOLVED Arc has a Resolution Record in Tier 1c |
 | INV-ARC-3 | 1.1 | No two Arcs hold simultaneous write claims on same resource |
 | INV-ARC-4 | 1.1 | Arc context is isolated; no cross-Arc reads/writes |
+| INV-ARC-5 | 1.1 | DEFERRED remains auditable cognitive debt until active, suspended, or absorbed |
+| INV-ARC-6 | 1.1 | ABSORBED is terminal and never equivalent to successful resolution |
 | INV-CONF-1 | 1.2 | HIGH/LOCKED requires minimum M distinct origins |
 | INV-CONF-2 | 1.2 | Every confidence transition logged to Tier 1a |
 | INV-CONF-3 | 1.2 | LOCKED exempt from decay; all others subject |
@@ -746,6 +827,8 @@ All named invariants in this document, collected for reference and automated ver
 | INV-BOOT-2 | 11 | Core failure = HALT |
 | INV-BOOT-3 | 11 | Boot loads only minimal working set |
 | INV-BOOT-4 | 11 | Boot time independent of history size |
+| INV-CONST-1 | 12 | Missing constants are boot/configuration failures |
+| INV-CONST-2 | 12 | Production tuning preserves safety relationships |
 
 ---
 
@@ -753,7 +836,7 @@ All named invariants in this document, collected for reference and automated ver
 
 #### A.1 Arc Lifecycle (State Machine)
 **States** (initial → terminal):  
-`OPEN → ACTIVE → (SUSPENDED | CONTESTED) → RESOLVED`
+`OPEN → ACTIVE → (SUSPENDED | CONTESTED | DEFERRED) → (RESOLVED | ABSORBED)`
 
 **Text Diagram** (Mermaid — paste into any Mermaid renderer):
 ```mermaid
@@ -761,22 +844,31 @@ stateDiagram-v2
     [*] --> OPEN
     OPEN --> ACTIVE: Persona dispatch + budget OK
     OPEN --> CONTESTED: Resource conflict
+    OPEN --> DEFERRED: Suppressed at open
     ACTIVE --> ACTIVE: Faculty result arrives
     ACTIVE --> SUSPENDED: Await input / Faculty / budget exhaust
     ACTIVE --> CONTESTED: Mid-Arc write conflict
+    ACTIVE --> DEFERRED: Inhibited by stronger Arc
     ACTIVE --> RESOLVED: Synthesis complete
+    DEFERRED --> ACTIVE: Priority gap / reinforcement
+    DEFERRED --> SUSPENDED: Await dependency
+    DEFERRED --> ABSORBED: Decay threshold
     CONTESTED --> SUSPENDED: SERIALIZE
     CONTESTED --> RESOLVED: CANCEL
     CONTESTED --> ACTIVE: OVERRIDE / MERGE (operator)
     SUSPENDED --> ACTIVE: Input arrives + budget OK
+    SUSPENDED --> DEFERRED: Below focus threshold
     SUSPENDED --> RESOLVED: Cancel / timeout
     RESOLVED --> [*]
+    ABSORBED --> [*]
 ```
 
 **Key Invariants**:
 - INV-ARC-1: ACTIVE/SUSPENDED always has budget (or pending extension)
 - INV-ARC-3: No simultaneous write claims on same resource
-- Forbidden: RESOLVED → anything; silent resolutions
+- INV-ARC-5: DEFERRED remains auditable cognitive debt
+- INV-ARC-6: ABSORBED is terminal and not success
+- Forbidden: RESOLVED/ABSORBED → anything; silent resolutions
 
 #### A.2 Confidence Lifecycle (State Machine)
 **States** (initial: UNSET):
@@ -893,12 +985,131 @@ flowchart TD
 
 ---
 
+
+## Appendix B: Prototype TypeScript/Zod Schemas
+
+These schemas are prototype conventions for Stage 0–2 implementation. They are not the only valid implementation shape, but any implementation must preserve the invariants expressed by the formal sections above. Production Zig comptime types must enforce equivalent constraints.
+
+```typescript
+import { z } from 'zod'
+
+export const ActionEnum = z.enum([
+  'CHECK', 'FETCH', 'WRITE', 'DELETE', 'SCHEDULE',
+  'SUMMARIZE', 'MONITOR', 'DRAFT', 'SEARCH', 'BUILD', 'MODIFY'
+])
+
+export const DomainEnum = z.enum([
+  'WEATHER', 'CALENDAR', 'EMAIL', 'FILE', 'WEB',
+  'CODE', 'MEMORY', 'SYSTEM', 'CONFIG', 'IDENTITY'
+])
+
+export const SubjectEnum = z.enum(['SELF', 'OTHER', 'EXTERNAL'])
+export const ScopeEnum = z.enum(['TEMPORAL', 'SPATIAL', 'TOPICAL'])
+export const RiskLevel = z.enum(['LOW', 'ELEVATED', 'HIGH', 'CRITICAL'])
+export const ConfidenceState = z.enum(['UNSET', 'LOW', 'PROVISIONAL', 'HIGH', 'LOCKED'])
+export const RoutingTier = z.enum(['REFLEX', 'EXECUTION', 'REASONING'])
+export const ArcState = z.enum(['OPEN', 'ACTIVE', 'SUSPENDED', 'CONTESTED', 'DEFERRED', 'RESOLVED', 'ABSORBED'])
+
+export const Id = z.string().min(1)
+export const Hash = z.string().regex(/^[a-f0-9]{64}$/)
+
+export const OriginStamp = z.object({
+  origin_id: Id,
+  origin_type: z.enum(['OPERATOR', 'FACULTY', 'SYSTEM']),
+  authenticated: z.literal(true),
+  authority: z.enum(['OPERATOR', 'CORTEX', 'OPTIMIZATION', 'SEB', 'FACULTY', 'REFLEX']),
+  issued_at: z.number().int().nonnegative(),
+  nonce: Id,
+  signature_hash: Hash,
+}).strict()
+
+export const ParamClass = z.object({
+  quantifier: z.enum(['ONE', 'SOME', 'ALL']).nullable(),
+  modifier: z.array(z.string().min(1)).default([]),
+  target_breadth: z.enum(['SPECIFIC', 'FILTERED', 'UNBOUNDED']),
+}).strict()
+
+export const CompressedIntent = z.object({
+  action: ActionEnum,
+  domain: z.union([DomainEnum, z.literal('*')]),
+  subject: SubjectEnum,
+  scope: ScopeEnum.nullable(),
+  risk: RiskLevel,
+  param_class: ParamClass,
+  params: z.record(z.string(), z.unknown()),
+  origin: OriginStamp,
+  arc_id: Id,
+  timestamp: z.number().int().nonnegative(),
+}).strict()
+
+export const BudgetState = z.object({
+  calls_remaining: z.number().int().nonnegative(),
+  dispatches_remaining: z.number().int().nonnegative(),
+  time_remaining_ms: z.number().int().nonnegative(),
+}).strict()
+
+export const ReflexDetail = z.object({
+  signature_hash: Hash,
+  step_reached: z.number().int().min(1).max(9),
+  step_result: z.enum(['PASS', 'FAIL']),
+  confidence: ConfidenceState,
+  origin_hash: Hash,
+}).strict()
+
+export const TraceEvent = z.object({
+  ts: z.number().int().nonnegative(),
+  faculty_id: Id,
+  event_type: z.enum([
+    'PUBLISH', 'SUBSCRIBE', 'DARK_LANE',
+    'REFLEX_HIT', 'REFLEX_MISS', 'REFLEX_DEGRADED', 'REFLEX_BYPASS', 'REFLEX_OVERRIDE',
+    'ARC_OPEN', 'ARC_ACTIVE', 'ARC_SUSPENDED', 'ARC_CONTESTED', 'ARC_DEFERRED', 'ARC_RESOLVED', 'ARC_ABSORBED',
+    'BUDGET_EXHAUSTED', 'BUDGET_EXTENDED',
+    'FACULTY_HEALTHY', 'FACULTY_UNHEALTHY', 'FACULTY_ISOLATED', 'FACULTY_RECONNECTED',
+    'CONFIDENCE_TRANSITION',
+    'CRYSTALLIZATION', 'CRYSTALLIZATION_BLOCKED',
+    'OPTIMIZATION_SWEEP', 'THRESHOLD_ADJUSTED',
+    'ELEVATION', 'ELEVATION_DENIED',
+    'SEB_GATE_PASSED', 'SEB_GATE_FAILED', 'SEB_PROMOTED', 'SEB_ROLLED_BACK',
+    'SEMANTIC_QUERY'
+  ]),
+  schema_hash: Hash,
+  arc_id: Id.nullable(),
+  origin_hash: Hash,
+  tier: RoutingTier.nullable(),
+  budget_state: BudgetState.nullable(),
+  reflex_detail: ReflexDetail.nullable(),
+}).strict()
+
+export const ResolutionRecord = z.object({
+  arc_id: Id,
+  intent_signature: Hash,
+  path_taken: z.enum(['REFLEX', 'CORTEX_EXECUTION', 'CORTEX_REASONING', 'OPERATOR_CANCELLED', 'ABSORBED']),
+  faculty_sequence: z.array(Id),
+  cost: z.object({
+    model_calls: z.number().int().nonnegative(),
+    tokens_in: z.number().int().nonnegative(),
+    tokens_out: z.number().int().nonnegative(),
+  }).strict(),
+  duration_ms: z.number().int().nonnegative(),
+  result_quality: z.number().min(0).max(1).nullable(),
+  thresholds_used: z.record(z.string(), z.number()),
+  risk: RiskLevel,
+  origin_hash: Hash,
+  resolved_at: z.number().int().nonnegative(),
+}).strict()
+```
+
+Prototype rule: schema changes must update replay fixtures and TESTING.md acceptance checks in the same PR.
+
+---
+
 ## Document History
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 1.0 | 2026-04-15 | Samuël Tremblay | Initial formal specification derived from README.md after three rounds of adversarial review |
 | 1.1 | 2026-04-25 | Samuël Tremblay | Appendix, Quick Reference and Diagrams |
+| 1.2 | 2026-05-07 | CARL-01 | Arc lifecycle alignment, inhibition definitions, configuration constants, schema appendix, and testing harness reference |
 
 ---
 

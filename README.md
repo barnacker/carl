@@ -6,6 +6,19 @@ CARL claims structural control properties by design, not security by declaration
 
 The biological terminology — Cortex, Nervous System, Immune System, Faculty, Reflex — is a naming convention, not a proof framework. It selects names from cognitive biology because the role correspondences are useful for navigation. It does not claim biological fidelity, biological completeness, or that CARL "thinks" in any sense beyond what its mechanisms demonstrably do. Where the architecture makes a claim that resembles a cognitive property (persistence, accumulation, recursion), that claim is grounded in a named mechanism with a falsification condition, not in the analogy.
 
+
+## Reading Map
+
+Start here if you are evaluating or building CARL:
+
+1. **README.md** — architectural narrative, Laws, components, staged build path, terminology, and scope limits.
+2. **SPEC.md** — normative definitions: state machines, authority lattice, risk taxonomy, schemas, invariants, and proof obligations.
+3. **TESTING.md** — prototype acceptance harness: static checks, replay tests, fixtures, adversarial corpora, and stage gates.
+4. **CONTRIBUTING.md** — contribution rules, documentation expectations, and PR requirements.
+
+For a first implementation, read `README.md` through **Build Stages**, then use `SPEC.md` sections 1–6 and `TESTING.md` Stage 0–2 gates as the executable contract for MVC.
+
+---
 | Dimension | Agent Frameworks | CARL |
 |---|---|---|
 | **1. Reasoning** | Each agent reasons independently | Only Cortex originates decision policy |
@@ -71,6 +84,18 @@ Recursion is a property that emerges from several reinforcing loops operating si
 **Threshold self-optimization.** Every resolved request generates a Resolution Record. The Optimization Pass reads these records and tunes four named thresholds within bounds Cortex authorizes — the system biases toward the cheapest viable path subject to the compiled safety floor (Law 12). This loop is bounded by the safety floor (cannot be tuned away) and by the Patch 10 longitudinal observability requirements.
 
 Each loop is *recursive in the system-level sense* — output feeds back into input over time. None of these loops is recursive in the *concept-formation* sense. They are policy-caching, route-extension, and threshold-tuning loops. The "Recursive" in CARL's name refers to this system-level feedback structure, not to recursive learning of new abstractions.
+
+---
+
+## Inhibition Model
+
+CARL uses two related inhibition terms with different scope.
+
+**Competitive Inhibition** is the system-level priority competition between active Reasoning Arcs. Each Arc carries Synaptic Weight (`W`) and Temporal Decay (`λ`). The Arc with the strongest effective signal receives processing focus; weaker signals may be suspended or deferred without being erased. This replaces request-response blocking with weighted, interruptible attention.
+
+**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc gains focus, neighboring or competing lower-weight signals are suppressed into `SUSPENDED` or `DEFERRED` states until their weight rises, the active Arc resolves, or operator input changes the priority surface. Temporal Decay lowers unattended signal strength over time; if decay exhausts recoverability, the Arc may become `ABSORBED` and require a new operator signal to restart.
+
+The distinction matters operationally: Competitive Inhibition describes the global scheduling behavior; Lateral Inhibition describes the local suppression operation used to enforce that schedule. Neither term implies unsupervised deletion of work. `ABSORBED` is auditable cognitive debt flushed by decay, not silent success.
 
 ---
 
@@ -307,7 +332,7 @@ CONTESTED ARC RESOLUTION
 **Optimistic concurrency for low-risk reads** — read claims do not lock; reads complete immediately. If a write claim arrives while a read-claim Arc is mid-execution and the read is from a key the writer modifies, the reader receives a STALE_READ signal and Persona decides whether to re-read or surface the inconsistency to the operator.
 
 ```
-ARC LIFECYCLE:  open (with budget + resource_claims) → active → [contested?] → suspended → resolved
+ARC LIFECYCLE:  OPEN → ACTIVE → [SUSPENDED | CONTESTED | DEFERRED] → [ACTIVE | RESOLVED | ABSORBED]
 ```
 
 ---
@@ -583,7 +608,8 @@ interface Synapse {
 interface TraceEvent {
   ts: number; faculty_id: FacultyId;
   event_type: 'PUBLISH' | 'SUBSCRIBE' | 'REFLEX_HIT' | 'REFLEX_MISS'
-    | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_SUSPENDED' | 'ARC_RESOLVED' | 'BUDGET_EXHAUSTED';
+    | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_SUSPENDED' | 'ARC_CONTESTED'
+    | 'ARC_DEFERRED' | 'ARC_RESOLVED' | 'ARC_ABSORBED' | 'BUDGET_EXHAUSTED';
   schema_hash: string; arc_id: ArcId | null; origin_hash: string;
   tier: 'REFLEX' | 'EXECUTION' | 'REASONING' | null;
   budget_state: { calls_remaining: number; dispatches_remaining: number; time_remaining_ms: number } | null;
@@ -595,6 +621,29 @@ interface TraceEvent {
 ## Build Stages
 
 Five stages. Each proves exactly one theoretical claim. **Minimum Viable Carl = Stages 0 + 1 + 2.** Stages 3–5 extend beyond MVC.
+
+### Stage / Component Matrix
+
+| Component / Mechanism | Stage 0 Spine | Stage 1 Intent | Stage 2 Learning Loop | Stage 3 Continuous Entity | Stage 4 Self-Optimization | Stage 5 Dark Transit | MVC? | Notes |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| PRIME directives | Required | Required | Required | Required | Required | Required | Yes | Prototype file, production compiled |
+| Synapse | Required | Required | Required | Required | Required | Required | Yes | Only Faculty-facing I/O surface |
+| Nervous System + Relay | Required | Required | Required | Required | Required | Required | Yes | Typed routing and schema enforcement |
+| Immune System | Required | Required | Required | Required | Required | Required | Yes | Origin, permission, risk, audit enforcement |
+| Trace/audit logging | Required | Required | Required | Required | Required | Required | Yes | Acceptance harness depends on replayability |
+| Persona event loop | Required | Required | Required | Required | Required | Required | Yes | Zero-token rest loop from Stage 0 |
+| Arc budgets + resource claims | Required | Required | Required | Required | Required | Required | Yes | Budget and contention semantics are MVC |
+| Basic ambiguity flow | Stub | Required | Required | Required | Required | Required | Yes | Stage 1 proves confirmed intent |
+| Memory Faculty Tier 1a/1b/1c | Minimal | Minimal | Required | Required | Required | Required | Yes | Stage 2 makes persistence/reflex real |
+| Reflex corpus + dispatch | Empty | Empty | Required | Required | Required | Required | Yes | MVC requires Stage 2 |
+| Faculty health registry | Required | Required | Required | Required | Required | Required | Yes | Reflex cannot route without health checks |
+| System Evolution Boundary | Not shipped | Not shipped | Not shipped | Required | Required | Required | No | Separate trust tier; explicitly outside MVC |
+| Semantic Index | Not shipped | Not shipped | Not shipped | Optional | Optional | Optional | No | Stage 2.5/3 enhancement; not MVC |
+| Optimization Pass | Not shipped | Not shipped | Not shipped | Not shipped | Required | Required | No | Stage 4 extension |
+| Dark Lane / Dark Transit | Not shipped | Not shipped | Not shipped | Not shipped | Not shipped | Required | No | Stage 5 extension |
+
+MVC is Stages 0–2 only. Components marked non-MVC must not be treated as prerequisites for the first working CARL instance.
+
 
 ---
 
