@@ -27,11 +27,11 @@ An Arc is a unit of reasoning with a declared budget. Every Arc exists in exactl
 
 ```
 STATES
-  OPEN        Initial state. Arc exists, budget and resource claims declared.
-  ACTIVE      Focus state. Cortex/Reasoning Engine is processing the Arc.
-  DEFERRED    Cognitive Debt state. Signal suppressed by Competitive Inhibition, blocked by dependency, or awaiting operator input/resource availability.
-  RESOLVED    Terminal success/cancel state. Resolution Record written where applicable.
-  ABSORBED    Terminal forgetting state. Debt flushed due to Temporal Decay; requires new operator signal to restart.
+  OPEN        Initial state.
+  ACTIVE      Focus state. Cortex processing.
+  DEFERRED    Cognitive Debt state. Signal suppressed, awaiting resource gap.
+  RESOLVED    Terminal state. Success.
+  ABSORBED    Forgetting state. Debt flushed due to decay.
 
 INITIAL STATE:  OPEN
 TERMINAL STATES: RESOLVED, ABSORBED
@@ -41,17 +41,16 @@ TERMINAL STATES: RESOLVED, ABSORBED
 
 | From | To | Trigger | Guard | Required Effect |
 |---|---|---|---|---|
-| OPEN | ACTIVE | Persona dispatches Arc to Reasoning Engine | Budget declared, resource_claims registered, no blocking conflict | TraceEvent ARC_OPEN and ARC_ACTIVE emitted |
-| OPEN | DEFERRED | Higher-weight Arc, missing operator input, dependency, budget wait, or write conflict blocks dispatch | Arc remains recoverable and auditable | Arc recorded as cognitive debt; Persona notified if operator action is required |
+| OPEN | ACTIVE | Persona dispatches Arc to Reasoning Engine | Budget declared and no resource gap blocks focus | TraceEvent ARC_OPEN and ARC_ACTIVE emitted |
+| OPEN | DEFERRED | Higher-weight Arc, missing operator input, dependency, budget wait, or resource gap blocks focus | Arc remains recoverable and auditable | Arc recorded as cognitive debt; Persona notified if operator action is required |
 | ACTIVE | ACTIVE | Faculty result arrives | Arc budget not exhausted | Result into Result Buffer; TraceEvent emitted |
 | ACTIVE | DEFERRED | Awaiting operator input | Ambiguity detected or proposal flow initiated | Persona composes question; processing pauses audibly |
 | ACTIVE | DEFERRED | Awaiting Faculty result | Faculty dispatched, result pending | Non-blocking; other Arcs continue |
 | ACTIVE | DEFERRED | Budget exhausted | Any budget dimension reaches zero | TraceEvent BUDGET_EXHAUSTED; Persona notifies operator immediately |
-| ACTIVE | DEFERRED | Write claim conflict detected | Another Arc holds or requests incompatible write claim | Automatic execution blocked; operator resolution required |
+| ACTIVE | DEFERRED | Resource gap detected | Required resource unavailable inside declared budget | Arc becomes cognitive debt; Persona notified if operator action is required |
 | ACTIVE | DEFERRED | Competitive Inhibition suppresses Arc | Higher-weight eligible Arc preempts focus; Arc remains recoverable | Processing paused; effective weight continues to decay/reinforce |
 | ACTIVE | RESOLVED | Synthesis Gate signals complete | All required Faculty results received; output composed | Resolution Record written; context archived to Tier 1c; resources released |
-| DEFERRED | ACTIVE | Awaited input/result arrives, resource conflict is resolved, priority gap opens, or operator authorizes continuation | Budget not exhausted or operator extends budget | Reasoning resumes |
-| DEFERRED | RESOLVED | Operator cancels or configured timeout cancels | Explicit operator cancel or configured timeout | Partial results archived if any; resources released |
+| DEFERRED | ACTIVE | Awaited input/result arrives, resource gap closes, priority gap opens, or operator authorizes continuation | Budget not exhausted or operator extends budget | Reasoning resumes |
 | DEFERRED | ABSORBED | Temporal Decay reaches absorption threshold | No reinforcement before configured decay limit | Cognitive debt archived; operator may restart with new signal |
 
 **Forbidden transitions:**
@@ -61,16 +60,16 @@ TERMINAL STATES: RESOLVED, ABSORBED
 | RESOLVED | Any | Terminal state. No resurrection. Reference archived Arc via Memory Faculty. |
 | ABSORBED | Any | Terminal decay state. New operator signal opens a new Arc; no resurrection. |
 | DEFERRED | ACTIVE | Without awaited input/result, resource availability, priority gap, or explicit operator authorization. No silent bypass. |
-| DEFERRED | RESOLVED | Without operator action or configured timeout. No silent resolution. |
+| DEFERRED | RESOLVED | Without successful synthesis. RESOLVED is terminal success, not cancellation or decay. |
 | Any | OPEN | OPEN is initial only. No re-opening. |
 
 **Invariants:**
 
 - `INV-ARC-1`: Every Arc in ACTIVE state has a non-zero budget in at least one dimension, OR has operator-authorized budget extension pending.
 - `INV-ARC-2`: Every Arc in RESOLVED state has a Resolution Record in Tier 1c.
-- `INV-ARC-3`: No two Arcs hold simultaneous write claims on the same resource key.
+- `INV-ARC-3`: Resource needs are declared at Arc open and audited through the budget model.
 - `INV-ARC-4`: Arc context is isolated. No Arc can read or write another Arc's Result Buffer, working context, or intermediate state. Cross-Arc data flows only through Memory Faculty (Tier 1c).
-- `INV-ARC-5`: Every DEFERRED Arc remains auditable as cognitive debt until it transitions to ACTIVE, RESOLVED, or ABSORBED.
+- `INV-ARC-5`: Every DEFERRED Arc remains auditable as cognitive debt until it transitions to ACTIVE or ABSORBED.
 - `INV-ARC-6`: ABSORBED is terminal and never equivalent to successful resolution. It requires a new operator signal to restart work.
 
 ---
@@ -775,9 +774,9 @@ All named invariants in this document, collected for reference and automated ver
 |---|---|---|
 | INV-ARC-1 | 1.1 | Every Arc in ACTIVE has non-zero budget or pending extension |
 | INV-ARC-2 | 1.1 | Every RESOLVED Arc has a Resolution Record in Tier 1c |
-| INV-ARC-3 | 1.1 | No two Arcs hold simultaneous write claims on same resource |
+| INV-ARC-3 | 1.1 | Resource needs are declared at Arc open and audited through the budget model |
 | INV-ARC-4 | 1.1 | Arc context is isolated; no cross-Arc reads/writes |
-| INV-ARC-5 | 1.1 | DEFERRED remains auditable cognitive debt until active, resolved, or absorbed |
+| INV-ARC-5 | 1.1 | DEFERRED remains auditable cognitive debt until active or absorbed |
 | INV-ARC-6 | 1.1 | ABSORBED is terminal and never equivalent to successful resolution |
 | INV-CONF-1 | 1.2 | HIGH/LOCKED requires minimum M distinct origins |
 | INV-CONF-2 | 1.2 | Every confidence transition logged to Tier 1a |
@@ -827,7 +826,7 @@ All named invariants in this document, collected for reference and automated ver
 
 #### A.1 Arc Lifecycle (State Machine)
 **States** (initial → terminal):  
-`OPEN → ACTIVE → DEFERRED → (ACTIVE | RESOLVED | ABSORBED)`
+`OPEN → ACTIVE → (DEFERRED ↔ ACTIVE | RESOLVED | ABSORBED)`
 
 **Text Diagram** (Mermaid — paste into any Mermaid renderer):
 ```mermaid
@@ -836,10 +835,9 @@ stateDiagram-v2
     OPEN --> ACTIVE: Persona dispatch + budget OK
     OPEN --> DEFERRED: Blocked at open / inhibited
     ACTIVE --> ACTIVE: Faculty result arrives
-    ACTIVE --> DEFERRED: Await input / Faculty / budget / conflict / inhibition
+    ACTIVE --> DEFERRED: Await input / Faculty / budget / resource gap / inhibition
     ACTIVE --> RESOLVED: Synthesis complete
     DEFERRED --> ACTIVE: Input / result / resource / priority gap / operator authorization
-    DEFERRED --> RESOLVED: Cancel / timeout
     DEFERRED --> ABSORBED: Decay threshold
     RESOLVED --> [*]
     ABSORBED --> [*]
@@ -847,7 +845,7 @@ stateDiagram-v2
 
 **Key Invariants**:
 - INV-ARC-1: ACTIVE always has budget (or pending extension)
-- INV-ARC-3: No simultaneous write claims on same resource
+- INV-ARC-3: Resource needs declared and audited through budget model
 - INV-ARC-5: DEFERRED remains auditable cognitive debt
 - INV-ARC-6: ABSORBED is terminal and not success
 - Forbidden: RESOLVED/ABSORBED → anything; silent resolutions or silent reactivation
@@ -1091,7 +1089,7 @@ Prototype rule: schema changes must update replay fixtures and TESTING.md accept
 |---|---|---|---|
 | 1.0 | 2026-04-15 | Samuël Tremblay | Initial formal specification derived from README.md after three rounds of adversarial review |
 | 1.1 | 2026-04-25 | Samuël Tremblay | Appendix, Quick Reference and Diagrams |
-| 1.2 | 2026-05-07 | CARL-01 | Arc lifecycle alignment with deprecated pause/conflict states removed, inhibition definitions, configuration constants, schema appendix, and testing harness reference |
+| 1.2 | 2026-05-07 | CARL-01 | Arc lifecycle alignment with obsolete extra states removed, inhibition definitions, configuration constants, schema appendix, and testing harness reference |
 
 ---
 

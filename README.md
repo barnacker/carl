@@ -303,36 +303,32 @@ Gating model (cheap, every iteration) decides tier — Execution Faculty (cheap,
 
 **Hard gating constraints (not learned, not tunable):** certain domains always require Reasoning Faculty (SYSTEM domain, structural changes, multi-step irreversibles), certain actions never escalate beyond Execution (READ-ONLY on SELF with no side effects), max escalation depth declared in Arc budget at open time.
 
-**Arc budget — mandatory invariant:** every Arc declares `max_model_calls`, `max_faculty_dispatches`, `max_wall_time`, and `resource_claims` at open time. Budget exhausted → Arc defers immediately, Persona notifies operator. No silent continuation. Operator must explicitly authorize continuation or resolution.
+**Arc budget — mandatory invariant:** every Arc declares `max_model_calls`, `max_faculty_dispatches`, `max_wall_time`, and resource needs at open time. Budget exhausted → Arc defers immediately, Persona notifies operator. No silent continuation. Operator must explicitly authorize continuation or resolution.
 
-**Resource arbitration — multi-Arc conflict semantics.** Concurrent Arcs sharing external resources require explicit arbitration. Arc isolation prevents context bleed; it does not prevent write conflicts on shared external state.
+**Resource gaps — cognitive-debt semantics.** If an Arc cannot obtain a required resource inside its declared budget, it transitions to `DEFERRED`: the Cognitive Debt state. Persona records the suppressed Signal, keeps the Arc auditable, and waits for the resource gap to close or for operator authorization.
 
-Every Arc declares `resource_claims` at open time — the set of external resources it intends to read or modify (e.g., `calendar:operator_main`, `file:/path/to/x`, `email_thread:abc123`, `memory:fact:project_status`). The Immune System maintains a per-resource lock registry. Lock semantics:
+Every Arc declares resource needs at open time (e.g., `calendar:operator_main`, `file:/path/to/x`, `email_thread:abc123`, `memory:fact:project_status`). These declarations are budgeting and audit inputs, not a separate Arc state machine. Resource handling outcomes are constrained to the five final Arc states:
 
-- **Read claim** — multiple concurrent reads permitted. No conflict.
-- **Write claim** — exclusive. A second Arc requesting write claim on a held resource is rejected for automatic execution and routed to Persona for operator resolution.
-- **Read-then-write claim** — escalates from read to write at modification point. Conflict detected at escalation.
-
-```
-WRITE CONFLICT RESOLUTION
-  Conflicting Arc → automatic execution blocked, Persona notified
-  Persona presents conflict to operator with both Arc summaries
-  Operator decides:
-    SERIALIZE  → second Arc waits for first to resolve, then proceeds
-    CANCEL     → second Arc dropped, first proceeds unchanged
-    MERGE      → both Arcs collapsed into a single Arc with combined intent
-                 (operator must confirm merged intent before execution)
-    OVERRIDE   → second Arc proceeds, first Arc rolled back if reversible
-                 or blocked for operator review if not
-  No silent conflict resolution — operator authority required for all four outcomes.
-```
-
-**Memory write conflicts** — Tier 1 writes are already serialized through a single write queue per Memory Faculty. Cross-Arc memory updates with conflicting values on the same key trigger write conflict resolution as above. Last-write-wins is forbidden for shared keys.
-
-**Optimistic concurrency for low-risk reads** — read claims do not lock; reads complete immediately. If a write claim arrives while a read-claim Arc is mid-execution and the read is from a key the writer modifies, the reader receives a STALE_READ signal and Persona decides whether to re-read or surface the inconsistency to the operator.
+- `OPEN` — Initial state.
+- `ACTIVE` — Focus state; Cortex processing.
+- `DEFERRED` — Cognitive Debt; Signal suppressed while awaiting a resource gap, dependency, budget extension, operator input, or priority gap.
+- `RESOLVED` — Terminal success.
+- `ABSORBED` — Forgetting state; debt flushed due to decay.
 
 ```
-ARC LIFECYCLE:  OPEN → ACTIVE → [DEFERRED | RESOLVED | ABSORBED]
+RESOURCE GAP HANDLING
+  Required resource unavailable → Arc transitions to DEFERRED
+  Persona records the suppressed Signal as cognitive debt
+  Arc may return to ACTIVE when the gap closes or operator authorizes continuation
+  Arc may become ABSORBED if decay flushes the debt before reinforcement
+```
+
+**Memory writes** — Tier 1 writes are serialized through the Memory Faculty write queue. If a memory write cannot proceed within the Arc budget, the Arc defers as cognitive debt. Last-write-wins is forbidden for shared keys.
+
+**Optimistic concurrency for low-risk reads** — read needs do not block focus. If a prior read becomes stale before synthesis, the reader receives a STALE_READ signal and Persona decides whether to re-read or surface the inconsistency to the operator.
+
+```
+ARC LIFECYCLE:  OPEN → ACTIVE → (DEFERRED ↔ ACTIVE | RESOLVED | ABSORBED)
 ```
 
 ---
@@ -632,7 +628,7 @@ Five stages. Each proves exactly one theoretical claim. **Minimum Viable Carl = 
 | Immune System | Required | Required | Required | Required | Required | Required | Yes | Origin, permission, risk, audit enforcement |
 | Trace/audit logging | Required | Required | Required | Required | Required | Required | Yes | Acceptance harness depends on replayability |
 | Persona event loop | Required | Required | Required | Required | Required | Required | Yes | Zero-token rest loop from Stage 0 |
-| Arc budgets + resource claims | Required | Required | Required | Required | Required | Required | Yes | Budget and conflict semantics are MVC |
+| Arc budgets + resource needs | Required | Required | Required | Required | Required | Required | Yes | Budget and resource-gap semantics are MVC |
 | Basic ambiguity flow | Stub | Required | Required | Required | Required | Required | Yes | Stage 1 proves confirmed intent |
 | Memory Faculty Tier 1a/1b/1c | Minimal | Minimal | Required | Required | Required | Required | Yes | Stage 2 makes persistence/reflex real |
 | Reflex corpus + dispatch | Empty | Empty | Required | Required | Required | Required | Yes | MVC requires Stage 2 |
@@ -909,12 +905,11 @@ carl/
 
 | Term | Definition |
 |---|---|
-| Reasoning Arc | Unit of reasoning — trajectory with declared budget and resource_claims |
+| Reasoning Arc | Unit of reasoning — trajectory with declared budget and resource needs |
 | Arc Store | All active Arcs held by Persona — isolated; no cross-Arc context bleed |
 | Arc Budget | Mandatory per-Arc resource limit — max_model_calls, max_faculty_dispatches, max_wall_time |
-| Resource Claims | Per-Arc declaration of external resources read or written; arbitrated by Immune System lock registry |
-| Write Conflict | Resource conflict requiring operator resolution via SERIALIZE, CANCEL, MERGE, or OVERRIDE |
-| Stale Read | Signal returned to read-claim Arc when a write-claim Arc modifies a key it read |
+| Resource Needs | Per-Arc declaration of external resources required for focus; unmet needs route Arc to DEFERRED cognitive debt |
+| Stale Read | Signal returned when previously read data may no longer be valid before synthesis |
 | Persona | Main loop — event-driven, zero tokens per cycle, presentation/interaction layer only |
 | Synapse | Typed abstraction between Faculty code and Nervous System; Faculty-facing API |
 | Relay | Text → typed objects, schema validation at bus entry |
