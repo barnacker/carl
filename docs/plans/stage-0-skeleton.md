@@ -76,7 +76,9 @@
 - Create: `nervous-system/routing/index.ts`
 - Create: `nervous-system/trace/index.ts`
 - Create: `cortex/index.ts`
+  - Owns `Cortex`, `CortexDependencies`, and `createCortex()`.
 - Create: `cortex/persona/index.ts`
+  - Owns `Persona`, `PersonaConfiguration`, `PersonaDependencies`, `createPersona()`, and Persona-owned Arc lifecycle.
 - Create: `cortex/reasoning-engine/index.ts`
 - Create: `cortex/decomposer/index.ts`
 - Create: `cortex/result-buffer/index.ts`

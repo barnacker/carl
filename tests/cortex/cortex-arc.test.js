@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import { createCortex } from '../../dist/cortex/index.js'
@@ -25,6 +26,13 @@ test('Cortex contains Persona with identity and model-routing properties', () =>
   assert.equal(cortex.persona.llmFacultyId, 'faculty/llm/direct')
   assert.equal(cortex.persona.primeDirective, 'Resolve validated operator signals.')
   assert.equal(cortex.persona.personaPromptMemoryRef, 'memory/persona/carl')
+})
+
+test('Persona module does not own Cortex API exports', () => {
+  const personaSource = readFileSync(new URL('../../cortex/persona/index.ts', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(personaSource, /export interface Cortex\b/)
+  assert.doesNotMatch(personaSource, /export function createCortex\b/)
 })
 
 test('Persona opens an Arc from a validated incoming signal and resolves it directly', async () => {

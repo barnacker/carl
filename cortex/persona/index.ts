@@ -1,4 +1,4 @@
-import type { ArcRecord, ArcState } from '../../schemas/arc.js'
+import type { ArcRecord } from '../../schemas/arc.js'
 import type { OriginStamp } from '../../schemas/origin-stamp.js'
 import type { TraceEvent, TraceEventType } from '../../schemas/trace-event.js'
 
@@ -19,7 +19,7 @@ export interface PersonaResponseSignal {
 
 export interface ArcIndexEntry {
   readonly id: string
-  readonly state: ArcState
+  readonly state: ArcRecord['state']
   readonly target: string
   readonly summary: string
 }
@@ -44,18 +44,7 @@ export interface PersonaDependencies {
   readonly createResponse?: (input: CreateResponseInput) => string
 }
 
-export interface CortexDependencies extends PersonaDependencies {
-  readonly persona?: Partial<PersonaConfiguration>
-}
-
 export interface Persona extends PersonaConfiguration {
-  receiveSignal(signal: IncomingMessageSignal): Promise<PersonaResponseSignal>
-  listArcIndex(): readonly ArcIndexEntry[]
-  getArc(arcId: string): ArcRecord | undefined
-}
-
-export interface Cortex {
-  readonly persona: Persona
   receiveSignal(signal: IncomingMessageSignal): Promise<PersonaResponseSignal>
   listArcIndex(): readonly ArcIndexEntry[]
   getArc(arcId: string): ArcRecord | undefined
@@ -100,7 +89,7 @@ export function createPersona(dependencies: PersonaDependencies = {}): Persona {
       }
       const trace: TraceEvent[] = []
 
-      const transition = (event_type: Extract<TraceEventType, 'ARC_OPEN' | 'ARC_ACTIVE' | 'ARC_RESOLVED'>, arc_state: Extract<ArcState, 'OPEN' | 'ACTIVE' | 'RESOLVED'>): void => {
+      const transition = (event_type: Extract<TraceEventType, 'ARC_OPEN' | 'ARC_ACTIVE' | 'ARC_RESOLVED'>, arc_state: Extract<ArcRecord['state'], 'OPEN' | 'ACTIVE' | 'RESOLVED'>): void => {
         const traceEvent: TraceEvent = {
           ts: now(),
           faculty_id: DIRECT_PERSONA_FACULTY_ID,
@@ -154,24 +143,4 @@ export function createPersona(dependencies: PersonaDependencies = {}): Persona {
   }
 
   return persona
-}
-
-export function createCortex(dependencies: CortexDependencies = {}): Cortex {
-  const persona = createPersona(dependencies)
-
-  return {
-    persona,
-
-    receiveSignal(signal: IncomingMessageSignal): Promise<PersonaResponseSignal> {
-      return persona.receiveSignal(signal)
-    },
-
-    listArcIndex(): readonly ArcIndexEntry[] {
-      return persona.listArcIndex()
-    },
-
-    getArc(arcId: string): ArcRecord | undefined {
-      return persona.getArc(arcId)
-    },
-  }
 }
