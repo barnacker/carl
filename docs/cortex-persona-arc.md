@@ -353,10 +353,10 @@ cortex/
   persona.ts            # Persona component
   arc-store.ts          # ArcStore component
   orientation-loop.ts   # OrientationLoop component
-  reasoning-engine.ts   # future Cortex component boundary
-  decomposer.ts         # future Cortex component boundary
-  result-buffer.ts      # future Cortex component boundary
-  synthesis-gate.ts     # future Cortex component boundary
+  reasoning-engine.ts   # deliberation policy and high-reasoning escalation boundary
+  decomposer.ts         # breaks selected Arc work into Tasks or Sub-Arcs
+  result-buffer.ts      # collects faculty outputs, evidence, and partial results before synthesis
+  synthesis-gate.ts     # decides when buffered results are sufficient, conflicted, or blocked
 ```
 
 Deferred folder shape, only when justified:
@@ -407,6 +407,26 @@ cortex/orientation-loop.ts
   - FocusDecision
   - createOrientationLoop()
   - salience scoring and focus selection
+
+cortex/reasoning-engine.ts
+  - reasoningEngineBoundary
+  - deliberation policy boundary for expensive/high-reasoning passes
+  - future owner of reasoning escalation criteria, critique passes, and answer-quality checks
+
+cortex/decomposer.ts
+  - decomposerBoundary
+  - future owner of Arc-to-Task and Task-to-Sub-Arc decomposition
+  - separates execution planning from Persona wording and ArcStore lifecycle persistence
+
+cortex/result-buffer.ts
+  - resultBufferBoundary
+  - future owner of temporary faculty result aggregation for an active FocusCycle
+  - tracks evidence, partial results, conflicts, and pending dependencies before synthesis
+
+cortex/synthesis-gate.ts
+  - synthesisGateBoundary
+  - future owner of readiness decisions before operator-facing output
+  - determines whether buffered results are sufficient, need more faculty work, conflict resolution, or blocking
 ```
 
 Cortex API definitions do not belong in `cortex/persona.ts`.

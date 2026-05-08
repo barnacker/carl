@@ -870,15 +870,14 @@ carl/
 │   └── immune-system/
 ├── synapse/
 ├── cortex/
-│   ├── persona/
-│   │   ├── arc-store/
-│   │   ├── ambiguity/
-│   │   └── output-composer/
-│   ├── reasoning-engine/
-│   │   └── gating/
-│   ├── decomposer/
-│   ├── result-buffer/
-│   └── synthesis-gate/
+│   ├── index.ts                 ← Cortex boundary / public composition
+│   ├── persona.ts               ← Persona identity, prompt-memory, and response policy
+│   ├── arc-store.ts             ← Arc lifecycle persistence, indexing, and lookup
+│   ├── orientation-loop.ts      ← salience scoring and FocusDecision selection
+│   ├── reasoning-engine.ts      ← deliberation policy and high-reasoning escalation boundary
+│   ├── decomposer.ts            ← selected Arc work to Tasks or Sub-Arcs
+│   ├── result-buffer.ts         ← faculty output/evidence aggregation during a FocusCycle
+│   └── synthesis-gate.ts        ← readiness/conflict/blocking gate before operator output
 ├── faculties/
 │   ├── memory/
 │   │   ├── observation-log/        ← Tier 1a: append-only, hash-chained
