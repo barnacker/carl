@@ -76,11 +76,21 @@
 - Create: `nervous-system/routing/index.ts`
 - Create: `nervous-system/trace/index.ts`
 - Create: `cortex/index.ts`
-- Create: `cortex/persona/index.ts`
-- Create: `cortex/reasoning-engine/index.ts`
-- Create: `cortex/decomposer/index.ts`
-- Create: `cortex/result-buffer/index.ts`
-- Create: `cortex/synthesis-gate/index.ts`
+  - Owns `Cortex`, `CortexDependencies`, `createCortex()`, and orchestration across Cortex components.
+- Create: `cortex/persona.ts`
+  - Owns `Persona`, `PersonaConfiguration`, `PersonaDependencies`, `createPersona()`, and response-policy/identity properties.
+- Create: `cortex/arc-store.ts`
+  - Owns `ArcStore`, `ArcStoreDependencies`, `createArcStore()`, and Arc opening, transition, resolution, indexing, and lookup.
+- Create: `cortex/orientation-loop.ts`
+  - Owns `OrientationLoop`, `SalienceScore`, `FocusCandidate`, `FocusDecision`, `createOrientationLoop()`, salience scoring, and focus selection.
+- Create: `cortex/reasoning-engine.ts`
+  - Owns `reasoningEngineBoundary` as the reserved boundary for deliberation policy, high-reasoning escalation criteria, critique passes, and answer-quality checks.
+- Create: `cortex/decomposer.ts`
+  - Owns `decomposerBoundary` as the reserved boundary for decomposing selected Arc work into executable Tasks or promoted Sub-Arcs.
+- Create: `cortex/result-buffer.ts`
+  - Owns `resultBufferBoundary` as the reserved boundary for collecting faculty outputs, evidence, partial results, conflicts, and pending dependencies during a FocusCycle.
+- Create: `cortex/synthesis-gate.ts`
+  - Owns `synthesisGateBoundary` as the reserved boundary for deciding when buffered results are sufficient, conflicted, blocked, or require more faculty work before operator output.
 - Create: `faculties/stub/faculty.manifest.ts`
 - Create: `faculties/memory/faculty.manifest.ts`
 
