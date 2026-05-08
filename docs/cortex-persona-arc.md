@@ -341,6 +341,36 @@ Used for running tests, editing files, querying git, calling APIs, parsing logs,
 CodeFaculty = non-LLM procedural execution capability
 ```
 
+## Module layout rule
+
+Use flat component files while a Cortex component has no meaningful internal subdivision. Promote a component to a folder with `index.ts` only after it has real private submodules worth grouping.
+
+Current Stage 0 shape:
+
+```text
+cortex/
+  index.ts              # Cortex boundary / public composition
+  persona.ts            # Persona component
+  arc-store.ts          # ArcStore component
+  orientation-loop.ts   # OrientationLoop component
+  reasoning-engine.ts   # future Cortex component boundary
+  decomposer.ts         # future Cortex component boundary
+  result-buffer.ts      # future Cortex component boundary
+  synthesis-gate.ts     # future Cortex component boundary
+```
+
+Deferred folder shape, only when justified:
+
+```text
+cortex/persona/
+  index.ts
+  prompt-policy.ts
+  response-policy.ts
+  memory-binding.ts
+```
+
+This preserves final domain names without premature directory ceremony.
+
 ## Module ownership
 
 ```text
@@ -353,7 +383,7 @@ cortex/index.ts
   - orchestration from validated signal to ArcStore, OrientationLoop, and Persona
   - re-exports Persona, ArcStore, and OrientationLoop APIs for callers
 
-cortex/persona/index.ts
+cortex/persona.ts
   - personaBoundary
   - Persona
   - PersonaConfiguration
@@ -361,7 +391,7 @@ cortex/persona/index.ts
   - createPersona()
   - Persona response policy and identity/model/prompt-memory properties
 
-cortex/arc-store/index.ts
+cortex/arc-store.ts
   - arcStoreBoundary
   - ArcStore
   - ArcStoreDependencies
@@ -369,7 +399,7 @@ cortex/arc-store/index.ts
   - createArcStore()
   - Arc opening, transition, resolution, indexing, and lookup
 
-cortex/orientation-loop/index.ts
+cortex/orientation-loop.ts
   - orientationLoopBoundary
   - OrientationLoop
   - SalienceScore
@@ -379,9 +409,9 @@ cortex/orientation-loop/index.ts
   - salience scoring and focus selection
 ```
 
-Cortex API definitions do not belong in `cortex/persona/index.ts`.
-Arc storage and lifecycle operations do not belong in `cortex/persona/index.ts`.
-Salience scoring and focus selection do not belong in `cortex/persona/index.ts`.
+Cortex API definitions do not belong in `cortex/persona.ts`.
+Arc storage and lifecycle operations do not belong in `cortex/persona.ts`.
+Salience scoring and focus selection do not belong in `cortex/persona.ts`.
 Persona is not the Arc database or the Cortex loop; it is a Cortex-owned identity/policy component used by a FocusCycle when the selected faculty role is Persona.
 
 ## Runtime path

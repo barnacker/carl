@@ -77,16 +77,16 @@
 - Create: `nervous-system/trace/index.ts`
 - Create: `cortex/index.ts`
   - Owns `Cortex`, `CortexDependencies`, `createCortex()`, and orchestration across Cortex components.
-- Create: `cortex/persona/index.ts`
+- Create: `cortex/persona.ts`
   - Owns `Persona`, `PersonaConfiguration`, `PersonaDependencies`, `createPersona()`, and response-policy/identity properties.
-- Create: `cortex/arc-store/index.ts`
+- Create: `cortex/arc-store.ts`
   - Owns `ArcStore`, `ArcStoreDependencies`, `createArcStore()`, and Arc opening, transition, resolution, indexing, and lookup.
-- Create: `cortex/orientation-loop/index.ts`
+- Create: `cortex/orientation-loop.ts`
   - Owns `OrientationLoop`, `SalienceScore`, `FocusCandidate`, `FocusDecision`, `createOrientationLoop()`, salience scoring, and focus selection.
-- Create: `cortex/reasoning-engine/index.ts`
-- Create: `cortex/decomposer/index.ts`
-- Create: `cortex/result-buffer/index.ts`
-- Create: `cortex/synthesis-gate/index.ts`
+- Create: `cortex/reasoning-engine.ts`
+- Create: `cortex/decomposer.ts`
+- Create: `cortex/result-buffer.ts`
+- Create: `cortex/synthesis-gate.ts`
 - Create: `faculties/stub/faculty.manifest.ts`
 - Create: `faculties/memory/faculty.manifest.ts`
 

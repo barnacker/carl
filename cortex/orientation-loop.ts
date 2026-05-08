@@ -1,4 +1,4 @@
-import type { ArcRecord } from '../../schemas/arc.js'
+import type { ArcRecord } from '../schemas/arc.js'
 
 export const orientationLoopBoundary = 'orientation-loop' as const
 

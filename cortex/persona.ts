@@ -1,5 +1,5 @@
-import type { ArcRecord } from '../../schemas/arc.js'
-import type { OriginStamp } from '../../schemas/origin-stamp.js'
+import type { ArcRecord } from '../schemas/arc.js'
+import type { OriginStamp } from '../schemas/origin-stamp.js'
 
 export const personaBoundary = 'persona' as const
 

@@ -1,6 +1,6 @@
-import type { ArcBudget, ArcRecord } from '../../schemas/arc.js'
-import type { OriginStamp } from '../../schemas/origin-stamp.js'
-import type { TraceEvent, TraceEventType } from '../../schemas/trace-event.js'
+import type { ArcBudget, ArcRecord } from '../schemas/arc.js'
+import type { OriginStamp } from '../schemas/origin-stamp.js'
+import type { TraceEvent, TraceEventType } from '../schemas/trace-event.js'
 
 export const arcStoreBoundary = 'arc-store' as const
 

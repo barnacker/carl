@@ -5,20 +5,20 @@ import {
   type ArcIndexEntry,
   type ArcStore,
   type ArcStoreDependencies,
-} from './arc-store/index.js'
+} from './arc-store.js'
 import {
   createOrientationLoop,
   type FocusDecision,
   type OrientationLoop,
   type OrientationLoopDependencies,
-} from './orientation-loop/index.js'
+} from './orientation-loop.js'
 import {
   createPersona,
   type IncomingMessageSignal,
   type Persona,
   type PersonaConfiguration,
   type PersonaDependencies,
-} from './persona/index.js'
+} from './persona.js'
 
 export const cortexBoundary = 'cortex' as const
 
@@ -102,9 +102,9 @@ export function createCortex(dependencies: CortexDependencies = {}): Cortex {
   }
 }
 
-export { arcStoreBoundary, createArcStore } from './arc-store/index.js'
-export { createOrientationLoop, orientationLoopBoundary } from './orientation-loop/index.js'
-export { createPersona, personaBoundary } from './persona/index.js'
+export { arcStoreBoundary, createArcStore } from './arc-store.js'
+export { createOrientationLoop, orientationLoopBoundary } from './orientation-loop.js'
+export { createPersona, personaBoundary } from './persona.js'
 
 export type {
   ArcIndexEntry,
@@ -114,7 +114,7 @@ export type {
   OpenArcInput,
   ResolveArcInput,
   TransitionArcInput,
-} from './arc-store/index.js'
+} from './arc-store.js'
 
 export type {
   FacultyRole,
@@ -123,7 +123,7 @@ export type {
   OrientationLoop,
   OrientationLoopDependencies,
   SalienceScore,
-} from './orientation-loop/index.js'
+} from './orientation-loop.js'
 
 export type {
   CreateResponseInput,
@@ -131,4 +131,4 @@ export type {
   Persona,
   PersonaConfiguration,
   PersonaDependencies,
-} from './persona/index.js'
+} from './persona.js'

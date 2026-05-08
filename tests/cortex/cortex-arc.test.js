@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import { createCortex } from '../../dist/cortex/index.js'
@@ -32,8 +32,36 @@ test('Cortex contains Persona, ArcStore, and OrientationLoop components', () => 
   assert.equal(typeof cortex.orientationLoop.decideFocus, 'function')
 })
 
+test('Cortex Stage 0 components use flat module files until submodules are justified', () => {
+  const moduleRoot = new URL('../../cortex/', import.meta.url)
+
+  for (const filename of [
+    'persona.ts',
+    'arc-store.ts',
+    'orientation-loop.ts',
+    'reasoning-engine.ts',
+    'decomposer.ts',
+    'result-buffer.ts',
+    'synthesis-gate.ts',
+  ]) {
+    assert.equal(existsSync(new URL(filename, moduleRoot)), true, `${filename} should exist as a flat component module`)
+  }
+
+  for (const directory of [
+    'persona/',
+    'arc-store/',
+    'orientation-loop/',
+    'reasoning-engine/',
+    'decomposer/',
+    'result-buffer/',
+    'synthesis-gate/',
+  ]) {
+    assert.equal(existsSync(new URL(directory, moduleRoot)), false, `${directory} should not exist before internal submodules are justified`)
+  }
+})
+
 test('Persona module does not own Cortex, ArcStore, or OrientationLoop API exports', () => {
-  const personaSource = readFileSync(new URL('../../cortex/persona/index.ts', import.meta.url), 'utf8')
+  const personaSource = readFileSync(new URL('../../cortex/persona.ts', import.meta.url), 'utf8')
 
   assert.doesNotMatch(personaSource, /export interface Cortex\b/)
   assert.doesNotMatch(personaSource, /export function createCortex\b/)
