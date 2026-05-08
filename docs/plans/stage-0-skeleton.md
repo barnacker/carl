@@ -81,6 +81,8 @@
   - Owns `Persona`, `PersonaConfiguration`, `PersonaDependencies`, `createPersona()`, and response-policy/identity properties.
 - Create: `cortex/arc-store/index.ts`
   - Owns `ArcStore`, `ArcStoreDependencies`, `createArcStore()`, and Arc opening, transition, resolution, indexing, and lookup.
+- Create: `cortex/orientation-loop/index.ts`
+  - Owns `OrientationLoop`, `SalienceScore`, `FocusCandidate`, `FocusDecision`, `createOrientationLoop()`, salience scoring, and focus selection.
 - Create: `cortex/reasoning-engine/index.ts`
 - Create: `cortex/decomposer/index.ts`
 - Create: `cortex/result-buffer/index.ts`

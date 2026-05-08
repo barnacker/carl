@@ -14,7 +14,7 @@ const operatorOrigin = {
   signature_hash: 'origin-hash-1',
 }
 
-test('Cortex contains Persona and ArcStore components', () => {
+test('Cortex contains Persona, ArcStore, and OrientationLoop components', () => {
   const cortex = createCortex({
     persona: {
       llmFacultyId: 'faculty/llm/direct',
@@ -28,9 +28,11 @@ test('Cortex contains Persona and ArcStore components', () => {
   assert.equal(cortex.persona.personaPromptMemoryRef, 'memory/persona/carl')
   assert.equal(typeof cortex.arcStore.openArc, 'function')
   assert.equal(typeof cortex.arcStore.listArcIndex, 'function')
+  assert.equal(typeof cortex.orientationLoop.scoreArc, 'function')
+  assert.equal(typeof cortex.orientationLoop.decideFocus, 'function')
 })
 
-test('Persona module does not own Cortex or ArcStore API exports', () => {
+test('Persona module does not own Cortex, ArcStore, or OrientationLoop API exports', () => {
   const personaSource = readFileSync(new URL('../../cortex/persona/index.ts', import.meta.url), 'utf8')
 
   assert.doesNotMatch(personaSource, /export interface Cortex\b/)
@@ -40,9 +42,11 @@ test('Persona module does not own Cortex or ArcStore API exports', () => {
   assert.doesNotMatch(personaSource, /receiveSignal\(/)
   assert.doesNotMatch(personaSource, /listArcIndex\(/)
   assert.doesNotMatch(personaSource, /getArc\(/)
+  assert.doesNotMatch(personaSource, /FocusDecision/)
+  assert.doesNotMatch(personaSource, /SalienceScore/)
 })
 
-test('Cortex opens an Arc in ArcStore and asks Persona to resolve it directly', async () => {
+test('Cortex opens an Arc in ArcStore and runs a direct Persona FocusCycle', async () => {
   const cortex = createCortex({
     persona: {
       llmFacultyId: 'faculty/llm/direct',
@@ -69,6 +73,41 @@ test('Cortex opens an Arc in ArcStore and asks Persona to resolve it directly', 
   assert.equal(signal.response, signal.arc.resolution)
   assert.deepEqual(signal.trace.map((event) => event.event_type), ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
   assert.deepEqual(signal.trace.map((event) => event.arc_state), ['OPEN', 'ACTIVE', 'RESOLVED'])
+  assert.deepEqual(signal.focusDecision, {
+    arcId: 'arc-1',
+    facultyId: 'faculty/llm/direct',
+    facultyRole: 'PERSONA',
+    reason: 'Stage 0 direct FocusCycle routes the selected Arc to Persona.',
+    salience: {
+      value: 11,
+      reasons: [
+        'arc state ACTIVE is eligible for focus',
+        '0 unresolved task(s)',
+        '1 resource need(s)',
+      ],
+    },
+  })
+})
+
+test('OrientationLoop selects the highest-salience open Arc candidate', () => {
+  const cortex = createCortex()
+  const low = cortex.arcStore.openArc({
+    target: 'Low salience item.',
+    origin: operatorOrigin,
+  }).arc
+  const high = cortex.arcStore.openArc({
+    target: 'High salience item.',
+    origin: operatorOrigin,
+    resourceNeeds: ['faculty/llm/high-reasoning'],
+  }).arc
+  const activeHigh = cortex.arcStore.activateArc({
+    arcId: high.id,
+    origin: operatorOrigin,
+  }).arc
+
+  const candidate = cortex.orientationLoop.selectFocusCandidate([low, activeHigh])
+  assert.equal(candidate?.arc.id, activeHigh.id)
+  assert.equal(candidate?.salience.value, 11)
 })
 
 test('Cortex owns Arc inspection through ArcStore', async () => {
