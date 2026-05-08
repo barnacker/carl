@@ -28,15 +28,34 @@ export interface CreateResponseInput {
   readonly target: string
   readonly arc: ArcRecord
   readonly signal: IncomingMessageSignal
+  readonly persona: Persona
 }
 
-export interface CortexDependencies {
+export interface PersonaConfiguration {
+  readonly llmFacultyId: string
+  readonly primeDirective: string
+  readonly personaPromptMemoryRef: string
+}
+
+export interface PersonaDependencies {
+  readonly persona?: Partial<PersonaConfiguration>
   readonly createArcId?: () => string
   readonly now?: () => number
   readonly createResponse?: (input: CreateResponseInput) => string
 }
 
+export interface CortexDependencies extends PersonaDependencies {
+  readonly persona?: Partial<PersonaConfiguration>
+}
+
+export interface Persona extends PersonaConfiguration {
+  receiveSignal(signal: IncomingMessageSignal): Promise<PersonaResponseSignal>
+  listArcIndex(): readonly ArcIndexEntry[]
+  getArc(arcId: string): ArcRecord | undefined
+}
+
 export interface Cortex {
+  readonly persona: Persona
   receiveSignal(signal: IncomingMessageSignal): Promise<PersonaResponseSignal>
   listArcIndex(): readonly ArcIndexEntry[]
   getArc(arcId: string): ArcRecord | undefined
@@ -45,14 +64,26 @@ export interface Cortex {
 const DIRECT_ARC_SCHEMA_HASH = 'cortex-arc/v1'
 const DIRECT_PERSONA_FACULTY_ID = 'cortex/persona'
 
-export function createCortex(dependencies: CortexDependencies = {}): Cortex {
+const DEFAULT_PERSONA_CONFIGURATION: PersonaConfiguration = {
+  llmFacultyId: 'faculty/llm/direct',
+  primeDirective: 'Resolve validated signals into Arc outcomes.',
+  personaPromptMemoryRef: 'memory/persona/carl',
+}
+
+export function createPersona(dependencies: PersonaDependencies = {}): Persona {
   const arcStore = new Map<string, ArcRecord>()
   const createArcId = dependencies.createArcId ?? (() => `arc-${arcStore.size + 1}`)
   const now = dependencies.now ?? (() => Date.now())
-  const createResponse = dependencies.createResponse ?? (({ target }: CreateResponseInput) => target)
+  const personaConfiguration: PersonaConfiguration = {
+    ...DEFAULT_PERSONA_CONFIGURATION,
+    ...dependencies.persona,
+  }
 
-  return {
+  const persona: Persona = {
+    ...personaConfiguration,
+
     async receiveSignal(signal: IncomingMessageSignal): Promise<PersonaResponseSignal> {
+      const createResponse = dependencies.createResponse ?? (({ target }: CreateResponseInput) => target)
       const arcId = createArcId()
       let arc: ArcRecord = {
         id: arcId,
@@ -63,7 +94,7 @@ export function createCortex(dependencies: CortexDependencies = {}): Cortex {
           max_faculty_dispatches: 0,
           max_wall_time_ms: 0,
         },
-        resource_needs: [],
+        resource_needs: [persona.llmFacultyId],
         tasks: [],
         trace_refs: [],
       }
@@ -92,7 +123,7 @@ export function createCortex(dependencies: CortexDependencies = {}): Cortex {
       transition('ARC_OPEN', 'OPEN')
       transition('ARC_ACTIVE', 'ACTIVE')
 
-      const response = createResponse({ target: arc.target, arc, signal })
+      const response = createResponse({ target: arc.target, arc, signal, persona })
       arc = {
         ...arc,
         resolution: response,
@@ -119,6 +150,28 @@ export function createCortex(dependencies: CortexDependencies = {}): Cortex {
 
     getArc(arcId: string): ArcRecord | undefined {
       return arcStore.get(arcId)
+    },
+  }
+
+  return persona
+}
+
+export function createCortex(dependencies: CortexDependencies = {}): Cortex {
+  const persona = createPersona(dependencies)
+
+  return {
+    persona,
+
+    receiveSignal(signal: IncomingMessageSignal): Promise<PersonaResponseSignal> {
+      return persona.receiveSignal(signal)
+    },
+
+    listArcIndex(): readonly ArcIndexEntry[] {
+      return persona.listArcIndex()
+    },
+
+    getArc(arcId: string): ArcRecord | undefined {
+      return persona.getArc(arcId)
     },
   }
 }

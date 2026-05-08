@@ -13,14 +13,33 @@ const operatorOrigin = {
   signature_hash: 'origin-hash-1',
 }
 
-test('Cortex opens an Arc from a validated incoming signal and Persona resolves it directly', async () => {
+test('Cortex contains Persona with identity and model-routing properties', () => {
   const cortex = createCortex({
+    persona: {
+      llmFacultyId: 'faculty/llm/direct',
+      primeDirective: 'Resolve validated operator signals.',
+      personaPromptMemoryRef: 'memory/persona/carl',
+    },
+  })
+
+  assert.equal(cortex.persona.llmFacultyId, 'faculty/llm/direct')
+  assert.equal(cortex.persona.primeDirective, 'Resolve validated operator signals.')
+  assert.equal(cortex.persona.personaPromptMemoryRef, 'memory/persona/carl')
+})
+
+test('Persona opens an Arc from a validated incoming signal and resolves it directly', async () => {
+  const cortex = createCortex({
+    persona: {
+      llmFacultyId: 'faculty/llm/direct',
+      primeDirective: 'Resolve validated operator signals.',
+      personaPromptMemoryRef: 'memory/persona/carl',
+    },
     createArcId: () => 'arc-1',
     now: () => 100,
     createResponse: ({ target }) => `Direct Persona resolution: ${target}`,
   })
 
-  const signal = await cortex.receiveSignal({
+  const signal = await cortex.persona.receiveSignal({
     signal_type: 'INCOMING_MESSAGE',
     origin: operatorOrigin,
     text: 'Define the smallest useful CARL loop.',
@@ -37,7 +56,24 @@ test('Cortex opens an Arc from a validated incoming signal and Persona resolves 
   assert.deepEqual(signal.trace.map((event) => event.arc_state), ['OPEN', 'ACTIVE', 'RESOLVED'])
 })
 
-test('Cortex preserves Arc context for status/reboot-style inspection', async () => {
+test('Cortex delegates incoming signals to Persona', async () => {
+  const cortex = createCortex({
+    createArcId: () => 'arc-delegated',
+    now: () => 150,
+    createResponse: ({ target }) => `Delegated: ${target}`,
+  })
+
+  const signal = await cortex.receiveSignal({
+    signal_type: 'INCOMING_MESSAGE',
+    origin: operatorOrigin,
+    text: 'Route this through Cortex.',
+  })
+
+  assert.equal(signal.arc.id, 'arc-delegated')
+  assert.equal(cortex.persona.getArc('arc-delegated')?.resolution, 'Delegated: Route this through Cortex.')
+})
+
+test('Persona preserves Arc context for status/reboot-style inspection', async () => {
   const cortex = createCortex({
     createArcId: () => 'arc-status',
     now: () => 200,
@@ -50,7 +86,7 @@ test('Cortex preserves Arc context for status/reboot-style inspection', async ()
     text: 'Report current Arc status.',
   })
 
-  assert.deepEqual(cortex.listArcIndex(), [
+  assert.deepEqual(cortex.persona.listArcIndex(), [
     {
       id: 'arc-status',
       state: 'RESOLVED',
@@ -59,7 +95,7 @@ test('Cortex preserves Arc context for status/reboot-style inspection', async ()
     },
   ])
 
-  assert.deepEqual(cortex.getArc('arc-status'), {
+  assert.deepEqual(cortex.persona.getArc('arc-status'), {
     id: 'arc-status',
     state: 'RESOLVED',
     target: 'Report current Arc status.',
@@ -68,7 +104,7 @@ test('Cortex preserves Arc context for status/reboot-style inspection', async ()
       max_faculty_dispatches: 0,
       max_wall_time_ms: 0,
     },
-    resource_needs: [],
+    resource_needs: ['faculty/llm/direct'],
     tasks: [],
     trace_refs: ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'],
     resolution: 'Resolved: Report current Arc status.',
