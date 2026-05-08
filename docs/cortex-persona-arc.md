@@ -1,13 +1,14 @@
-# Cortex / Persona / Arc Ownership
+# Cortex / Persona / ArcStore Ownership
 
 ## Boundary rule
 
-Cortex is the boundary object. Persona is a component owned by Cortex.
+Cortex is the boundary object. Persona and ArcStore are components owned by Cortex.
 
 ```text
 createCortex()
   -> Cortex
-       persona -> Persona
+       persona  -> Persona
+       arcStore -> ArcStore
 ```
 
 ## Module ownership
@@ -17,8 +18,10 @@ cortex/index.ts
   - cortexBoundary
   - Cortex
   - CortexDependencies
+  - PersonaResponseSignal
   - createCortex()
-  - re-exports Persona API for callers
+  - orchestration from validated signal to ArcStore and Persona
+  - re-exports Persona and ArcStore APIs for callers
 
 cortex/persona/index.ts
   - personaBoundary
@@ -26,24 +29,34 @@ cortex/persona/index.ts
   - PersonaConfiguration
   - PersonaDependencies
   - createPersona()
-  - Persona-owned Arc lifecycle and Arc inspection
+  - Persona response policy and identity/model/prompt-memory properties
+
+cortex/arc-store/index.ts
+  - arcStoreBoundary
+  - ArcStore
+  - ArcStoreDependencies
+  - ArcIndexEntry
+  - createArcStore()
+  - Arc opening, transition, resolution, indexing, and lookup
 ```
 
 Cortex API definitions do not belong in `cortex/persona/index.ts`.
-Persona is not the Cortex boundary; it is the Cortex-owned executive component that opens, tracks, and resolves Arcs.
+Arc storage and lifecycle operations do not belong in `cortex/persona/index.ts`.
+Persona is not the Arc database; it is the Cortex-owned executive/policy component used during Arc resolution.
 
 ## Runtime path
 
 ```text
 incoming validated signal
   -> cortex.receiveSignal(signal)
-  -> cortex.persona.receiveSignal(signal)
-  -> Persona opens Arc
-  -> Persona transitions Arc through OPEN -> ACTIVE -> RESOLVED
-  -> Persona emits PERSONA_RESPONSE
+  -> cortex.arcStore.openArc(signal.text)
+  -> cortex.arcStore.activateArc(arc.id)
+  -> cortex.persona.createResponse(activeArc, signal)
+  -> cortex.arcStore.resolveArc(arc.id, response)
+  -> Cortex emits PERSONA_RESPONSE
 ```
 
-Direct Persona access is available for component-level inspection and tests:
+Direct component access is available for inspection and tests:
 
 ```ts
 const cortex = createCortex()
@@ -51,8 +64,12 @@ const cortex = createCortex()
 cortex.persona.llmFacultyId
 cortex.persona.primeDirective
 cortex.persona.personaPromptMemoryRef
-cortex.persona.listArcIndex()
-cortex.persona.getArc(arcId)
+
+cortex.arcStore.listArcIndex()
+cortex.arcStore.getArc(arcId)
+
+cortex.listArcIndex()
+cortex.getArc(arcId)
 ```
 
 ## Current Persona properties
@@ -62,20 +79,30 @@ Persona {
   llmFacultyId: string
   primeDirective: string
   personaPromptMemoryRef: string
-  receiveSignal(signal): Promise<PersonaResponseSignal>
-  listArcIndex(): readonly ArcIndexEntry[]
-  getArc(arcId): ArcRecord | undefined
+  createResponse(input): string
 }
 ```
 
 `personaPromptMemoryRef` is the current memory stub for retrieving the future Persona prompt. The prompt itself is not embedded in this slice.
+
+## Current ArcStore properties
+
+```ts
+ArcStore {
+  openArc(input): ArcStoreMutation
+  activateArc(input): ArcStoreMutation
+  resolveArc(input): ArcStoreMutation
+  listArcIndex(): readonly ArcIndexEntry[]
+  getArc(arcId): ArcRecord | undefined
+}
+```
 
 ## Current Arc execution scope
 
 The current Arc loop is direct-resolution only:
 
 ```text
-validated signal -> Arc opened -> no tasks dispatched -> response produced -> Arc resolved
+validated signal -> ArcStore opens Arc -> Persona produces response -> ArcStore resolves Arc
 ```
 
 Tasks, faculty dispatch, memory retrieval, and model calls remain future slices. The public names still use final domain names.

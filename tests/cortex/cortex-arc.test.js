@@ -14,7 +14,7 @@ const operatorOrigin = {
   signature_hash: 'origin-hash-1',
 }
 
-test('Cortex contains Persona with identity and model-routing properties', () => {
+test('Cortex contains Persona and ArcStore components', () => {
   const cortex = createCortex({
     persona: {
       llmFacultyId: 'faculty/llm/direct',
@@ -26,16 +26,23 @@ test('Cortex contains Persona with identity and model-routing properties', () =>
   assert.equal(cortex.persona.llmFacultyId, 'faculty/llm/direct')
   assert.equal(cortex.persona.primeDirective, 'Resolve validated operator signals.')
   assert.equal(cortex.persona.personaPromptMemoryRef, 'memory/persona/carl')
+  assert.equal(typeof cortex.arcStore.openArc, 'function')
+  assert.equal(typeof cortex.arcStore.listArcIndex, 'function')
 })
 
-test('Persona module does not own Cortex API exports', () => {
+test('Persona module does not own Cortex or ArcStore API exports', () => {
   const personaSource = readFileSync(new URL('../../cortex/persona/index.ts', import.meta.url), 'utf8')
 
   assert.doesNotMatch(personaSource, /export interface Cortex\b/)
   assert.doesNotMatch(personaSource, /export function createCortex\b/)
+  assert.doesNotMatch(personaSource, /createArcId/)
+  assert.doesNotMatch(personaSource, /new Map/)
+  assert.doesNotMatch(personaSource, /receiveSignal\(/)
+  assert.doesNotMatch(personaSource, /listArcIndex\(/)
+  assert.doesNotMatch(personaSource, /getArc\(/)
 })
 
-test('Persona opens an Arc from a validated incoming signal and resolves it directly', async () => {
+test('Cortex opens an Arc in ArcStore and asks Persona to resolve it directly', async () => {
   const cortex = createCortex({
     persona: {
       llmFacultyId: 'faculty/llm/direct',
@@ -47,7 +54,7 @@ test('Persona opens an Arc from a validated incoming signal and resolves it dire
     createResponse: ({ target }) => `Direct Persona resolution: ${target}`,
   })
 
-  const signal = await cortex.persona.receiveSignal({
+  const signal = await cortex.receiveSignal({
     signal_type: 'INCOMING_MESSAGE',
     origin: operatorOrigin,
     text: 'Define the smallest useful CARL loop.',
@@ -64,24 +71,7 @@ test('Persona opens an Arc from a validated incoming signal and resolves it dire
   assert.deepEqual(signal.trace.map((event) => event.arc_state), ['OPEN', 'ACTIVE', 'RESOLVED'])
 })
 
-test('Cortex delegates incoming signals to Persona', async () => {
-  const cortex = createCortex({
-    createArcId: () => 'arc-delegated',
-    now: () => 150,
-    createResponse: ({ target }) => `Delegated: ${target}`,
-  })
-
-  const signal = await cortex.receiveSignal({
-    signal_type: 'INCOMING_MESSAGE',
-    origin: operatorOrigin,
-    text: 'Route this through Cortex.',
-  })
-
-  assert.equal(signal.arc.id, 'arc-delegated')
-  assert.equal(cortex.persona.getArc('arc-delegated')?.resolution, 'Delegated: Route this through Cortex.')
-})
-
-test('Persona preserves Arc context for status/reboot-style inspection', async () => {
+test('Cortex owns Arc inspection through ArcStore', async () => {
   const cortex = createCortex({
     createArcId: () => 'arc-status',
     now: () => 200,
@@ -94,7 +84,7 @@ test('Persona preserves Arc context for status/reboot-style inspection', async (
     text: 'Report current Arc status.',
   })
 
-  assert.deepEqual(cortex.persona.listArcIndex(), [
+  assert.deepEqual(cortex.listArcIndex(), [
     {
       id: 'arc-status',
       state: 'RESOLVED',
@@ -103,7 +93,9 @@ test('Persona preserves Arc context for status/reboot-style inspection', async (
     },
   ])
 
-  assert.deepEqual(cortex.persona.getArc('arc-status'), {
+  assert.equal(cortex.persona.getArc, undefined)
+  assert.equal(cortex.persona.listArcIndex, undefined)
+  assert.deepEqual(cortex.getArc('arc-status'), {
     id: 'arc-status',
     state: 'RESOLVED',
     target: 'Report current Arc status.',
