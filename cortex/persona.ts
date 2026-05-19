@@ -24,11 +24,11 @@ export interface PersonaConfiguration {
 
 export interface PersonaDependencies {
   readonly persona?: Partial<PersonaConfiguration>
-  readonly createResponse?: (input: CreateResponseInput) => string
+  readonly createResponse?: (input: CreateResponseInput) => string | Promise<string>
 }
 
 export interface Persona extends PersonaConfiguration {
-  createResponse(input: Omit<CreateResponseInput, 'persona'>): string
+  createResponse(input: Omit<CreateResponseInput, 'persona'>): Promise<string>
 }
 
 const DEFAULT_PERSONA_CONFIGURATION: PersonaConfiguration = {
@@ -46,10 +46,10 @@ export function createPersona(dependencies: PersonaDependencies = {}): Persona {
   const persona: Persona = {
     ...personaConfiguration,
 
-    createResponse(input: Omit<CreateResponseInput, 'persona'>): string {
+    async createResponse(input: Omit<CreateResponseInput, 'persona'>): Promise<string> {
       const createResponse = dependencies.createResponse ?? (({ target }: CreateResponseInput) => target)
 
-      return createResponse({
+      return await createResponse({
         ...input,
         persona,
       })

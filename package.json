@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "CARL Stage 0 executable spine prototype.",
+  "bin": {
+    "carltest": "./bin/carltest.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -1,1 +1,1 @@
-export * from './immune-system/permission-registry/index.js'
+export * from './immune-system/index.js'

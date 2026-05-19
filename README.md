@@ -9,6 +9,8 @@ The biological terminology — Cortex, Nervous System, Immune System, Faculty, R
 
 ## Reading Map
 
+- `docs/alpha-mvc-0.01-harness.md` — current Alpha MVC 0.01 runtime slice: real Cortex inside fake Discord/Nervous-System/Faculty harness, driven by `carltest --discord "..."`.
+
 Start here if you are evaluating or building CARL:
 
 1. **README.md** — architectural narrative, Laws, components, staged build path, terminology, and scope limits.

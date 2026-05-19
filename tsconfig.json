@@ -17,7 +17,8 @@
     "synapse/**/*.ts",
     "nervous-system/**/*.ts",
     "cortex/**/*.ts",
-    "faculties/**/*.ts"
+    "faculties/**/*.ts",
+    "harness/**/*.ts"
   ],
   "exclude": [
     "dist",

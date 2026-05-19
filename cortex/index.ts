@@ -72,7 +72,7 @@ export function createCortex(dependencies: CortexDependencies = {}): Cortex {
         arc: active.arc,
         salience: orientationLoop.scoreArc(active.arc),
       })
-      const response = persona.createResponse({
+      const response = await persona.createResponse({
         target: active.arc.target,
         arc: active.arc,
         signal,

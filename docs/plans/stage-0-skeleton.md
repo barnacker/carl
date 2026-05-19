@@ -4,7 +4,9 @@
 
 **Goal:** Create the first executable CARL Stage 0 skeleton with enforceable boundaries, schema contracts, and tests, without implementing intelligence beyond proof-of-life scaffolding.
 
-**Architecture:** Contract-first TypeScript prototype optimized for later Zig replacement. Core boundary data is plain serializable objects; validation and authority checks are pure functions; side effects stay behind adapters. Faculties declare requested capabilities, trusted workspace config grants capabilities, and the Immune System computes/enforces effective capabilities.
+**Alpha MVC 0.01 Scope:** Cortex is real; the world around it is harnessed. The first runtime slice drives fake Discord chat through fake Discord Faculty and fake Nervous-System relay interfaces into real Cortex. The harness invokes a real model using the current Hermes-compatible model URL/API key while imitating a model Faculty. Do not implement the real Nervous System or real Faculty bus in this slice. See `docs/alpha-mvc-0.01-harness.md`.
+
+**Architecture:** Contract-first TypeScript prototype optimized for later Zig replacement. Core boundary data is plain serializable objects; validation and authority checks are pure functions; side effects stay behind adapters. Faculties declare requested capabilities, trusted workspace config grants capabilities, and the Immune System computes/enforces effective capabilities in later real-runtime slices; Alpha MVC 0.01 uses harness-level simulations only.
 
 **Tech Stack:** TypeScript, Node test runner for the current environment, future Bun-compatible package scripts.
 
@@ -110,7 +112,46 @@
 **Verification:**
 - Workspace template test passes.
 
-## Task 7: Final validation
+## Task 7: Add Alpha MVC 0.01 fake-world harness
+
+**Objective:** Drive real Cortex from a fake Discord/Nervous-System world without implementing the real Nervous System.
+
+**Files:**
+- Create: `docs/alpha-mvc-0.01-harness.md`
+- Create: `harness/alpha-mvc.ts`
+- Create: `bin/carltest.js`
+- Create: `tests/harness/alpha-mvc-harness.test.js`
+- Modify: `package.json`
+- Modify: `tsconfig.json`
+- Modify: `cortex/persona.ts`
+- Modify: `cortex/index.ts`
+
+**Verification:**
+- `carltest --discord "Hey how are you?"` constructs fake Discord ingress.
+- Real Cortex opens, activates, and resolves an Arc.
+- Harness invokes a real model Faculty boundary in production mode, or deterministic fake response under test override.
+- No real Nervous System bus or real Faculty runtime is implemented.
+
+## Task 8: Add harness-level safety and trace utilities
+
+**Objective:** Keep the fake-world harness honest without claiming real Immune/Nervous System enforcement.
+
+**Files:**
+- Create: `nervous-system/immune-system/prime-check.ts`
+- Create: `nervous-system/immune-system/index.ts`
+- Create: `nervous-system/trace/in-memory-trace.ts`
+- Create: `nervous-system/trace/replay.ts`
+- Modify: `nervous-system/index.ts`
+- Modify: `nervous-system/trace/index.ts`
+- Modify: `schemas/origin-stamp.ts`
+
+**Verification:**
+- OriginStamp shape validation exists.
+- PRIME presence check fails closed.
+- Irreversible-action intent returns proposal/non-execution output.
+- Trace replay reconstructs `OPEN → ACTIVE → RESOLVED`.
+
+## Task 9: Final validation
 
 **Objective:** Verify skeleton is buildable, testable, and boundary-aligned.
 
