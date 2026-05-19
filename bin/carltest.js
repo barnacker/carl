@@ -3,9 +3,16 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createAlphaMvcHarness } from '../dist/harness/alpha-mvc.js'
+import {
+  createAlphaMvcJournalEvents,
+  createAlphaMvcJournalRun,
+  replayAlphaMvcJournalFile,
+  resolveAlphaMvcJournalPath,
+} from '../dist/harness/alpha-mvc-journal.js'
+import { createJsonlJournalWriter } from '../dist/nervous-system/trace/index.js'
 
 function usage() {
-  console.error('usage: carltest --discord "<message>"')
+  console.error('usage: carltest --discord "<message>" [--debug-trace]\n       carltest --replay <trace-id-or-jsonl-path> [--debug-trace]')
 }
 
 function readDotEnv(path) {
@@ -79,7 +86,7 @@ async function invokeCurrentHermesModel(invocation) {
       messages: [
         {
           role: 'system',
-          content: 'You are the current model faculty inside CARL Alpha MVC 0.01. Respond concisely as a faculty result to Cortex.',
+          content: 'You are the current model faculty inside CARL Alpha MVC 0.02. Respond concisely as a faculty result to Cortex.',
         },
         {
           role: 'user',
@@ -102,29 +109,83 @@ async function invokeCurrentHermesModel(invocation) {
   return { content }
 }
 
-const flag = process.argv[2]
-const message = process.argv[3]
-if (flag !== '--discord' || typeof message !== 'string' || message.length === 0 || process.argv.length > 4) {
-  usage()
-  process.exit(2)
+function isDebugTrace(args) {
+  return args.includes('--debug-trace') || process.env.CARLTEST_DEBUG_TRACE === '1'
 }
 
+function createNow() {
+  if (process.env.CARLTEST_NOW !== undefined) {
+    const fixed = Number(process.env.CARLTEST_NOW)
+    if (!Number.isFinite(fixed)) {
+      throw new Error('CARLTEST_NOW must be a finite number when set')
+    }
+    return () => fixed
+  }
+  return () => Date.now()
+}
+
+function createCliRun(debugTrace, now) {
+  return createAlphaMvcJournalRun({
+    debugTrace,
+    traceDir: process.env.CARLTEST_TRACE_DIR ?? 'runtime/alpha-mvc/traces',
+    now,
+    ...(process.env.CARLTEST_RUN_ID !== undefined ? { createRunId: () => process.env.CARLTEST_RUN_ID } : {}),
+    ...(process.env.CARLTEST_TRACE_ID !== undefined ? { createTraceId: () => process.env.CARLTEST_TRACE_ID } : {}),
+  })
+}
+
+function printJson(value) {
+  console.log(JSON.stringify(value, null, 2))
+}
+
+const args = process.argv.slice(2)
+const debugTrace = isDebugTrace(args)
+const filteredArgs = args.filter((arg) => arg !== '--debug-trace')
+
 try {
+  const now = createNow()
+
+  if (filteredArgs[0] === '--replay' && typeof filteredArgs[1] === 'string' && filteredArgs.length === 2) {
+    const traceDir = process.env.CARLTEST_TRACE_DIR ?? 'runtime/alpha-mvc/traces'
+    const journalPath = resolveAlphaMvcJournalPath(filteredArgs[1], traceDir)
+    printJson(replayAlphaMvcJournalFile(journalPath, debugTrace))
+    process.exit(0)
+  }
+
+  if (filteredArgs[0] !== '--discord' || typeof filteredArgs[1] !== 'string' || filteredArgs[1].length === 0 || filteredArgs.length !== 2) {
+    usage()
+    process.exit(2)
+  }
+
+  const message = filteredArgs[1]
+  const run = createCliRun(debugTrace, now)
   const harness = createAlphaMvcHarness({
     invokeModelFaculty: invokeCurrentHermesModel,
     primePath: 'workspace-template/PRIME.md',
     primeExists: existsSync,
+    now,
   })
   const result = await harness.runDiscordMessage(message)
-  console.log(JSON.stringify({
+  const journalEvents = createAlphaMvcJournalEvents({
+    run,
+    result,
+    now,
+  })
+  const writer = createJsonlJournalWriter({ path: run.journal_path })
+  for (const event of journalEvents) {
+    writer.append(event)
+  }
+
+  printJson({
+    run,
     output: result.output,
     arc: {
       id: result.cortex.arc.id,
       state: result.cortex.arc.state,
       target: result.cortex.arc.target,
     },
-    trace: result.trace,
-  }, null, 2))
+    ...(debugTrace ? { trace: result.trace, journal_trace: journalEvents } : {}),
+  })
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   process.exit(1)

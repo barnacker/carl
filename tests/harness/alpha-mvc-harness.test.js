@@ -147,8 +147,11 @@ test('carltest --discord command runs the Alpha MVC harness with a fake model re
   })
   const parsed = JSON.parse(output)
 
+  assert.equal(parsed.run.debug_trace, false)
   assert.equal(parsed.output.platform, 'discord')
   assert.equal(parsed.output.content, 'CLI fake model result')
   assert.equal(parsed.arc.state, 'RESOLVED')
-  assert.equal(parsed.trace[0].event_type, 'FAKE_DISCORD_CHAT_RECEIVED')
+  assert.equal(typeof parsed.run.trace_id, 'string')
+  assert.equal(typeof parsed.run.journal_path, 'string')
+  assert.equal(parsed.trace, undefined)
 })

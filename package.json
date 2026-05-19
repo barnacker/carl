@@ -13,6 +13,7 @@
     "test": "npm run build && node --test tests/**/*.test.js tests/*.test.js"
   },
   "devDependencies": {
+    "@types/node": "^20.19.41",
     "typescript": "^5.9.3"
   },
   "engines": {
