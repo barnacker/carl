@@ -4,6 +4,8 @@
 
 **Goal:** Create the first executable CARL Stage 0 skeleton with enforceable boundaries, schema contracts, and tests, without implementing intelligence beyond proof-of-life scaffolding.
 
+**Roadmap:** The provisional continuation path toward a stable minimal viable Cortex module lives in `docs/plans/minimal-viable-cortex-roadmap.md`. That roadmap is explicitly review-required and must not be implemented version-by-version until the operator challenges, tunes, and approves the specific version scope.
+
 **Alpha MVC 0.01 Scope:** Cortex is real; the world around it is harnessed. The first runtime slice drives fake Discord chat through fake Discord Faculty and fake Nervous-System relay interfaces into real Cortex. The harness invokes a real model using the current Hermes-compatible model URL/API key while imitating a model Faculty. Do not implement the real Nervous System or real Faculty bus in this slice. See `docs/alpha-mvc-0.01-harness.md`.
 
 **Architecture:** Contract-first TypeScript prototype optimized for later Zig replacement. Core boundary data is plain serializable objects; validation and authority checks are pure functions; side effects stay behind adapters. Faculties declare requested capabilities, trusted workspace config grants capabilities, and the Immune System computes/enforces effective capabilities in later real-runtime slices; Alpha MVC 0.01 uses harness-level simulations only.
