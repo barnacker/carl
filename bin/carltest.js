@@ -5,7 +5,9 @@ import { join } from 'node:path'
 import { createAlphaMvcHarness } from '../dist/harness/alpha-mvc.js'
 import {
   appendAlphaMvcArcHistoryRecord,
+  createAlphaMvcArcDetailReadModel,
   createAlphaMvcArcHistoryRecord,
+  createAlphaMvcStatusReadModel,
   defaultAlphaMvcArcHistoryPath,
   getRecentAlphaMvcArcByHandle,
   latestAlphaMvcArcHistoryRecord,
@@ -21,7 +23,7 @@ import {
 import { createJsonlJournalWriter } from '../dist/nervous-system/trace/index.js'
 
 function usage() {
-  console.error('usage: carltest --discord "<message>" [--debug-trace]\n       carltest --replay <trace-id-or-jsonl-path> [--debug-trace]\n       carltest --recent [--debug-trace]\n       carltest --replay-recent <handle> [--debug-trace]')
+  console.error('usage: carltest --discord "<message>" [--debug-trace]\n       carltest --status\n       carltest --arc <handle-or-debug-id> [--debug-trace]\n       carltest --trace <trace-id-or-jsonl-path> [--debug-trace]\n       carltest --replay <trace-id-or-jsonl-path> [--debug-trace]\n       carltest --recent [--debug-trace]\n       carltest --replay-recent <handle> [--debug-trace]')
 }
 
 function readDotEnv(path) {
@@ -171,6 +173,31 @@ function printJson(value) {
   console.log(JSON.stringify(value, null, 2))
 }
 
+function printStructuredError(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  console.error(JSON.stringify({
+    error: {
+      runtime: 'alpha-mvc',
+      message,
+    },
+  }, null, 2))
+}
+
+function traceInspectionOutput(target, debugTrace) {
+  const journalPath = resolveAlphaMvcJournalPath(target, traceDir())
+  const replay = replayAlphaMvcJournalFile(journalPath, debugTrace)
+  if (debugTrace) {
+    return { trace: replay }
+  }
+  const { arc_id: _arcId, ...arcLifecycle } = replay.arc_lifecycle
+  return {
+    trace: {
+      ...replay,
+      arc_lifecycle: arcLifecycle,
+    },
+  }
+}
+
 const args = process.argv.slice(2)
 const debugTrace = isDebugTrace(args)
 const filteredArgs = args.filter((arg) => arg !== '--debug-trace')
@@ -180,6 +207,25 @@ try {
 
   if (filteredArgs[0] === '--recent' && filteredArgs.length === 1) {
     printJson(listRecentAlphaMvcArcs({ path: arcHistoryPath(), includeDebug: debugTrace }))
+    process.exit(0)
+  }
+
+  if (filteredArgs[0] === '--status' && filteredArgs.length === 1) {
+    printJson(createAlphaMvcStatusReadModel({ path: arcHistoryPath() }))
+    process.exit(0)
+  }
+
+  if (filteredArgs[0] === '--arc' && typeof filteredArgs[1] === 'string' && filteredArgs.length === 2) {
+    printJson(createAlphaMvcArcDetailReadModel({
+      path: arcHistoryPath(),
+      handleOrDebugId: filteredArgs[1],
+      includeDebug: debugTrace,
+    }))
+    process.exit(0)
+  }
+
+  if (filteredArgs[0] === '--trace' && typeof filteredArgs[1] === 'string' && filteredArgs.length === 2) {
+    printJson(traceInspectionOutput(filteredArgs[1], debugTrace))
     process.exit(0)
   }
 
@@ -234,6 +280,6 @@ try {
     ...(debugTrace ? { trace: result.trace, journal_trace: journalEvents, arc_history: arcHistoryRecord } : {}),
   })
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
+  printStructuredError(error)
   process.exit(1)
 }

@@ -1,6 +1,6 @@
 # Alpha MVC 0.04 — Arc-Native Inspection Surface Implementation Plan
 
-> Status: reviewed scope / implementation-authorized by operator.
+> Status: implemented on `master` from operator-reviewed scope.
 
 ## Goal
 

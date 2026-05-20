@@ -77,7 +77,7 @@
 
 ## Alpha MVC 0.04 — Arc-Native Inspection Surface
 
-**Status:** reviewed scope / implementation-authorized by operator. Dedicated plan: `docs/plans/alpha-mvc-0.04-arc-inspection.md`.
+**Status:** implemented on `master`. Dedicated plan: `docs/plans/alpha-mvc-0.04-arc-inspection.md`. Runtime doc: `docs/alpha-mvc-0.04-arc-inspection.md`.
 
 **Proposal:** Make the Alpha MVC harness introspectable through Arc-native read-only tooling before adding multi-Arc focus behavior.
 

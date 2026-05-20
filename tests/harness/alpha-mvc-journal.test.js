@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -22,6 +22,26 @@ function tempTraceDir() {
 
 function cleanup(path) {
   rmSync(path, { recursive: true, force: true })
+}
+
+function runCarltest(args, env) {
+  return execFileSync('node', ['bin/carltest.js', ...args], {
+    cwd: new URL('../..', import.meta.url),
+    env,
+    encoding: 'utf8',
+  })
+}
+
+function runCarltestFailure(args, env) {
+  assert.throws(
+    () => runCarltest(args, env),
+    (error) => {
+      assert.equal(error.status, 1)
+      const parsed = JSON.parse(error.stderr.toString())
+      assert.equal(parsed.error.runtime, 'alpha-mvc')
+      return true
+    },
+  )
 }
 
 test('Alpha MVC normal journal writes compact JSONL and replays Arc lifecycle', async () => {
@@ -283,6 +303,182 @@ test('carltest recent history lists Arc cards and replay-recent uses displayed h
     }))
     assert.equal(replayRecent.trace_id, 'trace-recent-2')
     assert.deepEqual(replayRecent.arc_lifecycle.states, ['OPEN', 'ACTIVE', 'RESOLVED'])
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('carltest status reports empty Arc history without session terminology', () => {
+  const dir = tempTraceDir()
+  try {
+    const env = {
+      ...process.env,
+      CARLTEST_TRACE_DIR: dir,
+      CARLTEST_ARC_HISTORY_PATH: join(dir, 'arc-history.jsonl'),
+    }
+
+    const output = runCarltest(['--status'], env)
+    const parsed = JSON.parse(output)
+    assert.deepEqual(parsed, {
+      status: {
+        runtime: 'alpha-mvc',
+        arc_count: 0,
+        latest: null,
+      },
+    })
+    assert.equal(output.includes('session'), false)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('carltest status and arc inspection read latest Arc without mutating history', () => {
+  const dir = tempTraceDir()
+  try {
+    const env = {
+      ...process.env,
+      CARLTEST_FAKE_MODEL_RESPONSE: 'inspection result',
+      CARLTEST_TRACE_DIR: dir,
+      CARLTEST_ARC_HISTORY_PATH: join(dir, 'arc-history.jsonl'),
+      CARLTEST_RUN_ID: 'run-inspect-1',
+      CARLTEST_TRACE_ID: 'trace-inspect-1',
+      CARLTEST_NOW: '128',
+    }
+
+    runCarltest(['--discord', 'Inspect this bounded Arc'], env)
+    const historyPath = join(dir, 'arc-history.jsonl')
+    const beforeHistory = readFileSync(historyPath, 'utf8')
+
+    const statusOutput = runCarltest(['--status'], env)
+    const status = JSON.parse(statusOutput)
+    assert.equal(status.status.runtime, 'alpha-mvc')
+    assert.equal(status.status.arc_count, 1)
+    assert.deepEqual(status.status.latest, {
+      handle: 1,
+      title: 'Inspect this bounded Arc',
+      state: 'RESOLVED',
+      summary: 'inspection result',
+    })
+    assert.equal(statusOutput.includes('session'), false)
+    assert.equal(statusOutput.includes('arc-trace-inspect-1'), false)
+    assert.equal(statusOutput.includes('trace-inspect-1.jsonl'), false)
+
+    const arcOutput = runCarltest(['--arc', '1'], env)
+    const arc = JSON.parse(arcOutput)
+    assert.equal(arc.arc.handle, 1)
+    assert.equal(arc.arc.title, 'Inspect this bounded Arc')
+    assert.equal(arc.arc.state, 'RESOLVED')
+    assert.equal(arc.arc.summary, 'inspection result')
+    assert.equal(arc.arc.created_at, 128)
+    assert.equal(arc.arc.activated_at, 128)
+    assert.equal(arc.arc.resolved_at, 128)
+    assert.equal(arc.arc.input.preview, 'Inspect this bounded Arc')
+    assert.equal(arc.arc.output.preview, 'inspection result')
+    assert.equal(arc.trace, undefined)
+    assert.equal(arc.debug, undefined)
+    assert.equal(arcOutput.includes('session'), false)
+    assert.equal(arcOutput.includes('arc-trace-inspect-1'), false)
+    assert.equal(arcOutput.includes('trace-inspect-1.jsonl'), false)
+
+    assert.equal(readFileSync(historyPath, 'utf8'), beforeHistory)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('carltest arc debug inspection exposes trace refs and relations', () => {
+  const dir = tempTraceDir()
+  try {
+    const baseEnv = {
+      ...process.env,
+      CARLTEST_FAKE_MODEL_RESPONSE: 'first inspection result',
+      CARLTEST_TRACE_DIR: dir,
+      CARLTEST_ARC_HISTORY_PATH: join(dir, 'arc-history.jsonl'),
+      CARLTEST_NOW: '129',
+    }
+
+    runCarltest(['--discord', 'First inspected Arc'], {
+      ...baseEnv,
+      CARLTEST_RUN_ID: 'run-inspect-debug-1',
+      CARLTEST_TRACE_ID: 'trace-inspect-debug-1',
+    })
+    runCarltest(['--discord', 'Second inspected Arc'], {
+      ...baseEnv,
+      CARLTEST_FAKE_MODEL_RESPONSE: 'second inspection result',
+      CARLTEST_RUN_ID: 'run-inspect-debug-2',
+      CARLTEST_TRACE_ID: 'trace-inspect-debug-2',
+    })
+
+    const parsed = JSON.parse(runCarltest(['--arc', '1', '--debug-trace'], baseEnv))
+    assert.equal(parsed.arc.title, 'Second inspected Arc')
+    assert.equal(parsed.trace.run_id, 'run-inspect-debug-2')
+    assert.equal(parsed.trace.trace_id, 'trace-inspect-debug-2')
+    assert.equal(parsed.trace.journal_path, join(dir, 'trace-inspect-debug-2.jsonl'))
+    assert.equal(parsed.debug.arc_id, 'arc-trace-inspect-debug-2')
+    assert.deepEqual(parsed.debug.relations, [
+      {
+        dimension: 'CHRONOLOGY',
+        relation_type: 'PREVIOUS',
+        target_arc_id: 'arc-trace-inspect-debug-1',
+        direction: 'OUTGOING',
+        reason: 'Immediately preceding Arc in local Alpha MVC history.',
+        provenance: {
+          author: 'CORTEX',
+          evidence_refs: [],
+        },
+        created_at: 129,
+      },
+    ])
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('carltest trace inspection works by trace id and path', () => {
+  const dir = tempTraceDir()
+  try {
+    const env = {
+      ...process.env,
+      CARLTEST_FAKE_MODEL_RESPONSE: 'trace inspection result',
+      CARLTEST_TRACE_DIR: dir,
+      CARLTEST_ARC_HISTORY_PATH: join(dir, 'arc-history.jsonl'),
+      CARLTEST_RUN_ID: 'run-trace-inspect',
+      CARLTEST_TRACE_ID: 'trace-inspect-command',
+      CARLTEST_NOW: '130',
+    }
+
+    runCarltest(['--discord', 'Inspect this trace'], env)
+    const tracePath = join(dir, 'trace-inspect-command.jsonl')
+
+    for (const traceTarget of ['trace-inspect-command', tracePath]) {
+      const parsed = JSON.parse(runCarltest(['--trace', traceTarget], env))
+      assert.equal(parsed.trace.trace_id, 'trace-inspect-command')
+      assert.equal(parsed.trace.run_id, 'run-trace-inspect')
+      assert.equal(parsed.trace.debug_trace, false)
+      assert.deepEqual(parsed.trace.arc_lifecycle.states, ['OPEN', 'ACTIVE', 'RESOLVED'])
+      assert.equal(parsed.trace.arc_lifecycle.arc_id, undefined)
+      assert.equal(parsed.trace.arc_lifecycle.terminal_state, 'RESOLVED')
+      assert.equal(parsed.trace.output.content, 'trace inspection result')
+    }
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('carltest inspection commands return structured failures for unknown handles and malformed traces', () => {
+  const dir = tempTraceDir()
+  try {
+    const env = {
+      ...process.env,
+      CARLTEST_TRACE_DIR: dir,
+      CARLTEST_ARC_HISTORY_PATH: join(dir, 'arc-history.jsonl'),
+    }
+
+    runCarltestFailure(['--arc', '99'], env)
+
+    const malformedPath = join(dir, 'malformed.jsonl')
+    appendFileSync(malformedPath, '{bad json}\n')
+    runCarltestFailure(['--trace', malformedPath], env)
   } finally {
     cleanup(dir)
   }

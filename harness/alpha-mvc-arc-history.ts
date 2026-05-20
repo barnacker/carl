@@ -51,6 +51,7 @@ export interface AlphaMvcRecentArcItem {
   readonly state: Arc['state']
   readonly summary: string
   readonly created_at: number
+  readonly activated_at?: number
   readonly resolved_at?: number
   readonly input: AlphaMvcArcHistoryRecord['input']
   readonly output: AlphaMvcArcHistoryRecord['output']
@@ -60,6 +61,20 @@ export interface AlphaMvcRecentArcItem {
 
 export interface AlphaMvcRecentArcList {
   readonly recent: readonly AlphaMvcRecentArcItem[]
+}
+
+export interface AlphaMvcStatusReadModel {
+  readonly status: {
+    readonly runtime: 'alpha-mvc'
+    readonly arc_count: number
+    readonly latest: Pick<AlphaMvcRecentArcItem, 'handle' | 'title' | 'state' | 'summary'> | null
+  }
+}
+
+export interface AlphaMvcArcDetailReadModel {
+  readonly arc: AlphaMvcRecentArcItem
+  readonly trace?: AlphaMvcArcHistoryTraceRef
+  readonly debug?: AlphaMvcArcHistoryDebugRef
 }
 
 function preview(text: string, limit: number = 120): string {
@@ -155,6 +170,28 @@ export function latestAlphaMvcArcHistoryRecord(path: string): AlphaMvcArcHistory
   return records[records.length - 1]
 }
 
+function toRecentArcItem(input: {
+  readonly record: AlphaMvcArcHistoryRecord
+  readonly handle: number
+  readonly includeDebug?: boolean
+}): AlphaMvcRecentArcItem {
+  return {
+    handle: input.handle,
+    title: input.record.title,
+    state: input.record.state,
+    summary: input.record.summary,
+    created_at: input.record.created_at,
+    ...(input.record.activated_at !== undefined ? { activated_at: input.record.activated_at } : {}),
+    ...(input.record.resolved_at !== undefined ? { resolved_at: input.record.resolved_at } : {}),
+    input: input.record.input,
+    output: input.record.output,
+    ...(input.includeDebug === true ? {
+      trace: input.record.trace,
+      debug: input.record.debug,
+    } : {}),
+  }
+}
+
 export function listRecentAlphaMvcArcs(input: {
   readonly path: string
   readonly limit?: number
@@ -163,19 +200,10 @@ export function listRecentAlphaMvcArcs(input: {
   const limit = input.limit ?? 10
   const records = readAlphaMvcArcHistory(input.path).slice(-limit).reverse()
   return {
-    recent: records.map((record, index) => ({
+    recent: records.map((record, index) => toRecentArcItem({
+      record,
       handle: index + 1,
-      title: record.title,
-      state: record.state,
-      summary: record.summary,
-      created_at: record.created_at,
-      ...(record.resolved_at !== undefined ? { resolved_at: record.resolved_at } : {}),
-      input: record.input,
-      output: record.output,
-      ...(input.includeDebug === true ? {
-        trace: record.trace,
-        debug: record.debug,
-      } : {}),
+      ...(input.includeDebug !== undefined ? { includeDebug: input.includeDebug } : {}),
     })),
   }
 }
@@ -195,6 +223,66 @@ export function getRecentAlphaMvcArcByHandle(input: {
     throw new Error(`Recent Arc handle not found: ${input.handle}`)
   }
   return record
+}
+
+export function createAlphaMvcStatusReadModel(input: {
+  readonly path: string
+}): AlphaMvcStatusReadModel {
+  const records = readAlphaMvcArcHistory(input.path)
+  const latest = records[records.length - 1]
+  return {
+    status: {
+      runtime: 'alpha-mvc',
+      arc_count: records.length,
+      latest: latest === undefined
+        ? null
+        : {
+          handle: 1,
+          title: latest.title,
+          state: latest.state,
+          summary: latest.summary,
+        },
+    },
+  }
+}
+
+export function getAlphaMvcArcHistoryRecord(input: {
+  readonly path: string
+  readonly handleOrDebugId: string
+  readonly limit?: number
+}): { readonly record: AlphaMvcArcHistoryRecord, readonly handle: number } {
+  const records = readAlphaMvcArcHistory(input.path).slice(-(input.limit ?? 10)).reverse()
+  const handle = Number(input.handleOrDebugId)
+  if (Number.isInteger(handle) && handle >= 1) {
+    const record = records[handle - 1]
+    if (record === undefined) {
+      throw new Error(`Recent Arc handle not found: ${handle}`)
+    }
+    return { record: record!, handle }
+  }
+
+  const index = records.findIndex((record) => record.debug.arc_id === input.handleOrDebugId)
+  const record = records[index]
+  if (record === undefined) {
+    throw new Error(`Arc not found: ${input.handleOrDebugId}`)
+  }
+  return { record: record!, handle: index + 1 }
+}
+
+export function createAlphaMvcArcDetailReadModel(input: {
+  readonly path: string
+  readonly handleOrDebugId: string
+  readonly includeDebug?: boolean
+  readonly limit?: number
+}): AlphaMvcArcDetailReadModel {
+  const { record, handle } = getAlphaMvcArcHistoryRecord(input)
+  return {
+    arc: toRecentArcItem({ record, handle }),
+    ...(input.includeDebug === true ? {
+      trace: record.trace,
+      debug: record.debug,
+    } : {}),
+  }
 }
 
 export function defaultAlphaMvcArcHistoryPath(traceDir: string): string {
