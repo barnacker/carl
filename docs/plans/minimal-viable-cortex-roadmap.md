@@ -75,23 +75,27 @@
 
 ---
 
-## Alpha MVC 0.04 — Arc Inspection and Status Surface
+## Alpha MVC 0.04 — Arc-Native Inspection Surface
 
-**Proposal:** Make Cortex introspectable by operator tooling.
+**Status:** reviewed scope / implementation-authorized by operator. Dedicated plan: `docs/plans/alpha-mvc-0.04-arc-inspection.md`.
 
-**Candidate deliverables:**
-- CLI inspection commands such as `carltest --status <session-id>`, `carltest --arc <arc-id>`, and `carltest --trace <trace-id>`.
-- Stable Arc read models: index, detail, lifecycle state, resolution, trace refs.
-- Documentation for the read model contract.
+**Proposal:** Make the Alpha MVC harness introspectable through Arc-native read-only tooling before adding multi-Arc focus behavior.
 
-**Candidate acceptance:**
-- Operator can inspect current session, prior Arcs, trace evidence, and resolution output.
-- Missing IDs, malformed trace files, and empty sessions are tested.
+**Accepted deliverables:**
+- CLI inspection commands: `carltest --status`, `carltest --arc <handle-or-debug-id>`, and `carltest --trace <trace-id-or-jsonl-path>`.
+- Stable Alpha MVC read models: status summary, Arc index entry, Arc detail, and trace detail.
+- Normal output uses handles/titles and hides raw Arc IDs, trace IDs, journal paths, and relation internals.
+- Debug output can expose raw refs intentionally.
+- Tests for missing handles, unknown Arc IDs, malformed trace files, empty recent history, debug-vs-normal output boundaries, and read-only inspection behavior.
 
-**Known review risks:**
-- Inspection surfaces can force premature API commitments.
-- Read model terms may conflict with later Nervous-System or Memory surfaces.
-- Status vocabulary must remain aligned with accepted Arc states only: `OPEN`, `ACTIVE`, `DEFERRED`, `RESOLVED`, `ABSORBED`.
+**Accepted negative scope:**
+- No sessions, `SessionStatus`, `session_id`, or `carltest --status <session-id>`.
+- No Arc mutation, reopening, continuation, absorption, relation creation, Memory, Association Faculty, real Nervous System, real Synapse, real Faculty bus, or Discord runtime.
+
+**Acceptance:**
+- Operator can inspect local Alpha MVC harness state, prior Arcs, trace evidence, and resolution output through Arc-native read-only commands.
+- Missing and malformed inputs are structured, tested failures.
+- Status vocabulary remains aligned with accepted Arc states only: `OPEN`, `ACTIVE`, `DEFERRED`, `RESOLVED`, `ABSORBED`.
 
 ---
 
