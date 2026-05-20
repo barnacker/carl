@@ -130,6 +130,7 @@ test('carltest writes normal journal and replays by both path and trace id', () 
       ...process.env,
       CARLTEST_FAKE_MODEL_RESPONSE: 'CLI journal result',
       CARLTEST_TRACE_DIR: dir,
+      CARLTEST_ARC_HISTORY_PATH: join(dir, 'arc-history.jsonl'),
       CARLTEST_RUN_ID: 'run-cli-1',
       CARLTEST_TRACE_ID: 'trace-cli-1',
       CARLTEST_NOW: '125',
@@ -176,6 +177,7 @@ test('carltest debug trace writes expanded journal and reports journal events', 
       ...process.env,
       CARLTEST_FAKE_MODEL_RESPONSE: 'CLI debug result',
       CARLTEST_TRACE_DIR: dir,
+      CARLTEST_ARC_HISTORY_PATH: join(dir, 'arc-history.jsonl'),
       CARLTEST_RUN_ID: 'run-cli-debug',
       CARLTEST_TRACE_ID: 'trace-cli-debug',
       CARLTEST_NOW: '126',
@@ -205,6 +207,82 @@ test('carltest debug trace writes expanded journal and reports journal events', 
     assert.equal(debugReplay.debug_trace, true)
     assert.equal(debugReplay.input.message, 'Debug check')
     assert.equal(Array.isArray(debugReplay.events), true)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('carltest recent history lists Arc cards and replay-recent uses displayed handle', () => {
+  const dir = tempTraceDir()
+  try {
+    const baseEnv = {
+      ...process.env,
+      CARLTEST_FAKE_MODEL_RESPONSE: 'first result',
+      CARLTEST_TRACE_DIR: dir,
+      CARLTEST_ARC_HISTORY_PATH: join(dir, 'arc-history.jsonl'),
+      CARLTEST_NOW: '127',
+    }
+
+    execFileSync('node', ['bin/carltest.js', '--discord', 'First bounded request about trace journals'], {
+      cwd: new URL('../..', import.meta.url),
+      env: {
+        ...baseEnv,
+        CARLTEST_RUN_ID: 'run-recent-1',
+        CARLTEST_TRACE_ID: 'trace-recent-1',
+      },
+      encoding: 'utf8',
+    })
+    execFileSync('node', ['bin/carltest.js', '--discord', 'Second bounded request about arc cards'], {
+      cwd: new URL('../..', import.meta.url),
+      env: {
+        ...baseEnv,
+        CARLTEST_FAKE_MODEL_RESPONSE: 'second result',
+        CARLTEST_RUN_ID: 'run-recent-2',
+        CARLTEST_TRACE_ID: 'trace-recent-2',
+      },
+      encoding: 'utf8',
+    })
+
+    const recent = JSON.parse(execFileSync('node', ['bin/carltest.js', '--recent'], {
+      cwd: new URL('../..', import.meta.url),
+      env: baseEnv,
+      encoding: 'utf8',
+    }))
+    assert.equal(recent.recent.length, 2)
+    assert.equal(recent.recent[0].handle, 1)
+    assert.equal(recent.recent[0].title, 'Second bounded request about arc cards')
+    assert.equal(recent.recent[0].state, 'RESOLVED')
+    assert.equal(recent.recent[0].debug, undefined)
+    assert.equal(recent.recent[0].trace, undefined)
+
+    const recentDebug = JSON.parse(execFileSync('node', ['bin/carltest.js', '--recent', '--debug-trace'], {
+      cwd: new URL('../..', import.meta.url),
+      env: baseEnv,
+      encoding: 'utf8',
+    }))
+    assert.equal(recentDebug.recent[0].debug.arc_id, 'arc-trace-recent-2')
+    assert.deepEqual(recentDebug.recent[0].debug.relations, [
+      {
+        dimension: 'CHRONOLOGY',
+        relation_type: 'PREVIOUS',
+        target_arc_id: 'arc-trace-recent-1',
+        direction: 'OUTGOING',
+        reason: 'Immediately preceding Arc in local Alpha MVC history.',
+        provenance: {
+          author: 'CORTEX',
+          evidence_refs: [],
+        },
+        created_at: 127,
+      },
+    ])
+
+    const replayRecent = JSON.parse(execFileSync('node', ['bin/carltest.js', '--replay-recent', '1'], {
+      cwd: new URL('../..', import.meta.url),
+      env: baseEnv,
+      encoding: 'utf8',
+    }))
+    assert.equal(replayRecent.trace_id, 'trace-recent-2')
+    assert.deepEqual(replayRecent.arc_lifecycle.states, ['OPEN', 'ACTIVE', 'RESOLVED'])
   } finally {
     cleanup(dir)
   }

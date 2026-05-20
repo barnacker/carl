@@ -4,15 +4,24 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createAlphaMvcHarness } from '../dist/harness/alpha-mvc.js'
 import {
+  appendAlphaMvcArcHistoryRecord,
+  createAlphaMvcArcHistoryRecord,
+  defaultAlphaMvcArcHistoryPath,
+  getRecentAlphaMvcArcByHandle,
+  latestAlphaMvcArcHistoryRecord,
+  listRecentAlphaMvcArcs,
+} from '../dist/harness/alpha-mvc-arc-history.js'
+import {
   createAlphaMvcJournalEvents,
   createAlphaMvcJournalRun,
+  DEFAULT_ALPHA_MVC_TRACE_DIR,
   replayAlphaMvcJournalFile,
   resolveAlphaMvcJournalPath,
 } from '../dist/harness/alpha-mvc-journal.js'
 import { createJsonlJournalWriter } from '../dist/nervous-system/trace/index.js'
 
 function usage() {
-  console.error('usage: carltest --discord "<message>" [--debug-trace]\n       carltest --replay <trace-id-or-jsonl-path> [--debug-trace]')
+  console.error('usage: carltest --discord "<message>" [--debug-trace]\n       carltest --replay <trace-id-or-jsonl-path> [--debug-trace]\n       carltest --recent [--debug-trace]\n       carltest --replay-recent <handle> [--debug-trace]')
 }
 
 function readDotEnv(path) {
@@ -86,7 +95,7 @@ async function invokeCurrentHermesModel(invocation) {
       messages: [
         {
           role: 'system',
-          content: 'You are the current model faculty inside CARL Alpha MVC 0.02. Respond concisely as a faculty result to Cortex.',
+          content: 'You are the current model faculty inside CARL Alpha MVC 0.03. Respond concisely as a faculty result to Cortex.',
         },
         {
           role: 'user',
@@ -124,14 +133,38 @@ function createNow() {
   return () => Date.now()
 }
 
+function traceDir() {
+  return process.env.CARLTEST_TRACE_DIR ?? DEFAULT_ALPHA_MVC_TRACE_DIR
+}
+
+function arcHistoryPath() {
+  return process.env.CARLTEST_ARC_HISTORY_PATH ?? defaultAlphaMvcArcHistoryPath(traceDir())
+}
+
 function createCliRun(debugTrace, now) {
   return createAlphaMvcJournalRun({
     debugTrace,
-    traceDir: process.env.CARLTEST_TRACE_DIR ?? 'runtime/alpha-mvc/traces',
+    traceDir: traceDir(),
     now,
     ...(process.env.CARLTEST_RUN_ID !== undefined ? { createRunId: () => process.env.CARLTEST_RUN_ID } : {}),
     ...(process.env.CARLTEST_TRACE_ID !== undefined ? { createTraceId: () => process.env.CARLTEST_TRACE_ID } : {}),
   })
+}
+
+function arcOutput(arc, debugTrace) {
+  return {
+    title: arc.title,
+    state: arc.state,
+    target: arc.target,
+    summary: arc.summary,
+    created_at: arc.created_at,
+    ...(arc.resolved_at !== undefined ? { resolved_at: arc.resolved_at } : {}),
+    ...(debugTrace ? {
+      id: arc.id,
+      relations: arc.relations,
+      trace_refs: arc.trace_refs,
+    } : {}),
+  }
 }
 
 function printJson(value) {
@@ -145,9 +178,20 @@ const filteredArgs = args.filter((arg) => arg !== '--debug-trace')
 try {
   const now = createNow()
 
+  if (filteredArgs[0] === '--recent' && filteredArgs.length === 1) {
+    printJson(listRecentAlphaMvcArcs({ path: arcHistoryPath(), includeDebug: debugTrace }))
+    process.exit(0)
+  }
+
+  if (filteredArgs[0] === '--replay-recent' && typeof filteredArgs[1] === 'string' && filteredArgs.length === 2) {
+    const handle = Number(filteredArgs[1])
+    const recent = getRecentAlphaMvcArcByHandle({ path: arcHistoryPath(), handle })
+    printJson(replayAlphaMvcJournalFile(recent.trace.journal_path, debugTrace))
+    process.exit(0)
+  }
+
   if (filteredArgs[0] === '--replay' && typeof filteredArgs[1] === 'string' && filteredArgs.length === 2) {
-    const traceDir = process.env.CARLTEST_TRACE_DIR ?? 'runtime/alpha-mvc/traces'
-    const journalPath = resolveAlphaMvcJournalPath(filteredArgs[1], traceDir)
+    const journalPath = resolveAlphaMvcJournalPath(filteredArgs[1], traceDir())
     printJson(replayAlphaMvcJournalFile(journalPath, debugTrace))
     process.exit(0)
   }
@@ -158,12 +202,16 @@ try {
   }
 
   const message = filteredArgs[1]
+  const historyPath = arcHistoryPath()
+  const previous = latestAlphaMvcArcHistoryRecord(historyPath)
   const run = createCliRun(debugTrace, now)
   const harness = createAlphaMvcHarness({
     invokeModelFaculty: invokeCurrentHermesModel,
     primePath: 'workspace-template/PRIME.md',
     primeExists: existsSync,
     now,
+    createArcId: () => process.env.CARLTEST_ARC_ID ?? `arc-${run.trace_id}`,
+    ...(previous !== undefined ? { previousArcId: previous.debug.arc_id } : {}),
   })
   const result = await harness.runDiscordMessage(message)
   const journalEvents = createAlphaMvcJournalEvents({
@@ -176,15 +224,14 @@ try {
     writer.append(event)
   }
 
+  const arcHistoryRecord = createAlphaMvcArcHistoryRecord({ run, result, now })
+  appendAlphaMvcArcHistoryRecord(historyPath, arcHistoryRecord)
+
   printJson({
     run,
     output: result.output,
-    arc: {
-      id: result.cortex.arc.id,
-      state: result.cortex.arc.state,
-      target: result.cortex.arc.target,
-    },
-    ...(debugTrace ? { trace: result.trace, journal_trace: journalEvents } : {}),
+    arc: arcOutput(result.cortex.arc, debugTrace),
+    ...(debugTrace ? { trace: result.trace, journal_trace: journalEvents, arc_history: arcHistoryRecord } : {}),
   })
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))

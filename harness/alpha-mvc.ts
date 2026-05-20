@@ -58,6 +58,7 @@ export interface AlphaMvcHarnessDependencies {
   readonly createArcId?: () => string
   readonly now?: () => number
   readonly invokeModelFaculty: (invocation: ModelFacultyInvocation) => Promise<ModelFacultyResult>
+  readonly previousArcId?: string
   readonly primePath?: string
   readonly primeExists?: (path: string) => boolean
 }
@@ -91,6 +92,7 @@ export function createAlphaMvcHarness(dependencies: AlphaMvcHarnessDependencies)
 
     const cortexDependencies = {
       now,
+      ...(dependencies.previousArcId !== undefined ? { previousArcId: dependencies.previousArcId } : {}),
       createResponse: async (input: CreateResponseInput): Promise<string> => {
         if (isDeclaredIrreversibleIntent(input.signal.text)) {
           trace.push({

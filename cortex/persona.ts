@@ -1,4 +1,4 @@
-import type { ArcRecord } from '../schemas/arc.js'
+import type { Arc } from '../schemas/arc.js'
 import type { OriginStamp } from '../schemas/origin-stamp.js'
 
 export const personaBoundary = 'persona' as const
@@ -11,7 +11,7 @@ export interface IncomingMessageSignal {
 
 export interface CreateResponseInput {
   readonly target: string
-  readonly arc: ArcRecord
+  readonly arc: Arc
   readonly signal: IncomingMessageSignal
   readonly persona: Persona
 }

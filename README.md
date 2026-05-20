@@ -10,7 +10,8 @@ The biological terminology — Cortex, Nervous System, Immune System, Faculty, R
 ## Reading Map
 
 - `docs/alpha-mvc-0.01-harness.md` — Alpha MVC 0.01 runtime slice: real Cortex inside fake Discord/Nervous-System/Faculty harness, driven by `carltest --discord "..."`.
-- `docs/alpha-mvc-0.02-trace-journal.md` — current Alpha MVC 0.02 runtime slice: workspace-backed JSONL trace journal plus replay/debug trace support for the fake-world harness.
+- `docs/alpha-mvc-0.02-trace-journal.md` — Alpha MVC 0.02 runtime slice: workspace-backed JSONL trace journal plus replay/debug trace support for the fake-world harness.
+- `docs/alpha-mvc-0.03-titled-arcs.md` — current Alpha MVC 0.03 runtime slice: titled bounded Arcs, relation slots, and recent Arc history without sessions.
 - `docs/plans/minimal-viable-cortex-roadmap.md` — provisional Alpha MVC 0.02–0.10 roadmap toward a stable minimal viable Cortex module. This is a review-required proposal, not implementation authorization.
 
 Start here if you are evaluating or building CARL:

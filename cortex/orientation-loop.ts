@@ -1,4 +1,4 @@
-import type { ArcRecord } from '../schemas/arc.js'
+import type { Arc } from '../schemas/arc.js'
 
 export const orientationLoopBoundary = 'orientation-loop' as const
 
@@ -10,7 +10,7 @@ export interface SalienceScore {
 }
 
 export interface FocusCandidate {
-  readonly arc: ArcRecord
+  readonly arc: Arc
   readonly salience: SalienceScore
 }
 
@@ -24,19 +24,19 @@ export interface FocusDecision {
 
 export interface OrientationLoopDependencies {
   readonly defaultFacultyId?: string
-  readonly scoreArc?: (arc: ArcRecord) => SalienceScore
+  readonly scoreArc?: (arc: Arc) => SalienceScore
   readonly selectFaculty?: (candidate: FocusCandidate) => Pick<FocusDecision, 'facultyId' | 'facultyRole' | 'reason'>
 }
 
 export interface OrientationLoop {
-  scoreArc(arc: ArcRecord): SalienceScore
-  selectFocusCandidate(arcs: readonly ArcRecord[]): FocusCandidate | undefined
+  scoreArc(arc: Arc): SalienceScore
+  selectFocusCandidate(arcs: readonly Arc[]): FocusCandidate | undefined
   decideFocus(candidate: FocusCandidate): FocusDecision
 }
 
-const NON_FOCUS_STATES: readonly ArcRecord['state'][] = ['RESOLVED', 'ABSORBED', 'DEFERRED']
+const NON_FOCUS_STATES: readonly Arc['state'][] = ['RESOLVED', 'ABSORBED', 'DEFERRED']
 
-function defaultScoreArc(arc: ArcRecord): SalienceScore {
+function defaultScoreArc(arc: Arc): SalienceScore {
   if (NON_FOCUS_STATES.includes(arc.state)) {
     return {
       value: 0,
@@ -64,7 +64,7 @@ export function createOrientationLoop(dependencies: OrientationLoopDependencies 
   return {
     scoreArc,
 
-    selectFocusCandidate(arcs: readonly ArcRecord[]): FocusCandidate | undefined {
+    selectFocusCandidate(arcs: readonly Arc[]): FocusCandidate | undefined {
       return arcs
         .map((arc) => ({ arc, salience: scoreArc(arc) }))
         .filter((candidate) => candidate.salience.value > 0)

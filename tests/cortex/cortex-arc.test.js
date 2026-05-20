@@ -95,7 +95,12 @@ test('Cortex opens an Arc in ArcStore and runs a direct Persona FocusCycle', asy
   assert.equal(signal.signal_type, 'PERSONA_RESPONSE')
   assert.equal(signal.arc.id, 'arc-1')
   assert.equal(signal.arc.state, 'RESOLVED')
+  assert.equal(signal.arc.title, 'Define the smallest useful CARL loop.')
   assert.equal(signal.arc.target, 'Define the smallest useful CARL loop.')
+  assert.equal(signal.arc.created_at, 100)
+  assert.equal(signal.arc.activated_at, 100)
+  assert.equal(signal.arc.resolved_at, 100)
+  assert.deepEqual(signal.arc.relations, [])
   assert.equal(signal.arc.tasks.length, 0)
   assert.equal(signal.arc.resolution, 'Direct Persona resolution: Define the smallest useful CARL loop.')
   assert.equal(signal.response, signal.arc.resolution)
@@ -154,9 +159,12 @@ test('Cortex owns Arc inspection through ArcStore', async () => {
   assert.deepEqual(cortex.listArcIndex(), [
     {
       id: 'arc-status',
+      title: 'Report current Arc status.',
       state: 'RESOLVED',
       target: 'Report current Arc status.',
-      summary: 'Report current Arc status.',
+      summary: 'Resolved: Report current Arc status.',
+      created_at: 200,
+      resolved_at: 200,
     },
   ])
 
@@ -164,8 +172,13 @@ test('Cortex owns Arc inspection through ArcStore', async () => {
   assert.equal(cortex.persona.listArcIndex, undefined)
   assert.deepEqual(cortex.getArc('arc-status'), {
     id: 'arc-status',
+    title: 'Report current Arc status.',
     state: 'RESOLVED',
     target: 'Report current Arc status.',
+    summary: 'Resolved: Report current Arc status.',
+    created_at: 200,
+    activated_at: 200,
+    resolved_at: 200,
     budget: {
       max_model_calls: 0,
       max_faculty_dispatches: 0,
@@ -174,6 +187,7 @@ test('Cortex owns Arc inspection through ArcStore', async () => {
     resource_needs: ['faculty/llm/direct'],
     tasks: [],
     trace_refs: ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'],
+    relations: [],
     resolution: 'Resolved: Report current Arc status.',
   })
 })

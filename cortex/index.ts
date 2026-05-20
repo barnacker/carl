@@ -1,4 +1,4 @@
-import type { ArcRecord } from '../schemas/arc.js'
+import type { Arc } from '../schemas/arc.js'
 import type { TraceEvent } from '../schemas/trace-event.js'
 import {
   createArcStore,
@@ -24,7 +24,7 @@ export const cortexBoundary = 'cortex' as const
 
 export interface PersonaResponseSignal {
   readonly signal_type: 'PERSONA_RESPONSE'
-  readonly arc: ArcRecord
+  readonly arc: Arc
   readonly focusDecision: FocusDecision
   readonly response: string
   readonly trace: readonly TraceEvent[]
@@ -42,7 +42,7 @@ export interface Cortex {
   readonly orientationLoop: OrientationLoop
   receiveSignal(signal: IncomingMessageSignal): Promise<PersonaResponseSignal>
   listArcIndex(): readonly ArcIndexEntry[]
-  getArc(arcId: string): ArcRecord | undefined
+  getArc(arcId: string): Arc | undefined
 }
 
 export function createCortex(dependencies: CortexDependencies = {}): Cortex {
@@ -96,13 +96,13 @@ export function createCortex(dependencies: CortexDependencies = {}): Cortex {
       return arcStore.listArcIndex()
     },
 
-    getArc(arcId: string): ArcRecord | undefined {
+    getArc(arcId: string): Arc | undefined {
       return arcStore.getArc(arcId)
     },
   }
 }
 
-export { arcStoreBoundary, createArcStore } from './arc-store.js'
+export { arcStoreBoundary, createArcStore, createDeterministicArcTitle } from './arc-store.js'
 export { createOrientationLoop, orientationLoopBoundary } from './orientation-loop.js'
 export { createPersona, personaBoundary } from './persona.js'
 

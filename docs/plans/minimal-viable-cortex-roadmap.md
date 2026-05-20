@@ -50,26 +50,28 @@
 
 ---
 
-## Alpha MVC 0.03 — Cortex Session Runtime
+## Alpha MVC 0.03 — Titled Arc Core and Relation Slots
 
-**Proposal:** Move from one-shot harness calls to a small session loop.
+**Proposal:** Refactor the core Arc into a bounded, titled concern/request with lifecycle timestamps, summary, relation slots, and recent-history operator surface. Do not introduce sessions.
 
 **Candidate deliverables:**
-- `CortexSession` or equivalent boundary owning session ID, incoming signal history, Arc history, and trace journal handle.
-- `carltest --session <id> --discord "<message>"`.
-- Multi-message sessions append to one session trace.
-- Cortex can inspect prior Arcs in the session.
+- Core `Arc` schema with title, summary, created/activated/resolved timestamps, and open relation slots.
+- Deterministic title generation; no extra model call.
+- Relation schema that supports multiple dimensions, with 0.03 implementing only `CHRONOLOGY/PREVIOUS` when a prior local Arc exists.
+- Recent Arc history index under ignored runtime state.
+- `carltest --recent` and `carltest --replay-recent <handle>`.
 
 **Candidate acceptance:**
-- Two messages in the same session produce two resolved Arcs.
-- Trace replay can replay the whole session.
-- Arc IDs remain stable and unique.
-- No real Nervous System implementation is introduced.
+- Two separate CLI messages produce two titled, resolved Arcs.
+- The second Arc can record chronology-only `PREVIOUS` relation to the prior Arc.
+- Operator-facing recent output uses handles/titles, not raw Arc IDs.
+- Debug recent output exposes Arc IDs, trace IDs, journal paths, and relations.
+- No sessions, Memory, Association Faculty, or real Nervous System implementation is introduced.
 
 **Known review risks:**
-- Session ownership could belong outside Cortex in future real architecture.
-- Session state may accidentally become memory, which it is not.
-- Need to distinguish operator conversation continuity from Cortex Arc continuity.
+- Title generation may be too primitive but must stay deterministic for now.
+- Relation slots must not imply semantic Memory or topic inference yet.
+- Future Association Faculty should propose relations; Cortex/ArcStore should own accepted relation state.
 
 ---
 
