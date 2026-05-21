@@ -101,23 +101,27 @@
 
 ## Alpha MVC 0.05 — Focus Cycle v1
 
-**Proposal:** Make OrientationLoop materially useful beyond direct routing.
+**Status:** reviewed scope / implementation-ready after operator approval. Dedicated plan: `docs/plans/alpha-mvc-0.05-focus-cycle.md`.
 
-**Candidate deliverables:**
-- Explicit `FocusCycle` record with candidate Arcs, salience scores, selected Arc, selected Faculty target, and rationale/rule trace.
-- Deterministic salience rules for operator recency, unresolved work, urgency/security markers, and tie behavior.
-- Tests for candidate ordering, tie behavior, and explainability.
+**Proposal:** Make OrientationLoop materially useful by producing an explicit, deterministic, explainable FocusCycle for selecting one Arc from multiple candidate Arcs.
 
-**Candidate acceptance:**
-- Multiple open Arcs can exist.
-- OrientationLoop selects one.
-- Selection can be explained from trace data.
+**Accepted deliverables:**
+- Explicit `FocusCycle`, `FocusCandidate`, `SalienceScore`, and `FocusDecision` types/read models.
+- Deterministic salience rules for unresolved lifecycle state, operator recency, urgency/security markers, deferred penalty, and tie behavior.
+- OrientationLoop API for scoring candidates and selecting one FocusDecision.
+- Tests for candidate ordering, tie behavior, explainability, and Persona non-ownership of focus logic.
+- Debug harness/trace evidence for FocusCycle without raw Arc IDs in normal operator-facing output.
+
+**Accepted negative scope:**
+- No Tasks, Sub-Arcs, Decomposer behavior, ResultBuffer, SynthesisGate, Memory, Association Faculty, embeddings, semantic clustering, real Nervous System, real Synapse, real Faculty bus, Discord runtime, generic sessions, autonomous absorption, or background Temporal Decay.
+
+**Acceptance:**
+- Multiple candidate Arcs can be scored.
+- OrientationLoop selects one deterministically.
+- Selection is explainable from salience terms and decision reason.
 - Persona still does not own focus logic.
-
-**Known review risks:**
-- Competitive Inhibition / Temporal Decay nuances are underspecified here.
-- A simplistic scoring rule can become architectural debt.
-- Need operator review on whether salience belongs inside OrientationLoop alone or requires explicit Cortex arbitration.
+- ArcStore remains lifecycle owner.
+- Existing 0.04 inspection commands remain compatible.
 
 ---
 
