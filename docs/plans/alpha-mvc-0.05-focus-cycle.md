@@ -64,6 +64,11 @@ TypeScript, Node test runner, existing `carltest` fake-world harness, JSONL trac
 - Real Faculty dispatch infrastructure.
 - Real Discord integration.
 - Generic chat sessions.
+- Future `OrientationTick` / `OrientationDecision` / `OrientationCandidate` rename.
+- Future `ACTIVE` -> `ENGAGED` Arc lifecycle rename.
+- Future CortexMode taxonomy: `CONSCIOUS`, `UNCONSCIOUS`, `DEGRADED`.
+- Future CortexOrientationState taxonomy: `DISORIENTED`, `SEEKING`, `ORIENTED`.
+- Future `SubconsciousLoop` and `MaintenanceLoop` runtime behavior.
 
 ## Data Model Direction
 

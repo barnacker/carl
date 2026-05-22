@@ -226,6 +226,69 @@ interface FocusDecision {
 FocusDecision = selected next action + target faculty
 ```
 
+### Future orientation and background-loop taxonomy
+
+Status: design note only. This taxonomy is not part of the current Alpha MVC 0.05 implementation scope.
+
+Future naming direction:
+
+```text
+FocusCycle      -> OrientationTick
+FocusDecision   -> OrientationDecision
+FocusCandidate  -> OrientationCandidate
+ACTIVE          -> ENGAGED
+```
+
+`SalienceScore` remains valid as the implementation-level score for what the formal specification calls effective signal strength.
+
+Future Cortex mode values:
+
+```text
+CortexMode = CONSCIOUS | UNCONSCIOUS | DEGRADED
+```
+
+- `CONSCIOUS`: normal operator-facing operation.
+- `UNCONSCIOUS`: cost-saving and memory-optimization mode entered after human-interaction idle timeout; first human interaction wakes Cortex back to `CONSCIOUS`.
+- `DEGRADED`: fault/safety mode when core orientation or substrate guarantees are unavailable.
+
+Future Cortex orientation state values:
+
+```text
+CortexOrientationState = DISORIENTED | SEEKING | ORIENTED
+```
+
+- `DISORIENTED`: bootstrap or error-only state where Arc/salience/world basis is not known enough to orient.
+- `SEEKING`: Cortex is locating orientation by reading ArcStore, computing salience/effective signal strength, and preparing a decision.
+- `ORIENTED`: Cortex knows where it is going and what to do now for one bounded tick.
+
+Future loop split:
+
+```text
+CortexLoops = OrientationLoop | SubconsciousLoop | MaintenanceLoop
+```
+
+- `OrientationLoop`: conscious/operator-facing arbitration; handles interactive or high-salience Arcs.
+- `SubconsciousLoop`: parallel autonomic Arc-processing loop for non-interactive Arcs; escalates ambiguity, operator input, or high-risk actions to the conscious path.
+- `MaintenanceLoop`: non-Arc substrate upkeep such as memory crystallization, decay sweeps, trace/index maintenance, stale-result checks, health checks, and deterministic email triage. It may create or update Arcs, but does not engage them.
+
+Future invariants:
+
+```text
+Arc ENGAGED only during a bounded tick.
+EngagementSource = ORIENTATION_LOOP | SUBCONSCIOUS_LOOP
+No Arc remains ENGAGED after its tick terminates.
+MaintenanceLoop does not ENGAGE Arcs.
+UNCONSCIOUS mode biases toward cost reduction and memory/context optimization over task advancement.
+```
+
+Async work model:
+
+```text
+ENGAGED
+-> dispatch async work
+-> DEFERRED(reason=FACULTY_PENDING)
+```
+
 ### Faculty
 
 A callable capability provider.
