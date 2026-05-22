@@ -1,4 +1,4 @@
-import type { Arc, ArcBudget, ArcRelation } from '../schemas/arc.js'
+import { deriveArcState, type Arc, type ArcBudget, type ArcRelation, type DerivedArcState } from '../schemas/arc.js'
 import type { OriginStamp } from '../schemas/origin-stamp.js'
 import type { TraceEvent, TraceEventType } from '../schemas/trace-event.js'
 
@@ -7,7 +7,7 @@ export const arcStoreBoundary = 'arc-store' as const
 export interface ArcIndexEntry {
   readonly id: string
   readonly title: string
-  readonly state: Arc['state']
+  readonly state: DerivedArcState
   readonly target: string
   readonly summary: string
   readonly created_at: number
@@ -104,7 +104,6 @@ export function createArcStore(dependencies: ArcStoreDependencies = {}): ArcStor
     schema_hash: ARC_SCHEMA_HASH,
     arc_id: arc.id,
     origin_hash: origin.signature_hash,
-    arc_state: arc.state,
   })
 
   const store = (arc: Arc): Arc => {
@@ -137,7 +136,6 @@ export function createArcStore(dependencies: ArcStoreDependencies = {}): ArcStor
       const arc = store({
         id: createArcId(),
         title: createArcTitle({ target: input.target }),
-        state: 'OPEN',
         target: input.target,
         summary: input.target,
         created_at: createdAt,
@@ -165,7 +163,6 @@ export function createArcStore(dependencies: ArcStoreDependencies = {}): ArcStor
 
       const arc = store({
         ...existing,
-        state: 'ACTIVE',
         activated_at: now(),
         trace_refs: [...existing.trace_refs, 'ARC_ACTIVE'],
       })
@@ -184,7 +181,6 @@ export function createArcStore(dependencies: ArcStoreDependencies = {}): ArcStor
 
       const arc = store({
         ...existing,
-        state: 'RESOLVED',
         summary: createResolutionSummary(input.resolution),
         resolved_at: now(),
         resolution: input.resolution,
@@ -201,7 +197,7 @@ export function createArcStore(dependencies: ArcStoreDependencies = {}): ArcStor
       return Array.from(arcs.values()).map((arc) => ({
         id: arc.id,
         title: arc.title,
-        state: arc.state,
+        state: deriveArcState(arc),
         target: arc.target,
         summary: arc.summary ?? arc.target,
         created_at: arc.created_at,

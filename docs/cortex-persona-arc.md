@@ -176,7 +176,7 @@ Salience = computed "this matters now" score
 
 ### FocusCycle
 
-One execution iteration selected by the OrientationLoop.
+Current 0.05 implementation bridge name for one bounded selection/evidence cycle produced by the OrientationLoop. The future taxonomy renames this concept to `OrientationTick`; until that rename is explicitly scoped, code keeps `FocusCycle` and treats `ENGAGED` as derived presentation, not stored state.
 
 Typical sequence:
 
@@ -192,12 +192,18 @@ emit trace
 ```
 
 ```text
-FocusCycle = one select -> dispatch -> update execution step
+FocusCycle = one bounded select/evidence cycle; future OrientationTick
+```
+
+Derived presentation state for current read models:
+
+```ts
+type DerivedArcState = 'ENGAGED' | 'DEFERRED' | 'RESOLVED' | 'ABSORBED'
 ```
 
 ### FocusDecision
 
-The decision produced before a FocusCycle executes.
+The current 0.05 implementation bridge name for the decision produced by a FocusCycle. Future taxonomy renames it to `OrientationDecision`.
 
 It answers:
 
@@ -215,6 +221,8 @@ Current shape:
 ```ts
 interface FocusDecision {
   arcId: string
+  selectedTitle: string
+  selectedState: DerivedArcState
   facultyId: string
   facultyRole: FacultyRole
   reason: string
@@ -236,7 +244,7 @@ Future naming direction:
 FocusCycle      -> OrientationTick
 FocusDecision   -> OrientationDecision
 FocusCandidate  -> OrientationCandidate
-ACTIVE          -> ENGAGED
+Current tick engagement -> ENGAGED
 ```
 
 `SalienceScore` remains valid as the implementation-level score for what the formal specification calls effective signal strength.
@@ -274,6 +282,8 @@ CortexLoops = OrientationLoop | SubconsciousLoop | MaintenanceLoop
 Future invariants:
 
 ```text
+CARL stores facts, events, and durable commitments.
+CARL derives operational states, modes, and orientation from those facts at query time.
 Arc ENGAGED only during a bounded tick.
 EngagementSource = ORIENTATION_LOOP | SUBCONSCIOUS_LOOP
 No Arc remains ENGAGED after its tick terminates.
@@ -281,12 +291,23 @@ MaintenanceLoop does not ENGAGE Arcs.
 UNCONSCIOUS mode biases toward cost reduction and memory/context optimization over task advancement.
 ```
 
+Derived Arc presentation projection:
+
+```ts
+if (arc.resolved_at) return "RESOLVED";
+if (arc.absorbed_into_arc_id) return "ABSORBED";
+if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
+return "DEFERRED";
+```
+
+`DEFERRED` is the default live/resting presentation state: alive but not currently engaged by the queried tick. Eligibility, blockedness, faculty-pending status, suppression, and resource gaps are separate derived classifications from stored facts/events.
+
 Async work model:
 
 ```text
 ENGAGED
 -> dispatch async work
--> DEFERRED(reason=FACULTY_PENDING)
+-> tick terminates; queried presentation becomes DEFERRED unless `resolved_at` or `absorbed_into_arc_id` now applies
 ```
 
 ### Faculty
@@ -467,9 +488,11 @@ cortex/orientation-loop.ts
   - OrientationLoop
   - SalienceScore
   - FocusCandidate
+  - FocusCycle
   - FocusDecision
+  - focusCycleRuleset
   - createOrientationLoop()
-  - salience scoring and focus selection
+  - salience scoring, focus selection, and derived presentation projection for candidates
 
 cortex/reasoning-engine.ts
   - reasoningEngineBoundary
@@ -483,7 +506,7 @@ cortex/decomposer.ts
 
 cortex/result-buffer.ts
   - resultBufferBoundary
-  - future owner of temporary faculty result aggregation for an active FocusCycle
+  - future owner of temporary faculty result aggregation for a current FocusCycle / future OrientationTick
   - tracks evidence, partial results, conflicts, and pending dependencies before synthesis
 
 cortex/synthesis-gate.ts
@@ -495,7 +518,7 @@ cortex/synthesis-gate.ts
 Cortex API definitions do not belong in `cortex/persona.ts`.
 Arc storage and lifecycle operations do not belong in `cortex/persona.ts`.
 Salience scoring and focus selection do not belong in `cortex/persona.ts`.
-Persona is not the Arc database or the Cortex loop; it is a Cortex-owned identity/policy component used by a FocusCycle when the selected faculty role is Persona.
+Persona is not the Arc database or the Cortex loop; it is a Cortex-owned identity/policy component used by the current model-faculty-shaped direct response path.
 
 ## Runtime path
 
@@ -506,11 +529,11 @@ incoming validated signal
   -> cortex.receiveSignal(signal)
   -> cortex.arcStore.openArc(signal.text)
   -> cortex.arcStore.activateArc(arc.id)
-  -> cortex.orientationLoop.scoreArc(activeArc)
-  -> cortex.orientationLoop.decideFocus(candidate)
+  -> cortex.orientationLoop.createFocusCycle([activeArc])
+  -> FocusCycle.decision selects the active Arc as ENGAGED presentation
   -> cortex.persona.createResponse(activeArc, signal)
   -> cortex.arcStore.resolveArc(arc.id, response)
-  -> Cortex emits PERSONA_RESPONSE with FocusDecision
+  -> Cortex emits PERSONA_RESPONSE with FocusCycle and FocusDecision
 ```
 
 Future full loop:
@@ -520,11 +543,11 @@ Operator/Event enters Cortex
   -> Cortex creates or updates Arc in ArcStore
   -> OrientationLoop reads ArcStore
   -> OrientationLoop computes salience
-  -> FocusDecision selects next Arc/task/faculty
+  -> FocusDecision selects next Arc/task/faculty using derived presentation state
   -> FocusCycle dispatches work through FacultyRouter
   -> FacultyInstance returns result
   -> Cortex updates ArcStore
-  -> repeat until Arc is RESOLVED / DEFERRED / ABSORBED
+  -> repeat until `resolved_at` / `absorbed_into_arc_id` project terminal states; live non-engaged Arcs project as DEFERRED
 ```
 
 Condensed:
@@ -553,6 +576,7 @@ cortex.arcStore.getArc(arcId)
 cortex.orientationLoop.scoreArc(arc)
 cortex.orientationLoop.selectFocusCandidate(arcs)
 cortex.orientationLoop.decideFocus(candidate)
+cortex.orientationLoop.createFocusCycle(arcs)
 
 cortex.listArcIndex()
 cortex.getArc(arcId)
@@ -590,6 +614,7 @@ OrientationLoop {
   scoreArc(arc): SalienceScore
   selectFocusCandidate(arcs): FocusCandidate | undefined
   decideFocus(candidate): FocusDecision
+  createFocusCycle(arcs): FocusCycle
 }
 ```
 
@@ -598,7 +623,7 @@ OrientationLoop {
 The current Arc loop is direct-resolution only:
 
 ```text
-validated signal -> ArcStore opens Arc -> OrientationLoop produces FocusDecision -> Persona produces response -> ArcStore resolves Arc
+validated signal -> ArcStore opens Arc -> OrientationLoop produces FocusCycle/FocusDecision -> Persona produces response -> ArcStore resolves Arc
 ```
 
 Tasks, FacultyRouter, FacultyRegistry, memory retrieval, high-reasoning dispatch, mini-model dispatch, pure-code faculty dispatch, and real model calls remain future slices. The public names still use final domain names.

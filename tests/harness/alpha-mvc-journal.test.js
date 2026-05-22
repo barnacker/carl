@@ -75,8 +75,8 @@ test('Alpha MVC normal journal writes compact JSONL and replays Arc lifecycle', 
     assert.equal(replay.run_id, 'run-test-1')
     assert.equal(replay.trace_id, 'trace-test-1')
     assert.equal(replay.debug_trace, false)
-    assert.deepEqual(replay.arc_lifecycle.states, ['OPEN', 'ACTIVE', 'RESOLVED'])
-    assert.equal(replay.arc_lifecycle.terminal_state, 'RESOLVED')
+    assert.deepEqual(replay.arc_lifecycle.event_types, ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
+    assert.equal(replay.arc_lifecycle.terminal_event_type, 'ARC_RESOLVED')
     assert.equal(replay.output?.content, 'journal response')
 
     const normalText = readFileSync(run.journal_path, 'utf8')
@@ -175,7 +175,7 @@ test('carltest writes normal journal and replays by both path and trace id', () 
       env,
       encoding: 'utf8',
     }))
-    assert.deepEqual(byPath.arc_lifecycle.states, ['OPEN', 'ACTIVE', 'RESOLVED'])
+    assert.deepEqual(byPath.arc_lifecycle.event_types, ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
     assert.equal(byPath.output.content, 'CLI journal result')
 
     const byId = JSON.parse(execFileSync('node', ['bin/carltest.js', '--replay', 'trace-cli-1'], {
@@ -183,7 +183,7 @@ test('carltest writes normal journal and replays by both path and trace id', () 
       env,
       encoding: 'utf8',
     }))
-    assert.deepEqual(byId.arc_lifecycle.states, ['OPEN', 'ACTIVE', 'RESOLVED'])
+    assert.deepEqual(byId.arc_lifecycle.event_types, ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
     assert.equal(byId.trace_id, 'trace-cli-1')
   } finally {
     cleanup(dir)
@@ -302,7 +302,7 @@ test('carltest recent history lists Arc cards and replay-recent uses displayed h
       encoding: 'utf8',
     }))
     assert.equal(replayRecent.trace_id, 'trace-recent-2')
-    assert.deepEqual(replayRecent.arc_lifecycle.states, ['OPEN', 'ACTIVE', 'RESOLVED'])
+    assert.deepEqual(replayRecent.arc_lifecycle.event_types, ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
   } finally {
     cleanup(dir)
   }
@@ -367,7 +367,7 @@ test('carltest status and arc inspection read latest Arc without mutating histor
     const arc = JSON.parse(arcOutput)
     assert.equal(arc.arc.handle, 1)
     assert.equal(arc.arc.title, 'Inspect this bounded Arc')
-    assert.equal(arc.arc.state, 'RESOLVED')
+    assert.equal(arc.arc.resolved_at !== undefined, true)
     assert.equal(arc.arc.summary, 'inspection result')
     assert.equal(arc.arc.created_at, 128)
     assert.equal(arc.arc.activated_at, 128)
@@ -455,9 +455,9 @@ test('carltest trace inspection works by trace id and path', () => {
       assert.equal(parsed.trace.trace_id, 'trace-inspect-command')
       assert.equal(parsed.trace.run_id, 'run-trace-inspect')
       assert.equal(parsed.trace.debug_trace, false)
-      assert.deepEqual(parsed.trace.arc_lifecycle.states, ['OPEN', 'ACTIVE', 'RESOLVED'])
+      assert.deepEqual(parsed.trace.arc_lifecycle.event_types, ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
       assert.equal(parsed.trace.arc_lifecycle.arc_id, undefined)
-      assert.equal(parsed.trace.arc_lifecycle.terminal_state, 'RESOLVED')
+      assert.equal(parsed.trace.arc_lifecycle.terminal_event_type, 'ARC_RESOLVED')
       assert.equal(parsed.trace.output.content, 'trace inspection result')
     }
   } finally {

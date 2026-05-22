@@ -1,5 +1,3 @@
-import type { ArcState } from './arc.js'
-
 export const TRACE_EVENT_TYPES = [
   'PUBLISH', 'SUBSCRIBE', 'DARK_LANE',
   'REFLEX_HIT', 'REFLEX_MISS', 'REFLEX_DEGRADED', 'REFLEX_BYPASS', 'REFLEX_OVERRIDE',
@@ -23,5 +21,4 @@ export interface TraceEvent {
   readonly schema_hash: string
   readonly arc_id: string | null
   readonly origin_hash: string
-  readonly arc_state?: ArcState
 }

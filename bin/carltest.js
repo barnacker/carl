@@ -21,6 +21,7 @@ import {
   resolveAlphaMvcJournalPath,
 } from '../dist/harness/alpha-mvc-journal.js'
 import { createJsonlJournalWriter } from '../dist/nervous-system/trace/index.js'
+import { deriveArcState } from '../dist/schemas/arc.js'
 
 function usage() {
   console.error('usage: carltest --discord "<message>" [--debug-trace]\n       carltest --status\n       carltest --arc <handle-or-debug-id> [--debug-trace]\n       carltest --trace <trace-id-or-jsonl-path> [--debug-trace]\n       carltest --replay <trace-id-or-jsonl-path> [--debug-trace]\n       carltest --recent [--debug-trace]\n       carltest --replay-recent <handle> [--debug-trace]')
@@ -156,7 +157,7 @@ function createCliRun(debugTrace, now) {
 function arcOutput(arc, debugTrace) {
   return {
     title: arc.title,
-    state: arc.state,
+    state: deriveArcState(arc),
     target: arc.target,
     summary: arc.summary,
     created_at: arc.created_at,

@@ -131,8 +131,8 @@ Alpha MVC 0.02 is accepted when tests prove:
 - Normal runs write JSONL under ignored runtime state.
 - CLI output includes run ID, trace ID, journal path, and debug flag.
 - Debug runs include expanded trace detail and redact secrets.
-- Replay by path reconstructs `OPEN → ACTIVE → RESOLVED`.
-- Replay by trace ID reconstructs `OPEN → ACTIVE → RESOLVED`.
+- Replay by path reconstructs `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`.
+- Replay by trace ID reconstructs `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`.
 - Separate runs have isolated trace IDs.
 - Tests need no network/API keys.
 - No real Nervous System, Synapse, Faculty bus, Discord integration, session layer, or memory layer is introduced.

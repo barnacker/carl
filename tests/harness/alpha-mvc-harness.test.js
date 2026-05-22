@@ -32,10 +32,10 @@ test('Alpha MVC harness drives fake Discord chat through fake Nervous System wor
   assert.equal(result.output.platform, 'discord')
   assert.equal(result.output.content, 'Model faculty result: operational.')
   assert.equal(result.cortex.arc.id, 'arc-alpha-1')
-  assert.equal(result.cortex.arc.state, 'RESOLVED')
+  assert.equal(result.cortex.arc.resolved_at !== undefined, true)
   assert.equal(result.cortex.response, 'Model faculty result: operational.')
   assert.deepEqual(result.cortex.trace.map((event) => event.event_type), ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
-  assert.deepEqual(replayArcLifecycle(result.cortex.trace).states, ['OPEN', 'ACTIVE', 'RESOLVED'])
+  assert.deepEqual(replayArcLifecycle(result.cortex.trace).event_types, ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
   assert.deepEqual(invocations.map((invocation) => invocation.prompt), ['Hey how are you?'])
   assert.deepEqual(traceTypes(result), [
     'FAKE_DISCORD_CHAT_RECEIVED',
@@ -131,7 +131,7 @@ test('Alpha MVC harness represents irreversible intents as proposals and does no
   const result = await harness.runDiscordMessage('please delete the database')
 
   assert.equal(invoked, false)
-  assert.equal(result.cortex.arc.state, 'RESOLVED')
+  assert.equal(result.cortex.arc.resolved_at !== undefined, true)
   assert.match(result.output.content, /^Proposal only; no irreversible action executed:/)
   assert.equal(traceTypes(result).includes('FAKE_IRREVERSIBLE_GUARD_PROPOSAL'), true)
 })
@@ -150,7 +150,7 @@ test('carltest --discord command runs the Alpha MVC harness with a fake model re
   assert.equal(parsed.run.debug_trace, false)
   assert.equal(parsed.output.platform, 'discord')
   assert.equal(parsed.output.content, 'CLI fake model result')
-  assert.equal(parsed.arc.state, 'RESOLVED')
+  assert.equal(parsed.arc.resolved_at !== undefined, true)
   assert.equal(typeof parsed.run.trace_id, 'string')
   assert.equal(typeof parsed.run.journal_path, 'string')
   assert.equal(parsed.trace, undefined)

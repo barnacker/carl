@@ -18,7 +18,7 @@ Alpha MVC 0.01 currently provides:
 
 - `carltest --discord "<message>"` fake Discord ingress.
 - Fake Discord and fake Nervous-System relay boundaries.
-- Real Cortex Arc lifecycle: `OPEN → ACTIVE → RESOLVED`.
+- Real Cortex trace evidence: `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`.
 - Harness-invoked model-faculty-shaped adapter.
 - Harness-floor PRIME presence and irreversible-action proposal guards.
 - In-memory trace evidence and lifecycle replay helper.
@@ -94,7 +94,7 @@ now: () => 123
 - Debug trace persistence with secret redaction.
 - Replay by journal file path.
 - Replay by trace ID.
-- Replay reconstruction of `OPEN → ACTIVE → RESOLVED`.
+- Replay reconstruction of `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`.
 - Tests for persistence, replay, trace isolation, deterministic IDs/time, debug-mode payloads, secret redaction, and no runtime-state commits.
 
 ### Out of scope
@@ -287,8 +287,8 @@ Candidate replay output:
   "debug_available": false,
   "arc_lifecycle": {
     "arc_id": "arc-1",
-    "states": ["OPEN", "ACTIVE", "RESOLVED"],
-    "terminal_state": "RESOLVED"
+    "event_types": ["ARC_OPEN", "ARC_ACTIVE", "ARC_RESOLVED"],
+    "terminal_event_type": "ARC_RESOLVED"
   },
   "input": {
     "platform": "discord",
@@ -451,8 +451,8 @@ Test cases:
 1. Normal run writes JSONL journal.
 2. Debug run writes expanded debug payloads.
 3. Debug payload redacts secrets.
-4. Replay by path reconstructs `OPEN → ACTIVE → RESOLVED`.
-5. Replay by trace ID reconstructs `OPEN → ACTIVE → RESOLVED`.
+4. Replay by path reconstructs `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`.
+5. Replay by trace ID reconstructs `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`.
 6. Two runs produce distinct run IDs and trace IDs.
 7. Tests can inject deterministic run ID, trace ID, and time.
 8. CLI fake model override still works without network/API keys.
@@ -471,7 +471,7 @@ Alpha MVC 0.02 is accepted when:
 6. Debug mode redacts secrets.
 7. Replay works by file path.
 8. Replay works by trace ID.
-9. Replay reconstructs `OPEN → ACTIVE → RESOLVED`.
+9. Replay reconstructs `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`.
 10. Separate CLI runs produce distinct run IDs and trace IDs.
 11. Tests inject deterministic run ID, trace ID, and time.
 12. Tests require no network/API keys.

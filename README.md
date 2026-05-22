@@ -13,7 +13,8 @@ The biological terminology — Cortex, Nervous System, Immune System, Faculty, R
 - `docs/alpha-mvc-0.02-trace-journal.md` — Alpha MVC 0.02 runtime slice: workspace-backed JSONL trace journal plus replay/debug trace support for the fake-world harness.
 - `docs/alpha-mvc-0.03-titled-arcs.md` — Alpha MVC 0.03 runtime slice: titled bounded Arcs, relation slots, and recent Arc history without sessions.
 - `docs/alpha-mvc-0.04-arc-inspection.md` — Alpha MVC 0.04 runtime slice: Arc-native read-only inspection commands for status, Arc detail, and trace evidence.
-- `docs/plans/alpha-mvc-0.05-focus-cycle.md` — current reviewed Alpha MVC 0.05 plan: deterministic, explainable FocusCycle v1 without Tasks, Memory, or real runtime infrastructure.
+- `docs/alpha-mvc-0.05-focus-cycle.md` — Alpha MVC 0.05 runtime slice: deterministic, explainable FocusCycle v1 and derived Arc presentation state without Tasks, Memory, or real runtime infrastructure.
+- `docs/plans/alpha-mvc-0.05-focus-cycle.md` — Alpha MVC 0.05 implementation/reconciliation plan and acceptance record.
 - `docs/plans/minimal-viable-cortex-roadmap.md` — provisional Alpha MVC 0.02–0.10 roadmap toward a stable minimal viable Cortex module. This is a review-required proposal, not implementation authorization.
 
 Start here if you are evaluating or building CARL:
@@ -110,7 +111,7 @@ If the active Arc is safe to yield, CARL may defer it and activate the new Arc. 
 
 1. defer the current Arc and activate the new Arc now;
 2. finish the current step first;
-3. capture the new request as next — `OPEN → DEFERRED(reason=ATTENTION_QUEUED)` with operator-recency weight while the current Arc remains `ACTIVE`;
+3. capture the new request as next — store `ATTENTION_QUEUED` evidence with operator-recency weight while the current tick remains engaged with the current Arc;
 4. merge the new request into the current Arc only after operator confirmation of the merged intent.
 
 `DEFERRED` suppresses Cortex focus, not auditability. Already-dispatched bounded Faculty work may continue and publish results into the Arc buffer, but a deferred Arc cannot silently perform new Cortex reasoning, expand its plan, execute irreversible action, or extend budget. If a deferred Arc reaches a clarification or proposal step, it remains `DEFERRED(reason=OPERATOR_INPUT_REQUIRED)` and Persona queues the notification until attention priority allows surfacing it, unless the question is urgent or safety-relevant.
@@ -323,21 +324,23 @@ Gating model (cheap, every iteration) decides tier — Execution Faculty (cheap,
 
 **Arc budget — mandatory invariant:** every Arc declares `max_model_calls`, `max_faculty_dispatches`, `max_wall_time`, and resource needs at open time. Budget exhausted → Arc defers immediately, Persona notifies operator. No silent continuation. Operator must explicitly authorize continuation or resolution.
 
-**Resource gaps — cognitive-debt semantics.** If an Arc cannot obtain a required resource inside its declared budget, it transitions to `DEFERRED`: the Cognitive Debt state. Persona records the suppressed Signal, keeps the Arc auditable, and waits for the resource gap to close or for operator authorization.
+**Resource gaps — cognitive-debt semantics.** If an Arc cannot obtain a required resource inside its declared budget, Cortex records a durable deferral fact/reason. At query time the Arc presents as `DEFERRED` unless `currentTick?.engaged_arc_id === arc.id`, `resolved_at`, or `absorbed_into_arc_id` applies. Persona records the suppressed Signal, keeps the Arc auditable, and waits for the resource gap to close or for operator authorization.
 
-Every Arc declares resource needs at open time (e.g., `calendar:operator_main`, `file:/path/to/x`, `email_thread:abc123`, `memory:fact:project_status`). These declarations are budgeting and audit inputs, not a separate Arc state machine. Resource handling outcomes are constrained to the five final Arc states:
+Every Arc declares resource needs at open time (e.g., `calendar:operator_main`, `file:/path/to/x`, `email_thread:abc123`, `memory:fact:project_status`). These declarations are budgeting and audit inputs, not a separate Arc state machine. Resource handling outcomes are constrained by stored facts plus derived presentation states:
 
-- `OPEN` — Initial state.
-- `ACTIVE` — Focus state; Cortex processing.
-- `DEFERRED` — Cognitive Debt; Signal suppressed while awaiting a resource gap, dependency, budget extension, operator input, or priority gap.
-- `RESOLVED` — Terminal success.
-- `ABSORBED` — Forgetting state; debt flushed due to decay.
+ArcState is derived presentation, not a stored operational field:
+
+- `RESOLVED` — `arc.resolved_at` exists.
+- `ABSORBED` — `arc.absorbed_into_arc_id` exists.
+- `ENGAGED` — `currentTick?.engaged_arc_id === arc.id`.
+- `DEFERRED` — default live/resting projection.
 
 ```
 RESOURCE GAP HANDLING
-  Required resource unavailable → Arc transitions to DEFERRED
+  Required resource unavailable → Cortex records a deferral fact/reason
   Persona records the suppressed Signal as cognitive debt
-  Arc may return to ACTIVE when the gap closes or operator authorizes continuation
+  Arc may present as ENGAGED only when a current OrientationTick selects it
+  Arc presents as DEFERRED while live and not currently engaged
   Arc may become ABSORBED if decay flushes the debt before reinforcement
 ```
 
@@ -346,7 +349,8 @@ RESOURCE GAP HANDLING
 **Optimistic concurrency for low-risk reads** — read needs do not block focus. If a prior read becomes stale before synthesis, the reader receives a STALE_READ signal and Persona decides whether to re-read or surface the inconsistency to the operator.
 
 ```
-ARC LIFECYCLE:  OPEN → ACTIVE → (DEFERRED ↔ ACTIVE | RESOLVED | ABSORBED)
+ARC PERSISTENCE: store facts/events/commitments; derive operational state at query time
+PRESENTATION: resolved_at → RESOLVED; absorbed_into_arc_id → ABSORBED; currentTick.engaged_arc_id match → ENGAGED; otherwise → DEFERRED
 ```
 
 ---
@@ -358,7 +362,7 @@ All persistence. The substrate that makes Reflex possible.
 | Tier | Contents | Properties |
 |---|---|---|
 | 0 | Prime Directives | Compiled in production — file at build time only |
-| 1 | Dynamic runtime — facts, session context, Arc state | Write-serialized, concurrent reads, Arc contexts isolated |
+| 1 | Dynamic runtime — facts, session context, Arc lifecycle evidence | Write-serialized, concurrent reads, Arc contexts isolated |
 | 1a | Observation Log — immutable append-only record of every raw observation | Durable, never collapsed, never overwritten, append-only audit trail |
 | 1b | Short Term Memory — wildcard observations per origin (working representation) | Hash table, O(1), volatile (lost on restart), bounded max N before forced collapse |
 | 1c | Crystallized Memory — collapsed beliefs, Reflex corpus, Resolution Records, archived Arcs, Arc index | K/V store, durable, survives restart (LevelDB/SQLite → abstracted K/V) |
@@ -880,7 +884,7 @@ carl/
 │   ├── index.ts                 ← Cortex boundary / public composition
 │   ├── persona.ts               ← Persona identity, prompt-memory, and response policy
 │   ├── arc-store.ts             ← Arc lifecycle persistence, indexing, and lookup
-│   ├── orientation-loop.ts      ← salience scoring and FocusDecision selection
+│   ├── orientation-loop.ts      ← salience scoring, FocusCycle evidence, and derived presentation selection
 │   ├── reasoning-engine.ts      ← deliberation policy and high-reasoning escalation boundary
 │   ├── decomposer.ts            ← selected Arc work to Tasks or Sub-Arcs
 │   ├── result-buffer.ts         ← faculty output/evidence aggregation during a FocusCycle

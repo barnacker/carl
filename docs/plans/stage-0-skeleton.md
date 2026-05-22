@@ -86,7 +86,7 @@
 - Create: `cortex/arc-store.ts`
   - Owns `ArcStore`, `ArcStoreDependencies`, `createArcStore()`, and Arc opening, transition, resolution, indexing, and lookup.
 - Create: `cortex/orientation-loop.ts`
-  - Owns `OrientationLoop`, `SalienceScore`, `FocusCandidate`, `FocusDecision`, `createOrientationLoop()`, salience scoring, and focus selection.
+  - Owns `OrientationLoop`, `SalienceScore`, `FocusCandidate`, `FocusDecision`, `createOrientationLoop()`, salience scoring, and focus selection. Alpha MVC 0.05 adds `FocusCycle` evidence and derives ArcState from `resolved_at`, `absorbed_into_arc_id`, and current tick engagement.
 - Create: `cortex/reasoning-engine.ts`
   - Owns `reasoningEngineBoundary` as the reserved boundary for deliberation policy, high-reasoning escalation criteria, critique passes, and answer-quality checks.
 - Create: `cortex/decomposer.ts`
@@ -151,7 +151,7 @@
 - OriginStamp shape validation exists.
 - PRIME presence check fails closed.
 - Irreversible-action intent returns proposal/non-execution output.
-- Trace replay reconstructs `OPEN → ACTIVE → RESOLVED`.
+- Trace replay reconstructs event evidence `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`; ArcState projection remains derived.
 
 ## Task 9: Final validation
 

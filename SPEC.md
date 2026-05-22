@@ -16,63 +16,66 @@ Each named state machine is the authoritative definition for its lifecycle. A co
 
 ---
 
-### 1.1 Arc Lifecycle (Elastic Model)
+### 1.1 Arc Presentation State (Derived Model)
 
 Arcs are trajectories with **Synaptic Weight ($W$)** and **Temporal Decay ($\lambda$)**.
-An Arc is a unit of reasoning with a declared budget. Every Arc exists in exactly one state at any time.
+An Arc is a unit of reasoning with a declared budget. CARL does not treat a persisted Arc state field as operational authority.
 
-**Competitive Inhibition** is the system-level priority competition between Arcs. Effective signal strength is a function of Synaptic Weight, Temporal Decay, resource availability, and operator interventions. The strongest eligible signal receives processing focus.
+CARL stores facts, events, and durable commitments. CARL derives Arc presentation state from those facts at query time.
 
-**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc receives focus, competing lower-weight signals may transition to `DEFERRED`; this suppresses processing, not auditability. If Temporal Decay exhausts a deferred Arc's recoverability, it transitions to `ABSORBED`.
+Canonical projection:
 
-```
-STATES
-  OPEN        Initial state.
-  ACTIVE      Focus state. Cortex processing.
-  DEFERRED    Cognitive Debt state. Signal suppressed, awaiting resource gap.
-  RESOLVED    Terminal state. Success.
-  ABSORBED    Forgetting state. Debt flushed due to decay.
-
-INITIAL STATE:  OPEN
-TERMINAL STATES: RESOLVED, ABSORBED
+```ts
+if (arc.resolved_at) return "RESOLVED";
+if (arc.absorbed_into_arc_id) return "ABSORBED";
+if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
+return "DEFERRED";
 ```
 
-**Transition table:**
+```text
+DERIVED STATES
+  ENGAGED     Current queried OrientationTick engages this Arc.
+  DEFERRED    Default live/resting projection. Arc is alive but not currently engaged.
+  RESOLVED    Terminal projection from `resolved_at`.
+  ABSORBED    Terminal projection from `absorbed_into_arc_id`.
 
-| From | To | Trigger | Guard | Required Effect |
-|---|---|---|---|---|
-| OPEN | ACTIVE | Persona dispatches Arc to Reasoning Engine | Budget declared and no resource gap blocks focus | TraceEvent ARC_OPEN and ARC_ACTIVE emitted |
-| OPEN | DEFERRED | Higher-weight Arc, missing operator input, dependency, budget wait, resource gap, or operator-directed queueing blocks focus | Arc remains recoverable and auditable | Arc recorded as cognitive debt; Persona notified if operator action is required |
-| ACTIVE | ACTIVE | Faculty result arrives | Arc budget not exhausted | Result into Result Buffer; TraceEvent emitted |
-| ACTIVE | DEFERRED | Awaiting operator input | Ambiguity detected or proposal flow initiated | Persona composes question; processing pauses audibly |
-| ACTIVE | DEFERRED | Awaiting Faculty result | Faculty dispatched, result pending | Non-blocking; other Arcs continue |
-| ACTIVE | DEFERRED | Budget exhausted | Any budget dimension reaches zero | TraceEvent BUDGET_EXHAUSTED; Persona notifies operator immediately |
-| ACTIVE | DEFERRED | Resource gap detected | Required resource unavailable inside declared budget | Arc becomes cognitive debt; Persona notified if operator action is required |
-| ACTIVE | DEFERRED | Competitive Inhibition suppresses Arc | Higher-weight eligible Arc preempts focus; Arc remains recoverable | Processing paused; already-dispatched bounded Faculty work may continue, but no new Cortex reasoning or decisions occur while deferred; effective weight continues to decay/reinforce |
-| ACTIVE | RESOLVED | Synthesis Gate signals complete | All required Faculty results received; output composed | Resolution Record written; context archived to Tier 1c; resources released |
-| DEFERRED | ACTIVE | Awaited input/result arrives, resource gap closes, priority gap opens, or operator authorizes continuation | Budget not exhausted or operator extends budget | Reasoning resumes |
-| DEFERRED | ABSORBED | Temporal Decay reaches absorption threshold | No reinforcement before configured decay limit | Cognitive debt archived; operator may restart with new signal |
+INITIAL PROJECTION:  DEFERRED, unless the opening tick engages the Arc.
+TERMINAL PROJECTIONS: RESOLVED, ABSORBED
+```
 
-**Forbidden transitions:**
+`ARC_OPEN`, `ARC_ACTIVE`, and related trace labels are event vocabulary, not ArcState values.
 
-| From | To | Reason |
+**Competitive Inhibition** is the system-level priority competition between Arcs. Effective signal strength is a function of Synaptic Weight, Temporal Decay, resource availability, and operator interventions. The strongest eligible signal receives processing focus by being selected into the current OrientationTick.
+
+**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc is engaged by the current tick, competing lower-weight signals project as `DEFERRED`; this suppresses processing, not auditability. If Temporal Decay exhausts recoverability, CARL records `absorbed_into_arc_id` and the Arc projects as `ABSORBED`.
+
+**Projection precedence:**
+
+| Fact / tick condition | Derived ArcState | Required effect |
 |---|---|---|
-| RESOLVED | Any | Terminal state. No resurrection. Reference archived Arc via Memory Faculty. |
-| ABSORBED | Any | Terminal decay state. New operator signal opens a new Arc; no resurrection. |
-| DEFERRED | ACTIVE | Without awaited input/result, resource availability, priority gap, or explicit operator authorization. No silent bypass. |
-| DEFERRED | RESOLVED | Without successful synthesis. RESOLVED is terminal success, not cancellation or decay. |
-| Any | OPEN | OPEN is initial only. No re-opening. |
+| `arc.resolved_at` exists | `RESOLVED` | Resolution record exists and Arc no longer engages. |
+| `arc.absorbed_into_arc_id` exists | `ABSORBED` | Absorption target is auditable; new operator signal starts new work. |
+| `currentTick?.engaged_arc_id === arc.id` | `ENGAGED` | Arc is the current tick's selected work. |
+| none of the above | `DEFERRED` | Arc is live/resting; reasons are derived from stored facts/events. |
+
+**Forbidden interpretations:**
+
+| Interpretation | Reason |
+|---|---|
+| Persisting `ENGAGED` as a long-lived Arc state | Engagement is tick-local projection only. |
+| Treating absence from `currentTick.engaged_arc_id` as terminal | It only means broad live/resting `DEFERRED`. |
+| Treating any persisted `state` field as projection authority | ArcState projection is keyed by terminal facts and current tick engagement. |
+| Adding stored states for blocked, pending Faculty, priority gap, or operator input | These are classifications derived from stored facts/events/reasons. |
 
 **Invariants:**
 
-- `INV-ARC-1`: Every Arc in ACTIVE state has a non-zero budget in at least one dimension, OR has operator-authorized budget extension pending.
-- `INV-ARC-2`: Every Arc in RESOLVED state has a Resolution Record in Tier 1c.
-- `INV-ARC-3`: Resource needs are declared at Arc open and audited through the budget model.
-- `INV-ARC-4`: Arc context is isolated. No Arc can read or write another Arc's Result Buffer, working context, or intermediate state. Cross-Arc data flows only through Memory Faculty (Tier 1c).
-- `INV-ARC-5`: Every DEFERRED Arc remains auditable as cognitive debt until it transitions to ACTIVE or ABSORBED.
-- `INV-ARC-6`: ABSORBED is terminal and never equivalent to successful resolution. It requires a new operator signal to restart work.
-- `INV-ARC-7`: DEFERRED can carry a reason code, but reason codes are metadata only. They do not add Arc states or bypass the five-state lifecycle.
-- `INV-ARC-8`: DEFERRED Arcs cannot originate new Cortex reasoning, plan expansion, irreversible action, or budget extension. Already-dispatched bounded Faculty work may finish and publish results into the Arc buffer.
+- `INV-ARC-1`: `ENGAGED` is derived only from `currentTick?.engaged_arc_id === arc.id`.
+- `INV-ARC-2`: `RESOLVED` is derived only from `arc.resolved_at`.
+- `INV-ARC-3`: `ABSORBED` is derived only from `arc.absorbed_into_arc_id`.
+- `INV-ARC-4`: Default live projection is `DEFERRED`.
+- `INV-ARC-5`: Resource needs are declared at Arc open and audited through the budget model.
+- `INV-ARC-6`: Arc context is isolated. No Arc can read or write another Arc's result buffer, working context, or intermediate facts except through approved memory/reference mechanisms.
+- `INV-ARC-7`: Deferral reasons are metadata/facts only. They do not add Arc states or bypass the derived projection rule.
 
 **Deferral reasons:**
 
@@ -94,7 +97,7 @@ If the current Arc is not at a safe yield point, Persona presents an explicit at
 
 1. Defer current Arc and activate new Arc now.
 2. Finish the current step first.
-3. Capture the new Arc as deferred next: `OPEN → DEFERRED(reason=ATTENTION_QUEUED)` with operator-recency weight, leaving the current Arc `ACTIVE`.
+3. Capture the new Arc with a durable `ATTENTION_QUEUED` reason and operator-recency weight while the current tick remains engaged with the current Arc.
 4. Merge the new input into the current Arc, only after operator confirmation of the merged intent.
 
 ---
@@ -849,31 +852,24 @@ All named invariants in this document, collected for reference and automated ver
 
 ## Appendix A: Quick Reference
 
-#### A.1 Arc Lifecycle (State Machine)
-**States** (initial → terminal):  
-`OPEN → ACTIVE → (DEFERRED ↔ ACTIVE | RESOLVED | ABSORBED)`
+#### A.1 ArcState Projection
+**Derived states:**
+`ENGAGED | DEFERRED | RESOLVED | ABSORBED`
 
-**Text Diagram** (Mermaid — paste into any Mermaid renderer):
-```mermaid
-stateDiagram-v2
-    [*] --> OPEN
-    OPEN --> ACTIVE: Persona dispatch + budget OK
-    OPEN --> DEFERRED: Blocked at open / queued as next / inhibited
-    ACTIVE --> ACTIVE: Faculty result arrives
-    ACTIVE --> DEFERRED: Await input / Faculty / budget / resource gap / inhibition
-    ACTIVE --> RESOLVED: Synthesis complete
-    DEFERRED --> ACTIVE: Input / result / resource / priority gap / operator authorization
-    DEFERRED --> ABSORBED: Decay threshold
-    RESOLVED --> [*]
-    ABSORBED --> [*]
+**Projection function:**
+```ts
+if (arc.resolved_at) return "RESOLVED";
+if (arc.absorbed_into_arc_id) return "ABSORBED";
+if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
+return "DEFERRED";
 ```
 
 **Key Invariants**:
-- INV-ARC-1: ACTIVE always has budget (or pending extension)
+- INV-ARC-1: ENGAGED is tick-local and never persisted as a long-lived Arc state
 - INV-ARC-3: Resource needs declared and audited through budget model
-- INV-ARC-5: DEFERRED remains auditable cognitive debt
+- INV-ARC-5: DEFERRED remains auditable cognitive debt when no terminal fact or tick engagement applies
 - INV-ARC-6: ABSORBED is terminal and not success
-- Forbidden: RESOLVED/ABSORBED → anything; silent resolutions or silent reactivation
+- Forbidden: deriving terminal state from anything except `resolved_at` / `absorbed_into_arc_id`; silent resolutions or silent reactivation
 
 #### A.2 Confidence Lifecycle (State Machine)
 **States** (initial: UNSET):
@@ -1013,7 +1009,7 @@ export const ScopeEnum = z.enum(['TEMPORAL', 'SPATIAL', 'TOPICAL'])
 export const RiskLevel = z.enum(['LOW', 'ELEVATED', 'HIGH', 'CRITICAL'])
 export const ConfidenceState = z.enum(['UNSET', 'LOW', 'PROVISIONAL', 'HIGH', 'LOCKED'])
 export const RoutingTier = z.enum(['REFLEX', 'EXECUTION', 'REASONING'])
-export const ArcState = z.enum(['OPEN', 'ACTIVE', 'DEFERRED', 'RESOLVED', 'ABSORBED'])
+export const ArcState = z.enum(['ENGAGED', 'DEFERRED', 'RESOLVED', 'ABSORBED'])
 export const DeferralReason = z.enum([
   'ATTENTION_QUEUED',
   'ATTENTION_PREEMPTED',

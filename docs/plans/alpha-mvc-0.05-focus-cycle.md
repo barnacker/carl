@@ -1,6 +1,6 @@
 # Alpha MVC 0.05 — Focus Cycle v1 Implementation Plan
 
-> Status: reviewed scope / implementation-authorized by operator before code only after this plan is accepted.
+> Status: implementation/reconciliation scope for Alpha MVC 0.05. This plan now records the current bridge vocabulary and derived-state invariant.
 
 ## Goal
 
@@ -10,7 +10,7 @@ Alpha MVC 0.05 must introduce selection evidence without introducing Tasks, Sub-
 
 ## Architecture
 
-Cortex remains the top-level boundary. ArcStore owns Arc lifecycle and inspection. OrientationLoop owns salience scoring, candidate ordering, and FocusDecision creation. Cortex invokes OrientationLoop and records/returns the resulting FocusCycle evidence; Persona does not own focus logic.
+Cortex remains the top-level boundary. ArcStore owns Arc facts/events and inspection. OrientationLoop owns salience scoring, candidate ordering, derived ArcState projection for candidates, and FocusDecision creation. Cortex invokes OrientationLoop and records/returns the resulting FocusCycle evidence; Persona does not own focus logic.
 
 0.05 is deterministic and local. It is not the final Competitive Inhibition implementation. It is a testable first slice that models inhibition as ranked salience terms and leaves full Temporal Decay/recovery semantics for later review.
 
@@ -22,9 +22,10 @@ TypeScript, Node test runner, existing `carltest` fake-world harness, JSONL trac
 
 ## Reviewed Decisions
 
-- Use `FocusCycle`, `FocusCandidate`, `SalienceScore`, and `FocusDecision` as final domain names.
+- Use `FocusCycle`, `FocusCandidate`, `SalienceScore`, and `FocusDecision` as current 0.05 implementation bridge names. Future taxonomy may rename them to `OrientationTick`, `OrientationCandidate`, and `OrientationDecision`; do not perform that rename inside 0.05 unless explicitly scoped.
 - Keep salience inside `OrientationLoop`; Cortex orchestrates but does not duplicate scoring rules.
 - Represent Competitive Inhibition v1 as deterministic candidate scoring plus selected/winner evidence.
+- Store facts, events, and durable commitments. Derive ArcState at query time; `ENGAGED` is derived from current tick/cycle engagement and is not persisted.
 - Include Temporal Decay placeholders/terms only as explicit, deterministic scoring inputs; do not implement autonomous absorption or time-based background decay in 0.05.
 - Multiple open Arcs can exist inside ArcStore for scoring tests, but the normal `carltest --discord` one-message path may still resolve its Arc in the same run.
 - Do not introduce Tasks, Sub-Arcs, Decomposer behavior, ResultBuffer, SynthesisGate, Memory, Association Faculty, real Nervous System, real Synapse, real Faculty bus, or real Discord.
@@ -34,6 +35,7 @@ TypeScript, Node test runner, existing `carltest` fake-world harness, JSONL trac
 ### In scope
 
 - Add explicit `FocusCycle` and `FocusCandidate` read-model/schema types.
+- Add derived ArcState projection and remove stored lifecycle-state read-model authority.
 - Extend `SalienceScore` into an explainable term-based score.
 - Add deterministic OrientationLoop scoring rules for:
   - unresolved lifecycle state;
@@ -65,12 +67,33 @@ TypeScript, Node test runner, existing `carltest` fake-world harness, JSONL trac
 - Real Discord integration.
 - Generic chat sessions.
 - Future `OrientationTick` / `OrientationDecision` / `OrientationCandidate` rename.
-- Future `ACTIVE` -> `ENGAGED` Arc lifecycle rename.
+- Future `ACTIVE` -> `ENGAGED` persistent Arc lifecycle rename; 0.05 implements `ENGAGED` only as a derived presentation state.
 - Future CortexMode taxonomy: `CONSCIOUS`, `UNCONSCIOUS`, `DEGRADED`.
 - Future CortexOrientationState taxonomy: `DISORIENTED`, `SEEKING`, `ORIENTED`.
 - Future `SubconsciousLoop` and `MaintenanceLoop` runtime behavior.
 
 ## Data Model Direction
+
+### Derived Arc presentation state
+
+0.05 treats ArcState as a queried projection from facts plus current tick context.
+
+```ts
+type DerivedArcState = 'ENGAGED' | 'DEFERRED' | 'RESOLVED' | 'ABSORBED'
+```
+
+Projection rule:
+
+```ts
+if (arc.resolved_at) return "RESOLVED";
+if (arc.absorbed_into_arc_id) return "ABSORBED";
+if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
+return "DEFERRED";
+```
+
+`DEFERRED` therefore means alive but not currently engaged by the queried tick. More specific categories such as eligible, blocked, pending faculty, or suppressed remain derived from stored facts such as resource needs, pending handles, blockers, and inhibition records.
+
+Lifecycle is represented by facts and trace events in 0.05. Presentation state is a projection, not a persisted source of truth.
 
 ### `SalienceScore`
 
@@ -82,9 +105,8 @@ interface SalienceScore {
 
 interface SalienceTerm {
   readonly name:
-    | 'STATE_OPEN'
-    | 'STATE_ACTIVE'
-    | 'STATE_DEFERRED'
+    | 'OPENING_EVIDENCE'
+    | 'ACTIVATION_EVIDENCE'
     | 'OPERATOR_RECENCY'
     | 'URGENCY_MARKER'
     | 'SECURITY_MARKER'
@@ -102,7 +124,8 @@ Rules are additive and deterministic. Term names are intentionally narrow; do no
 interface FocusCandidate {
   readonly arc_id: string
   readonly title: string
-  readonly state: ArcState
+  readonly presentation_state: DerivedArcState
+  readonly state: DerivedArcState // compatibility alias for derived presentation state
   readonly created_at: number
   readonly activated_at?: number
   readonly resolved_at?: number
@@ -110,13 +133,15 @@ interface FocusCandidate {
 }
 ```
 
+Implementation may expose camelCase (`presentationState`) and keep `state` only as a compatibility alias for the derived presentation value. New call sites should prefer `presentationState`.
+
 ### `FocusDecision`
 
 ```ts
 interface FocusDecision {
   readonly selected_arc_id: string
   readonly selected_title: string
-  readonly selected_state: ArcState
+  readonly selected_state: DerivedArcState
   readonly faculty_id: 'persona-direct'
   readonly faculty_role: 'MODEL_FACULTY'
   readonly reason: string
@@ -144,16 +169,14 @@ interface FocusCycle {
 
 Use simple deterministic weights. These weights are reviewable and not final cognitive architecture:
 
-1. `STATE_ACTIVE`: `+100`
-   - Active work remains highly salient unless a stronger urgent/security marker appears.
-2. `STATE_OPEN`: `+80`
-   - Open unresolved work is eligible for focus.
-3. `STATE_DEFERRED`: `+20`
-   - Deferred work remains auditable but suppressed.
-4. `OPERATOR_RECENCY`: latest operator-created unresolved Arc gets `+30`; next gets `+20`; next gets `+10`; older gets `+0`.
-5. `URGENCY_MARKER`: message/title contains urgent terms such as `urgent`, `asap`, `now`, `emergency`, `blocked`: `+40`.
-6. `SECURITY_MARKER`: message/title contains `security`, `privacy`, `token`, `credential`, `leak`, `breach`: `+50`.
-7. `TIE_BREAKER`: if total scores match, choose the newest `created_at`; if still tied, lexicographically smallest Arc ID. Represent tie handling in `reason`, not as a hidden mutation.
+1. `ACTIVATION_EVIDENCE`: `+100`
+   - `activated_at` / `ARC_ACTIVE` evidence makes the Arc eligible for immediate Cortex processing.
+2. `OPENING_EVIDENCE`: `+80`
+   - `created_at` / `ARC_OPEN` evidence is unresolved and eligible for focus.
+3. `OPERATOR_RECENCY`: latest operator-created unresolved Arc gets `+30`; next gets `+20`; next gets `+10`; older gets `+0`.
+4. `URGENCY_MARKER`: message/title contains urgent terms such as `urgent`, `asap`, `now`, `emergency`, `blocked`: `+40`.
+5. `SECURITY_MARKER`: message/title contains `security`, `privacy`, `token`, `credential`, `leak`, `breach`: `+50`.
+6. `TIE_BREAKER`: if total scores match, choose the newest `created_at`; if still tied, lexicographically smallest Arc ID. Represent tie handling in `reason`, not as a hidden mutation.
 
 Do not implement autonomous decay over wall time in 0.05. If an `age` term is needed later, make it a reviewed 0.06+ decision or split into a separate version.
 
@@ -176,7 +199,8 @@ Debug output may include FocusCycle evidence:
       {
         "arc_id": "arc-...",
         "title": "Urgent security review",
-        "state": "OPEN",
+        "presentation_state": "ENGAGED",
+        "state": "ENGAGED",
         "salience": {
           "total": 200,
           "terms": []
@@ -205,7 +229,9 @@ The implementation is invalid if it:
 - introduces `session`, `SessionStatus`, or `session_id` runtime concepts;
 - introduces Tasks, Sub-Arcs, Decomposer execution, ResultBuffer, or SynthesisGate;
 - implements Memory, Association Faculty, embeddings, semantic clustering, real Nervous System, real Synapse, real Faculty bus, or real Discord;
-- adds Arc states outside `OPEN`, `ACTIVE`, `DEFERRED`, `RESOLVED`, `ABSORBED`;
+- treats `OPEN` or `ACTIVE` as ArcState values rather than trace event names;
+- persists `ENGAGED` as a long-lived state instead of deriving it from current tick/cycle engagement;
+- derives terminal ArcState from anything other than `resolved_at` / `absorbed_into_arc_id`;
 - performs autonomous `ABSORBED` transitions or background Temporal Decay;
 - hides tie behavior or salience terms from debug/explainability output.
 
@@ -267,8 +293,7 @@ Expected: PASS for new type/shape tests or progress to scoring failures.
 **Test cases:**
 
 - urgent/security Arc beats ordinary open Arc.
-- active Arc beats ordinary open Arc unless security/urgency weight exceeds it according to reviewed weights.
-- deferred Arc is eligible but penalized.
+- activated Arc beats ordinary opened Arc unless security/urgency weight exceeds it according to reviewed weights.
 - term list explains total score.
 
 **Verification:**
@@ -289,7 +314,7 @@ Expected: FAIL before implementation, PASS after Task 4.
 **Implementation direction:**
 
 - Add pure function or OrientationLoop method for scoring Arc-like candidates.
-- Add state, recency, urgency, security, and deferred terms.
+- Add activation/opening evidence, recency, urgency, and security terms.
 - Keep tie handling explicit and deterministic.
 - Do not mutate Arc state during scoring.
 

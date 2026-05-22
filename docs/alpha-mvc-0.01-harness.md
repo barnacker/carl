@@ -24,7 +24,7 @@ carltest --discord "Hey how are you?"
 Real in this iteration:
 
 - Cortex boundary and component wiring.
-- ArcStore lifecycle: `OPEN → ACTIVE → RESOLVED` for the direct path.
+- ArcStore emits trace evidence `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED` for the direct path.
 - OrientationLoop FocusCycle selection.
 - Persona response policy surface.
 - Interfaces shaped like future subsystem boundaries.
@@ -74,6 +74,6 @@ Alpha MVC 0.01 is accepted when tests prove:
 - CLI-like fake Discord input reaches real Cortex.
 - Cortex opens, activates, and resolves an Arc.
 - Harness invokes a model Faculty-like boundary for ordinary chat.
-- Trace evidence reconstructs `OPEN → ACTIVE → RESOLVED`.
+- Trace evidence reconstructs `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED`.
 - PRIME-missing and irreversible-action cases fail closed or produce proposal-only output.
 - No real Nervous System, real bus, or real Faculty runtime is implemented.

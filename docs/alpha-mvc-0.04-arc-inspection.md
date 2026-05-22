@@ -164,8 +164,8 @@ Normal operator-facing output hides raw internal references.
     "run_id": "run-...",
     "debug_trace": false,
     "arc_lifecycle": {
-      "states": ["OPEN", "ACTIVE", "RESOLVED"],
-      "terminal_state": "RESOLVED"
+      "event_types": ["ARC_OPEN", "ARC_ACTIVE", "ARC_RESOLVED"],
+      "terminal_event_type": "ARC_RESOLVED"
     },
     "input": {
       "platform": "discord",

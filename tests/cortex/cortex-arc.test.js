@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { createCortex } from '../../dist/cortex/index.js'
+import { createCortex, createOrientationLoop } from '../../dist/cortex/index.js'
+import { deriveArcState } from '../../dist/schemas/arc.js'
 
 const operatorOrigin = {
   origin_id: 'operator-1',
@@ -94,7 +95,7 @@ test('Cortex opens an Arc in ArcStore and runs a direct Persona FocusCycle', asy
 
   assert.equal(signal.signal_type, 'PERSONA_RESPONSE')
   assert.equal(signal.arc.id, 'arc-1')
-  assert.equal(signal.arc.state, 'RESOLVED')
+  assert.equal(signal.arc.resolved_at !== undefined, true)
   assert.equal(signal.arc.title, 'Define the smallest useful CARL loop.')
   assert.equal(signal.arc.target, 'Define the smallest useful CARL loop.')
   assert.equal(signal.arc.created_at, 100)
@@ -105,21 +106,61 @@ test('Cortex opens an Arc in ArcStore and runs a direct Persona FocusCycle', asy
   assert.equal(signal.arc.resolution, 'Direct Persona resolution: Define the smallest useful CARL loop.')
   assert.equal(signal.response, signal.arc.resolution)
   assert.deepEqual(signal.trace.map((event) => event.event_type), ['ARC_OPEN', 'ARC_ACTIVE', 'ARC_RESOLVED'])
-  assert.deepEqual(signal.trace.map((event) => event.arc_state), ['OPEN', 'ACTIVE', 'RESOLVED'])
+    assert.equal(signal.focusCycle.ruleset, 'alpha-mvc-focus-cycle/v1')
+  assert.equal(signal.focusCycle.decision, signal.focusDecision)
+  assert.deepEqual(signal.focusCycle.candidates.map((candidate) => candidate.state), ['ENGAGED'])
   assert.deepEqual(signal.focusDecision, {
     arcId: 'arc-1',
+    selectedTitle: 'Define the smallest useful CARL loop.',
+    selectedState: 'ENGAGED',
     facultyId: 'faculty/llm/direct',
-    facultyRole: 'PERSONA',
-    reason: 'Stage 0 direct FocusCycle routes the selected Arc to Persona.',
+    facultyRole: 'MODEL_FACULTY',
+    reason: 'Selected highest salience candidate using alpha-mvc-focus-cycle/v1.',
     salience: {
-      value: 11,
+      total: 130,
+      value: 130,
+      terms: [
+        {
+          name: 'ACTIVATION_EVIDENCE',
+          value: 100,
+          reason: 'ARC_ACTIVE trace evidence marks this Arc as activated for immediate Cortex processing.',
+        },
+        {
+          name: 'OPERATOR_RECENCY',
+          value: 30,
+          reason: 'Operator recency contributes +30.',
+        },
+      ],
       reasons: [
-        'arc state ACTIVE is eligible for focus',
-        '0 unresolved task(s)',
-        '1 resource need(s)',
+        'ARC_ACTIVE trace evidence marks this Arc as activated for immediate Cortex processing.',
+        'Operator recency contributes +30.',
       ],
     },
   })
+})
+
+test('Arc presentation state is derived from current OrientationTick engagement and terminal facts', () => {
+  const baseArc = {
+    id: 'arc-derived',
+    title: 'derive state',
+        target: 'derive state',
+    created_at: 100,
+    budget: {
+      max_model_calls: 0,
+      max_faculty_dispatches: 0,
+      max_wall_time_ms: 0,
+    },
+    resource_needs: [],
+    tasks: [],
+    trace_refs: [],
+    relations: [],
+  }
+
+  assert.equal(deriveArcState(baseArc), 'DEFERRED')
+  assert.equal(deriveArcState(baseArc, { currentTick: { engaged_arc_id: 'other-arc' } }), 'DEFERRED')
+  assert.equal(deriveArcState(baseArc, { currentTick: { engaged_arc_id: 'arc-derived' } }), 'ENGAGED')
+      assert.equal(deriveArcState({ ...baseArc, resolved_at: 200 }, { currentTick: { engaged_arc_id: 'arc-derived' } }), 'RESOLVED')
+    assert.equal(deriveArcState({ ...baseArc, absorbed_into_arc_id: 'arc-parent' }, { currentTick: { engaged_arc_id: 'arc-derived' } }), 'ABSORBED')
 })
 
 test('OrientationLoop selects the highest-salience open Arc candidate', () => {
@@ -140,7 +181,110 @@ test('OrientationLoop selects the highest-salience open Arc candidate', () => {
 
   const candidate = cortex.orientationLoop.selectFocusCandidate([low, activeHigh])
   assert.equal(candidate?.arc.id, activeHigh.id)
-  assert.equal(candidate?.salience.value, 11)
+  assert.equal(candidate?.salience.total, 100)
+})
+
+test('OrientationLoop creates an explainable FocusCycle from multiple unresolved Arcs', () => {
+  let id = 0
+  let clock = 999
+  const cortex = createCortex({
+    createArcId: () => `arc-${++id}`,
+    now: () => ++clock,
+    defaultFacultyId: 'persona-direct',
+  })
+  const ordinary = cortex.arcStore.openArc({
+    target: 'Document regular inbox cleanup.',
+    origin: operatorOrigin,
+  }).arc
+  const urgentSecurity = cortex.arcStore.openArc({
+    target: 'Urgent security token leak investigation now.',
+    origin: operatorOrigin,
+  }).arc
+  const background = cortex.arcStore.openArc({
+    target: 'Background docs cleanup.',
+    origin: operatorOrigin,
+  }).arc
+
+  const focusCycle = cortex.orientationLoop.createFocusCycle([
+    ordinary,
+    urgentSecurity,
+    background,
+  ], {
+    cycleId: 'focus-cycle-test',
+    createdAt: 2000,
+  })
+
+  assert.equal(focusCycle.cycleId, 'focus-cycle-test')
+  assert.equal(focusCycle.createdAt, 2000)
+  assert.equal(focusCycle.ruleset, 'alpha-mvc-focus-cycle/v1')
+  assert.equal(focusCycle.decision.arcId, urgentSecurity.id)
+  assert.equal(focusCycle.decision.selectedTitle, urgentSecurity.title)
+  assert.equal(focusCycle.decision.facultyId, 'persona-direct')
+  assert.equal(focusCycle.decision.facultyRole, 'MODEL_FACULTY')
+  assert.match(focusCycle.decision.reason, /highest salience/i)
+  assert.deepEqual(
+    focusCycle.decision.salience.terms.map((term) => term.name),
+    ['OPENING_EVIDENCE', 'OPERATOR_RECENCY', 'URGENCY_MARKER', 'SECURITY_MARKER'],
+  )
+  assert.deepEqual(focusCycle.candidates.map((candidate) => candidate.arcId), [urgentSecurity.id, background.id, ordinary.id])
+  assert.deepEqual(focusCycle.candidates.map((candidate) => candidate.state), ['ENGAGED', 'DEFERRED', 'DEFERRED'])
+  assert.deepEqual(focusCycle.candidates.map((candidate) => candidate.presentationState), ['ENGAGED', 'DEFERRED', 'DEFERRED'])
+  })
+
+test('OrientationLoop tie behavior chooses newest created_at then lexicographic Arc id', () => {
+  const orientationLoop = createOrientationLoop({
+    scoreArc: () => ({
+      total: 80,
+      value: 80,
+      terms: [{ name: 'OPENING_EVIDENCE', value: 80, reason: 'Fixed tie-test salience.' }],
+      reasons: ['Fixed tie-test salience.'],
+    }),
+  })
+  const baseArc = {
+    id: 'arc-base',
+    title: 'same score',
+        target: 'same score',
+    created_at: 100,
+    budget: {
+      max_model_calls: 0,
+      max_faculty_dispatches: 0,
+      max_wall_time_ms: 0,
+    },
+    resource_needs: [],
+    tasks: [],
+    trace_refs: [],
+    relations: [],
+  }
+
+  const newestWins = orientationLoop.createFocusCycle([
+    { ...baseArc, id: 'arc-old', created_at: 100 },
+    { ...baseArc, id: 'arc-new', created_at: 200 },
+  ], {
+    cycleId: 'newest-wins',
+    createdAt: 300,
+  })
+  assert.equal(newestWins.decision.arcId, 'arc-new')
+  assert.match(newestWins.decision.reason, /newest created_at/i)
+
+  const lexicographicWins = orientationLoop.createFocusCycle([
+    { ...baseArc, id: 'arc-b', created_at: 100 },
+    { ...baseArc, id: 'arc-a', created_at: 100 },
+  ], {
+    cycleId: 'lexicographic-wins',
+    createdAt: 300,
+  })
+  assert.equal(lexicographicWins.decision.arcId, 'arc-a')
+  assert.match(lexicographicWins.decision.reason, /lexicographic Arc id/i)
+})
+
+test('Persona module does not own FocusCycle salience scoring terms', () => {
+  const personaSource = readFileSync(new URL('../../cortex/persona.ts', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(personaSource, /FocusCycle/)
+  assert.doesNotMatch(personaSource, /FocusCandidate/)
+  assert.doesNotMatch(personaSource, /OPENING_EVIDENCE/)
+  assert.doesNotMatch(personaSource, /URGENCY_MARKER/)
+  assert.doesNotMatch(personaSource, /SECURITY_MARKER/)
 })
 
 test('Cortex owns Arc inspection through ArcStore', async () => {
@@ -173,7 +317,6 @@ test('Cortex owns Arc inspection through ArcStore', async () => {
   assert.deepEqual(cortex.getArc('arc-status'), {
     id: 'arc-status',
     title: 'Report current Arc status.',
-    state: 'RESOLVED',
     target: 'Report current Arc status.',
     summary: 'Resolved: Report current Arc status.',
     created_at: 200,

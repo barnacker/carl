@@ -1,6 +1,20 @@
-export const ARC_STATES = ['OPEN', 'ACTIVE', 'DEFERRED', 'RESOLVED', 'ABSORBED'] as const
+export const ARC_STATES = ['ENGAGED', 'DEFERRED', 'RESOLVED', 'ABSORBED'] as const
 
 export type ArcState = typeof ARC_STATES[number]
+
+export const DERIVED_ARC_STATES = ARC_STATES
+
+export type DerivedArcState = typeof DERIVED_ARC_STATES[number]
+
+export interface ArcStateProjectionTick {
+  readonly engaged_arc_id?: string
+}
+
+export interface ArcStateProjectionInput {
+  readonly currentTick?: ArcStateProjectionTick
+  /** @deprecated Use currentTick.engaged_arc_id. */
+  readonly engaged_arc_id?: string
+}
 
 export const ARC_TASK_STATUSES = ['PENDING', 'ACTIVE', 'BLOCKED', 'DONE', 'FAILED', 'CANCELLED'] as const
 
@@ -74,12 +88,12 @@ export interface ArcTask {
 export interface Arc {
   readonly id: string
   readonly title: string
-  readonly state: ArcState
   readonly target: string
   readonly summary?: string
   readonly created_at: number
   readonly activated_at?: number
   readonly resolved_at?: number
+  readonly absorbed_into_arc_id?: string
   readonly budget: ArcBudget
   readonly resource_needs: readonly string[]
   readonly tasks: readonly ArcTask[]
@@ -90,6 +104,22 @@ export interface Arc {
 
 /** @deprecated Use Arc. Kept as a compatibility alias while Alpha MVC callers migrate. */
 export type ArcRecord = Arc
+
+export function deriveArcState(arc: Arc, input: ArcStateProjectionInput = {}): DerivedArcState {
+  if (arc.resolved_at !== undefined) {
+    return 'RESOLVED'
+  }
+
+  if (arc.absorbed_into_arc_id !== undefined) {
+    return 'ABSORBED'
+  }
+
+  if ((input.currentTick?.engaged_arc_id ?? input.engaged_arc_id) === arc.id) {
+    return 'ENGAGED'
+  }
+
+  return 'DEFERRED'
+}
 
 export function isArcState(value: unknown): value is ArcState {
   return typeof value === 'string' && (ARC_STATES as readonly string[]).indexOf(value) !== -1

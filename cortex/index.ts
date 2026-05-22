@@ -9,6 +9,7 @@ import {
 import {
   createOrientationLoop,
   type FocusDecision,
+  type FocusCycle,
   type OrientationLoop,
   type OrientationLoopDependencies,
 } from './orientation-loop.js'
@@ -25,6 +26,7 @@ export const cortexBoundary = 'cortex' as const
 export interface PersonaResponseSignal {
   readonly signal_type: 'PERSONA_RESPONSE'
   readonly arc: Arc
+  readonly focusCycle: FocusCycle
   readonly focusDecision: FocusDecision
   readonly response: string
   readonly trace: readonly TraceEvent[]
@@ -68,10 +70,8 @@ export function createCortex(dependencies: CortexDependencies = {}): Cortex {
         arcId: opened.arc.id,
         origin: signal.origin,
       })
-      const focusDecision = orientationLoop.decideFocus({
-        arc: active.arc,
-        salience: orientationLoop.scoreArc(active.arc),
-      })
+      const focusCycle = orientationLoop.createFocusCycle([active.arc])
+      const focusDecision = focusCycle.decision
       const response = await persona.createResponse({
         target: active.arc.target,
         arc: active.arc,
@@ -86,6 +86,7 @@ export function createCortex(dependencies: CortexDependencies = {}): Cortex {
       return {
         signal_type: 'PERSONA_RESPONSE',
         arc: resolved.arc,
+        focusCycle,
         focusDecision,
         response,
         trace: [opened.trace, active.trace, resolved.trace],
@@ -119,6 +120,7 @@ export type {
 export type {
   FacultyRole,
   FocusCandidate,
+  FocusCycle,
   FocusDecision,
   OrientationLoop,
   OrientationLoopDependencies,

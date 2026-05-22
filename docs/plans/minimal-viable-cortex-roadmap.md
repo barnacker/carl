@@ -22,7 +22,7 @@
 - Real Cortex opens, activates, and resolves Arcs.
 - Harness invokes a model-faculty-shaped adapter path.
 - Harness-level PRIME presence and irreversible-action proposal guards exist.
-- Trace utilities can replay `OPEN → ACTIVE → RESOLVED` lifecycle evidence.
+- Trace utilities can replay `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED` event evidence.
 
 **Boundary:** Cortex is real. Discord, Nervous System, model Faculty routing, output surface, and safety floor are harness simulations only.
 
@@ -41,7 +41,7 @@
 
 **Candidate acceptance:**
 - One CLI message persists fake Discord input, OriginStamp, Arc lifecycle, model-faculty invocation metadata, and final fake Discord output.
-- Replay reconstructs `OPEN → ACTIVE → RESOLVED` from disk.
+- Replay reconstructs `ARC_OPEN → ARC_ACTIVE → ARC_RESOLVED` from disk.
 
 **Known review risks:**
 - Journal schema may prematurely freeze the wrong trace shape.
@@ -95,7 +95,7 @@
 **Acceptance:**
 - Operator can inspect local Alpha MVC harness state, prior Arcs, trace evidence, and resolution output through Arc-native read-only commands.
 - Missing and malformed inputs are structured, tested failures.
-- Status vocabulary remains aligned with accepted Arc states only: `OPEN`, `ACTIVE`, `DEFERRED`, `RESOLVED`, `ABSORBED`.
+- 0.04 inspection remains compatible with historical event labels while 0.05+ ArcState presentation is derived.
 
 ---
 
@@ -103,22 +103,24 @@
 
 **Status:** reviewed scope / implementation-ready after operator approval. Dedicated plan: `docs/plans/alpha-mvc-0.05-focus-cycle.md`.
 
-**Proposal:** Make OrientationLoop materially useful by producing an explicit, deterministic, explainable FocusCycle for selecting one Arc from multiple candidate Arcs.
+**Proposal:** Make OrientationLoop materially useful by producing an explicit, deterministic, explainable FocusCycle for selecting one Arc from multiple candidate Arcs. In 0.05, `FocusCycle`/`FocusDecision`/`FocusCandidate` remain current implementation bridge names; future taxonomy may rename them to `OrientationTick`/`OrientationDecision`/`OrientationCandidate`.
 
 **Accepted deliverables:**
 - Explicit `FocusCycle`, `FocusCandidate`, `SalienceScore`, and `FocusDecision` types/read models.
+- Derived ArcState: `resolved_at` projects `RESOLVED`, `absorbed_into_arc_id` projects `ABSORBED`, current tick/cycle engagement projects `ENGAGED`, otherwise live Arcs project broad `DEFERRED`.
 - Deterministic salience rules for unresolved lifecycle state, operator recency, urgency/security markers, deferred penalty, and tie behavior.
 - OrientationLoop API for scoring candidates and selecting one FocusDecision.
 - Tests for candidate ordering, tie behavior, explainability, and Persona non-ownership of focus logic.
 - Debug harness/trace evidence for FocusCycle without raw Arc IDs in normal operator-facing output.
 
 **Accepted negative scope:**
-- No Tasks, Sub-Arcs, Decomposer behavior, ResultBuffer, SynthesisGate, Memory, Association Faculty, embeddings, semantic clustering, real Nervous System, real Synapse, real Faculty bus, Discord runtime, generic sessions, autonomous absorption, or background Temporal Decay.
+- No Tasks, Sub-Arcs, Decomposer behavior, ResultBuffer, SynthesisGate, Memory, Association Faculty, embeddings, semantic clustering, real Nervous System, real Synapse, real Faculty bus, Discord runtime, generic sessions, autonomous absorption, background Temporal Decay, or persisted `ENGAGED` state.
 
 **Acceptance:**
 - Multiple candidate Arcs can be scored.
 - OrientationLoop selects one deterministically.
 - Selection is explainable from salience terms and decision reason.
+- `ENGAGED` appears only as derived presentation on selected FocusCycle candidates; `ARC_OPEN`/`ARC_ACTIVE` remain trace event names, not ArcState values.
 - Persona still does not own focus logic.
 - ArcStore remains lifecycle owner.
 - Existing 0.04 inspection commands remain compatible.
@@ -142,7 +144,7 @@
 **Known review risks:**
 - The Arc/Task/Sub-Arc boundary is subtle and must be reviewed carefully.
 - Decomposer can easily overreach into planning intelligence too early.
-- Task status vocabulary must not conflict with Arc lifecycle vocabulary.
+- Task status vocabulary must not conflict with derived ArcState vocabulary.
 
 ---
 

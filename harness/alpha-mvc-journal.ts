@@ -56,8 +56,8 @@ export interface AlphaMvcReplaySummary {
   readonly debug_available: boolean
   readonly arc_lifecycle: {
     readonly arc_id: string
-    readonly states: readonly string[]
-    readonly terminal_state: string
+    readonly event_types: readonly string[]
+    readonly terminal_event_type: string
   }
   readonly input?: {
     readonly platform?: string
@@ -213,10 +213,6 @@ function cortexPayload(event: TraceEvent, response: PersonaResponseSignal, debug
     origin_hash: event.origin_hash,
   }
 
-  if (event.arc_state !== undefined) {
-    payload.arc_state = event.arc_state
-  }
-
   if (debug) {
     payload.arc = response.arc
   }
@@ -292,7 +288,7 @@ export function replayAlphaMvcJournal(events: readonly AlphaMvcJournalEvent[], i
     throw new Error('Alpha MVC journal is empty')
   }
 
-  const lifecycle = events.filter((event) => event.source === 'cortex' && typeof event.payload?.arc_state === 'string')
+  const lifecycle = events.filter((event) => event.source === 'cortex' && event.event_type.startsWith('ARC_'))
   if (lifecycle.length === 0) {
     throw new Error('Alpha MVC journal contains no Cortex lifecycle events')
   }
@@ -302,10 +298,10 @@ export function replayAlphaMvcJournal(events: readonly AlphaMvcJournalEvent[], i
     throw new Error('Alpha MVC journal lifecycle has no Arc id')
   }
 
-  const states = lifecycle.map((event) => String(event.payload?.arc_state))
-  const terminalState = states[states.length - 1]
-  if (terminalState === undefined) {
-    throw new Error('Alpha MVC journal lifecycle has no terminal state')
+  const eventTypes = lifecycle.map((event) => event.event_type)
+  const terminalEventType = eventTypes[eventTypes.length - 1]
+  if (terminalEventType === undefined) {
+    throw new Error('Alpha MVC journal lifecycle has no terminal event type')
   }
 
   const inputEvent = events.find((event) => event.event_type === 'FAKE_DISCORD_CHAT_RECEIVED')
@@ -319,8 +315,8 @@ export function replayAlphaMvcJournal(events: readonly AlphaMvcJournalEvent[], i
     debug_available: debugAvailable,
     arc_lifecycle: {
       arc_id: arcId,
-      states,
-      terminal_state: terminalState,
+      event_types: eventTypes,
+      terminal_event_type: terminalEventType,
     },
   }
 

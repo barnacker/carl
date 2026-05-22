@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { Arc, ArcRelation } from '../schemas/arc.js'
+import { deriveArcState, type Arc, type ArcRelation, type ArcState } from '../schemas/arc.js'
 import { createJsonlJournalWriter, readJsonlJournal } from '../nervous-system/trace/index.js'
 import type { AlphaMvcHarnessResult } from './alpha-mvc.js'
 import type { AlphaMvcJournalRun } from './alpha-mvc-journal.js'
@@ -24,7 +24,7 @@ export interface AlphaMvcArcHistoryRecord {
   readonly history_schema: typeof ALPHA_MVC_ARC_HISTORY_SCHEMA
   readonly recorded_at: number
   readonly title: string
-  readonly state: Arc['state']
+  readonly state: ArcState
   readonly summary: string
   readonly created_at: number
   readonly activated_at?: number
@@ -48,7 +48,7 @@ export interface AlphaMvcArcHistoryRecord {
 export interface AlphaMvcRecentArcItem {
   readonly handle: number
   readonly title: string
-  readonly state: Arc['state']
+  readonly state: ArcState
   readonly summary: string
   readonly created_at: number
   readonly activated_at?: number
@@ -94,7 +94,7 @@ export function createAlphaMvcArcHistoryRecord(input: {
     history_schema: ALPHA_MVC_ARC_HISTORY_SCHEMA,
     recorded_at: input.now(),
     title: arc.title,
-    state: arc.state,
+    state: deriveArcState(arc),
     summary: arc.summary ?? arc.resolution ?? arc.target,
     created_at: arc.created_at,
     input: {
