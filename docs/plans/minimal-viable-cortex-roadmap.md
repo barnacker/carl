@@ -107,7 +107,7 @@
 
 **Accepted deliverables:**
 - Explicit `FocusCycle`, `FocusCandidate`, `SalienceScore`, and `FocusDecision` types/read models.
-- Derived ArcState: `resolved_at` projects `RESOLVED`, `absorbed_into_arc_id` projects `ABSORBED`, current tick/cycle engagement projects `ENGAGED`, otherwise live Arcs project broad `DEFERRED`.
+- Derived ArcState: `resolved_at` projects `RESOLVED`, `absorbed_into_arc_id` projects `ABSORBED`, current tick/cycle engagement projects `ENGAGED`, `activated_at` absent projects `PENDING_DESIGN`, otherwise live Arcs project `INHIBITED`.
 - Deterministic salience rules for unresolved lifecycle state, operator recency, urgency/security markers, deferred penalty, and tie behavior.
 - OrientationLoop API for scoring candidates and selecting one FocusDecision.
 - Tests for candidate ordering, tie behavior, explainability, and Persona non-ownership of focus logic.
@@ -127,24 +127,33 @@
 
 ---
 
-## Alpha MVC 0.06 — Task List Inside Arc
+## Alpha MVC 0.06 — The Design Phase: Arc from Target to Plan
 
-**Proposal:** Add durable executable Tasks inside Arcs without promoting every task to a Sub-Arc.
+**Proposal:** Resolve the design phase of the Arc lifecycle — the Arc from raw operator target to a stored plan — using the smallest possible surface: one Task per Arc.
+
+**How it fits:** The current projection makes an Arc project `PENDING_DESIGN` while it carries no design record and is not engaged. 0.06 gives design a durable, auditable fact: on the SAME tick that activates an Arc whose plan is UNDECOMPOSED, a pure-function decomposer creates exactly one Task (instruction = target + summary, status PENDING). Activating that Task flips plan maturity UNDECOMPOSED → PLANNED, after which the Arc's plan is DONE_DESIGN and the Arc projects `INHIBITED` while not engaged (INV: an Arc with a PLANNED-or-better plan never reprojects `PENDING_DESIGN`).
 
 **Candidate deliverables:**
-- Task schema with status, result, and evidence refs.
-- ArcStore operations for adding tasks, updating task status, and attaching evidence.
-- Minimal deterministic Decomposer that can create Tasks from selected Arc intent.
+1. Plan-maturity vocabulary + derivation from Task facts (UNDECOMPOSED / PLANNED / EXECUTING / RESOLVED).
+2. Deterministic decomposer (pure function, no model call, no dispatch): activate UNDECOMPOSED → create one Task PENDING; execute → Task ACTIVE; model-faculty result → Task DONE with result text; failing dispatch → Task FAILED with error text.
+3. `resolved_at` fires only when the plan's tasks are all terminal (or the operator closes the goal).
+4. Trace: Task movement is evidenced by existing task snapshot facts on the Arc record — NO new TASK_* trace events.
+5. Change `deriveArcState`'s PENDING_DESIGN predicate from "activated_at absent" to "no design fact" (plan remains UNDECOMPOSED), keeping every existing test outcome (in 0.06 an arc is activated and designed in one tick, so open arcs are never PENDING_DESIGN afterward).
+6. `carltest --arc <handle>` normal output shows plan and task; task IDs stay debug-only.
 
 **Candidate acceptance:**
-- A message can create an Arc with one or more Tasks.
-- Task state persists through trace/session replay.
-- Sub-Arc is not used unless explicitly promoted.
+- The operator message opens an Arc (PENDING_DESIGN before its tick).
+- The opening tick activates it and creates its one Task.
+- The trace replays to show the Arc carried plan PLANNED + Task DONE + resolved_at.
+- A failing model-faculty fake dispatch shows plan PLANNED + Task FAILED + resolved_at with the error text.
+- 36 existing tests stay green.
+- No TASK_* trace event exists anywhere.
+- Persona contains no task lifecycle logic (boundary test).
 
 **Known review risks:**
-- The Arc/Task/Sub-Arc boundary is subtle and must be reviewed carefully.
-- Decomposer can easily overreach into planning intelligence too early.
-- Task status vocabulary must not conflict with derived ArcState vocabulary.
+1. Task deadlines (wall-clock) need operator definition before Task DONE/FAILED can mean "in time" vs "done" — 0.06 ships no deadline.
+2. Migration story: journal replay of pre-0.06 arcs (no task facts) must re-project INHIBITED without breaking (they have activated_at) — keep the 0.05 behavior as the replay fallback.
+3. The PENDING_DESIGN predicate switch (activated_at → design fact) must not re-open the "in loop but unfocused" projection for activated arcs.
 
 ---
 
@@ -222,7 +231,7 @@
 - Public Cortex runtime API, potentially including:
   - `createCortexRuntime()`
   - `receiveSignal()`
-  - `getSessionStatus()`
+  - `getLatestStatus()`
   - `getArc()`
   - `replayTrace()`
 - Stable components:
@@ -244,8 +253,8 @@
 
 **Candidate acceptance:**
 - Fresh checkout supports install, build, test, and a fake-model `carltest --discord` run.
-- Session trace persists and replays.
-- Multi-message session works.
+- Journal replays: the trace persists and replays.
+- Multi-message runs work: each operator message opens an Arc.
 - Cortex can inspect Arcs, Tasks, and status.
 - FocusCycle is explicit and tested.
 - Model Faculty adapter is replaceable.

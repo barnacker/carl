@@ -17,7 +17,7 @@ This phase must not introduce sessions. CARL's bounded continuity object remains
 - Operator-facing commands use recent handles and titles by default.
 - Raw Arc IDs, trace IDs, journal paths, and relation internals remain debug-oriented.
 - Inspection is read-only. It must not reopen, continue, mutate, merge, absorb, or create Arcs.
-- ArcState vocabulary is derived: `ENGAGED`, `DEFERRED`, `RESOLVED`, `ABSORBED`. Trace events carry lifecycle evidence such as `ARC_OPEN`, `ARC_ACTIVE`, and `ARC_RESOLVED`.
+- ArcState vocabulary is derived: `ENGAGED`, `PENDING_DESIGN`, `INHIBITED`, `RESOLVED`, `ABSORBED`. Trace events carry lifecycle evidence such as `ARC_OPEN`, `ARC_ACTIVE`, and `ARC_RESOLVED`.
 - 0.04 does not introduce Memory, Association Faculty, real Nervous System, Synapse runtime, real Faculty bus, or Discord integration.
 
 ## Scope
@@ -188,7 +188,7 @@ The implementation is invalid if it:
 - adds `carltest --status <session-id>`;
 - mutates Arc state from `--status`, `--arc`, or `--trace`;
 - creates, reopens, continues, absorbs, or relates Arcs from inspection commands;
-- adds states outside `OPEN`, `ACTIVE`, `DEFERRED`, `RESOLVED`, `ABSORBED`;
+- adds states outside `OPEN`, `ACTIVE`, `ENGAGED`, `PENDING_DESIGN`, `INHIBITED`, `RESOLVED`, `ABSORBED`;
 - implements Memory, Association Faculty, embeddings, topic clustering, real Nervous System, real Synapse, real Faculty bus, or Discord runtime;
 - exposes raw Arc IDs in normal operator-facing Arc output.
 

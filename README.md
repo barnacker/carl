@@ -101,7 +101,7 @@ CARL uses two related inhibition terms with different scope.
 
 **Competitive Inhibition** is the system-level priority competition between active Reasoning Arcs. Each Arc carries Synaptic Weight (`W`) and Temporal Decay (`λ`). The Arc with the strongest effective signal receives processing focus; weaker signals may be deferred without being erased. This replaces request-response blocking with weighted, interruptible attention.
 
-**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc gains focus, neighboring or competing lower-weight signals are deferred until their weight rises, the active Arc resolves, or operator input changes the priority surface. Temporal Decay lowers unattended signal strength over time; if decay exhausts recoverability, the Arc may become `ABSORBED` and require a new operator signal to restart.
+**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc gains focus, neighboring or competing lower-weight signals are deferred until their weight rises, the active Arc resolves, or operator input changes the priority surface. Inhibition applies only inside the loop; an Arc that never activated projects PENDING_DESIGN and is not subject to suppression. Temporal Decay lowers unattended signal strength over time; if decay exhausts recoverability, the Arc may become `ABSORBED` and require a new operator signal to restart.
 
 The distinction matters operationally: Competitive Inhibition describes the global scheduling behavior; Lateral Inhibition describes the local suppression operation used to enforce that schedule. Neither term implies unsupervised deletion of work. `ABSORBED` is auditable cognitive debt flushed by decay, not silent success.
 
@@ -114,7 +114,7 @@ If the active Arc is safe to yield, CARL may defer it and activate the new Arc. 
 3. capture the new request as next — store `ATTENTION_QUEUED` evidence with operator-recency weight while the current tick remains engaged with the current Arc;
 4. merge the new request into the current Arc only after operator confirmation of the merged intent.
 
-`DEFERRED` suppresses Cortex focus, not auditability. Already-dispatched bounded Faculty work may continue and publish results into the Arc buffer, but a deferred Arc cannot silently perform new Cortex reasoning, expand its plan, execute irreversible action, or extend budget. If a deferred Arc reaches a clarification or proposal step, it remains `DEFERRED(reason=OPERATOR_INPUT_REQUIRED)` and Persona queues the notification until attention priority allows surfacing it, unless the question is urgent or safety-relevant.
+Inhibition reaches only Arcs in the loop: an Arc that has never activated projects `PENDING_DESIGN`, not `INHIBITED`. `INHIBITED` suppresses Cortex focus, not auditability. Already-dispatched bounded Faculty work may continue and publish results into the Arc buffer, but a deferred Arc cannot silently perform new Cortex reasoning, expand its plan, execute irreversible action, or extend budget. If a deferred Arc reaches a clarification or proposal step, it remains `INHIBITED(reason=OPERATOR_INPUT_REQUIRED)` and Persona queues the notification until attention priority allows surfacing it, unless the question is urgent or safety-relevant.
 
 ---
 
@@ -324,7 +324,7 @@ Gating model (cheap, every iteration) decides tier — Execution Faculty (cheap,
 
 **Arc budget — mandatory invariant:** every Arc declares `max_model_calls`, `max_faculty_dispatches`, `max_wall_time`, and resource needs at open time. Budget exhausted → Arc defers immediately, Persona notifies operator. No silent continuation. Operator must explicitly authorize continuation or resolution.
 
-**Resource gaps — cognitive-debt semantics.** If an Arc cannot obtain a required resource inside its declared budget, Cortex records a durable deferral fact/reason. At query time the Arc presents as `DEFERRED` unless `currentTick?.engaged_arc_id === arc.id`, `resolved_at`, or `absorbed_into_arc_id` applies. Persona records the suppressed Signal, keeps the Arc auditable, and waits for the resource gap to close or for operator authorization.
+**Resource gaps — cognitive-debt semantics.** If an Arc cannot obtain a required resource inside its declared budget, Cortex records a durable deferral fact/reason. At query time the Arc presents as `INHIBITED` unless `currentTick?.engaged_arc_id === arc.id`, `resolved_at`, or `absorbed_into_arc_id` applies. Persona records the suppressed Signal, keeps the Arc auditable, and waits for the resource gap to close or for operator authorization.
 
 Every Arc declares resource needs at open time (e.g., `calendar:operator_main`, `file:/path/to/x`, `email_thread:abc123`, `memory:fact:project_status`). These declarations are budgeting and audit inputs, not a separate Arc state machine. Resource handling outcomes are constrained by stored facts plus derived presentation states:
 
@@ -333,14 +333,15 @@ ArcState is derived presentation, not a stored operational field:
 - `RESOLVED` — `arc.resolved_at` exists.
 - `ABSORBED` — `arc.absorbed_into_arc_id` exists.
 - `ENGAGED` — `currentTick?.engaged_arc_id === arc.id`.
-- `DEFERRED` — default live/resting projection.
+- `PENDING_DESIGN` — `arc.activated_at` absent (not yet entered the loop): stored, being designed, or fresh and unfocused.
+- `INHIBITED` — in-the-loop live/resting projection (`activated_at` present, focus went elsewhere).
 
 ```
 RESOURCE GAP HANDLING
   Required resource unavailable → Cortex records a deferral fact/reason
   Persona records the suppressed Signal as cognitive debt
   Arc may present as ENGAGED only when a current OrientationTick selects it
-  Arc presents as DEFERRED while live and not currently engaged
+  Arc presents as INHIBITED while live and not currently engaged
   Arc may become ABSORBED if decay flushes the debt before reinforcement
 ```
 
@@ -350,7 +351,7 @@ RESOURCE GAP HANDLING
 
 ```
 ARC PERSISTENCE: store facts/events/commitments; derive operational state at query time
-PRESENTATION: resolved_at → RESOLVED; absorbed_into_arc_id → ABSORBED; currentTick.engaged_arc_id match → ENGAGED; otherwise → DEFERRED
+PRESENTATION: resolved_at → RESOLVED; absorbed_into_arc_id → ABSORBED; currentTick.engaged_arc_id match → ENGAGED; activated_at absent → PENDING_DESIGN; otherwise → INHIBITED
 ```
 
 ---
@@ -626,7 +627,7 @@ interface Synapse {
 interface TraceEvent {
   ts: number; faculty_id: FacultyId;
   event_type: 'PUBLISH' | 'SUBSCRIBE' | 'REFLEX_HIT' | 'REFLEX_MISS'
-    | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_ACTIVE' | 'ARC_DEFERRED'
+    | 'REFLEX_DEGRADED' | 'ARC_OPEN' | 'ARC_ACTIVE' | 'ARC_INHIBITED'
     | 'ARC_RESOLVED' | 'ARC_ABSORBED' | 'BUDGET_EXHAUSTED';
   schema_hash: string; arc_id: ArcId | null; origin_hash: string;
   tier: 'REFLEX' | 'EXECUTION' | 'REASONING' | null;
@@ -929,7 +930,7 @@ carl/
 | Reasoning Arc | Unit of reasoning — trajectory with declared budget and resource needs |
 | Arc Store | All active Arcs held by Persona — isolated; no cross-Arc context bleed |
 | Arc Budget | Mandatory per-Arc resource limit — max_model_calls, max_faculty_dispatches, max_wall_time |
-| Resource Needs | Per-Arc declaration of external resources required for focus; unmet needs route Arc to DEFERRED cognitive debt |
+| Resource Needs | Per-Arc declaration of external resources required for focus; unmet needs route an in-the-loop Arc to INHIBITED cognitive debt (a never-activated Arc stays PENDING_DESIGN) |
 | Stale Read | Signal returned when previously read data may no longer be valid before synthesis |
 | Persona | Main loop — event-driven, zero tokens per cycle, presentation/interaction layer only |
 | Synapse | Typed abstraction between Faculty code and Nervous System; Faculty-facing API |

@@ -198,7 +198,7 @@ FocusCycle = one bounded select/evidence cycle; future OrientationTick
 Derived presentation state for current read models:
 
 ```ts
-type DerivedArcState = 'ENGAGED' | 'DEFERRED' | 'RESOLVED' | 'ABSORBED'
+type DerivedArcState = 'ENGAGED' | 'PENDING_DESIGN' | 'INHIBITED' | 'RESOLVED' | 'ABSORBED'
 ```
 
 ### FocusDecision
@@ -297,17 +297,18 @@ Derived Arc presentation projection:
 if (arc.resolved_at) return "RESOLVED";
 if (arc.absorbed_into_arc_id) return "ABSORBED";
 if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
-return "DEFERRED";
+if (arc.activated_at === undefined) return "PENDING_DESIGN";
+return "INHIBITED";
 ```
 
-`DEFERRED` is the default live/resting presentation state: alive but not currently engaged by the queried tick. Eligibility, blockedness, faculty-pending status, suppression, and resource gaps are separate derived classifications from stored facts/events.
+`PENDING_DESIGN` is the default projection for live Arcs that never entered the loop: stored, possibly still being analyzed or designed, or fresh and unfocused (`activated_at` absent). `INHIBITED` projects for Arcs already in the loop that the queried tick does not currently engage. No deferral reason applies to `PENDING_DESIGN` (INV-ARC-8). Eligibility, blockedness, faculty-pending status, suppression, and resource gaps are separate derived classifications from stored facts/events.
 
 Async work model:
 
 ```text
 ENGAGED
 -> dispatch async work
--> tick terminates; queried presentation becomes DEFERRED unless `resolved_at` or `absorbed_into_arc_id` now applies
+-> tick terminates; presentation reprojects PENDING_DESIGN if the Arc never activated (INV-ARC-9 forbids reverting an activated Arc), otherwise INHIBITED unless `resolved_at` or `absorbed_into_arc_id` now applies
 ```
 
 ### Faculty
@@ -547,7 +548,7 @@ Operator/Event enters Cortex
   -> FocusCycle dispatches work through FacultyRouter
   -> FacultyInstance returns result
   -> Cortex updates ArcStore
-  -> repeat until `resolved_at` / `absorbed_into_arc_id` project terminal states; live non-engaged Arcs project as DEFERRED
+  -> repeat until `resolved_at` / `absorbed_into_arc_id` project terminal states; live Arcs project PENDING_DESIGN while never activated, otherwise INHIBITED while not engaged
 ```
 
 Condensed:

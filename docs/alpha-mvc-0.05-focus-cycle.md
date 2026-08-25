@@ -20,10 +20,11 @@ ArcState is a read-model projection derived from stored facts and the current ti
 if (arc.resolved_at) return "RESOLVED";
 if (arc.absorbed_into_arc_id) return "ABSORBED";
 if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
-return "DEFERRED";
+if (arc.activated_at === undefined) return "PENDING_DESIGN";
+return "INHIBITED";
 ```
 
-`ENGAGED` is ephemeral and derived from the current FocusCycle / future OrientationTick. `DEFERRED` is the broad live/resting presentation state: alive but not currently engaged. Specific conditions such as blocked, pending Faculty, operator-input-required, priority-gap, suppressed, or resource-gap are derived from stored facts/events/reasons.
+`ENGAGED` is ephemeral and derived from the current FocusCycle / future OrientationTick. `PENDING_DESIGN` projects when the Arc never entered the loop (`activated_at` absent): fresh, stored, or being designed. `INHIBITED` projects for alive in-the-loop Arcs the current tick does not engage. Specific conditions such as blocked, pending Faculty, operator-input-required, priority-gap, suppressed, or resource-gap remain derived from stored facts/events/reasons; none of them apply to `PENDING_DESIGN`.
 
 ## Current bridge vocabulary
 

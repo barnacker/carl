@@ -79,7 +79,7 @@ TypeScript, Node test runner, existing `carltest` fake-world harness, JSONL trac
 0.05 treats ArcState as a queried projection from facts plus current tick context.
 
 ```ts
-type DerivedArcState = 'ENGAGED' | 'DEFERRED' | 'RESOLVED' | 'ABSORBED'
+type DerivedArcState = 'ENGAGED' | 'PENDING_DESIGN' | 'INHIBITED' | 'RESOLVED' | 'ABSORBED'
 ```
 
 Projection rule:
@@ -88,10 +88,11 @@ Projection rule:
 if (arc.resolved_at) return "RESOLVED";
 if (arc.absorbed_into_arc_id) return "ABSORBED";
 if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
-return "DEFERRED";
+if (arc.activated_at === undefined) return "PENDING_DESIGN";
+return "INHIBITED";
 ```
 
-`DEFERRED` therefore means alive but not currently engaged by the queried tick. More specific categories such as eligible, blocked, pending faculty, or suppressed remain derived from stored facts such as resource needs, pending handles, blockers, and inhibition records.
+`INHIBITED` therefore means in-the-loop (activated) but not currently engaged by the queried tick; `PENDING_DESIGN` is the derived state for Arcs that have not yet entered the loop (`activated_at` absent). More specific categories such as eligible, blocked, pending faculty, or suppressed remain derived from stored facts such as resource needs, pending handles, blockers, and inhibition records.
 
 Lifecycle is represented by facts and trace events in 0.05. Presentation state is a projection, not a persisted source of truth.
 
