@@ -1,4 +1,4 @@
-export const ARC_STATES = ['ENGAGED', 'DEFERRED', 'RESOLVED', 'ABSORBED'] as const
+export const ARC_STATES = ['ENGAGED', 'PENDING_DESIGN', 'INHIBITED', 'RESOLVED', 'ABSORBED'] as const
 
 export type ArcState = typeof ARC_STATES[number]
 
@@ -118,7 +118,11 @@ export function deriveArcState(arc: Arc, input: ArcStateProjectionInput = {}): D
     return 'ENGAGED'
   }
 
-  return 'DEFERRED'
+  if (arc.activated_at === undefined) {
+    return 'PENDING_DESIGN'
+  }
+
+  return 'INHIBITED'
 }
 
 export function isArcState(value: unknown): value is ArcState {

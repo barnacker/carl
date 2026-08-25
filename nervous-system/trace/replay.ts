@@ -1,6 +1,6 @@
 import type { TraceEvent, TraceEventType } from '../../schemas/trace-event.js'
 
-type ArcLifecycleTraceEventType = Extract<TraceEventType, 'ARC_OPEN' | 'ARC_ACTIVE' | 'ARC_DEFERRED' | 'ARC_RESOLVED' | 'ARC_ABSORBED'>
+type ArcLifecycleTraceEventType = Extract<TraceEventType, 'ARC_OPEN' | 'ARC_ACTIVE' | 'ARC_INHIBITED' | 'ARC_RESOLVED' | 'ARC_ABSORBED'>
 
 export interface ReplayedArcLifecycle {
   readonly arc_id: string
@@ -12,7 +12,7 @@ export interface ReplayedArcLifecycle {
 function isArcLifecycleTraceEventType(eventType: TraceEventType): eventType is ArcLifecycleTraceEventType {
   return eventType === 'ARC_OPEN'
     || eventType === 'ARC_ACTIVE'
-    || eventType === 'ARC_DEFERRED'
+    || eventType === 'ARC_INHIBITED'
     || eventType === 'ARC_RESOLVED'
     || eventType === 'ARC_ABSORBED'
 }
