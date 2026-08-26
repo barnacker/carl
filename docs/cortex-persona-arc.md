@@ -24,20 +24,61 @@ Cortex = system brain/runtime boundary
 
 ### Arc
 
-An active unresolved concern, mission, problem, or thread of work.
+The Arc is CARL's defining object. Everything else in the system — Cortex, Persona, OrientationLoop, the faculties — exists to serve Arcs.
 
-Examples:
+**An Arc is one bounded operator concern: a goal made executable.**
 
-```text
-"Build the Cortex skeleton"
-"Answer this operator request"
-"Investigate failed test suite"
-"Monitor urgent email thread"
-```
+It is a trajectory with Synaptic Weight and Temporal Decay. It is not a session, not a message, not a task, and not a chat turn. In the current prototype, one operator message opens one Arc.
 
 ```text
-Arc = active concern with lifecycle
+Arc = one bounded operator concern with lifecycle, budget, and decay
 ```
+
+#### Lifecycle, human-first
+
+The mind processes a concern in stages that Wallas (1926, *The Art of Thought*) named: preparation, incubation, illumination, verification. CARL expresses the same shape as two orthogonal projections, not one state machine:
+
+| Phase (human) | What is happening | Where it lives in CARL |
+|---|---|---|
+| Registration | The goal exists; nothing has been worked on it yet | Arc created, disengaged, never activated: projects `INCUBATING` |
+| Admission | The concern enters the focus competition | `activated_at` written; afterwards it never reprojects `INCUBATING` (INV-ARC-9) |
+| Preparation | The mind works the concern; the plan is built | `ENGAGED` during the design tick (0.06); before that, a disengaged arc without a plan projects `INHIBITED` |
+| Illumination | The plan clicks into place | Plan maturity `UNDECOMPOSED → PLANNED` (0.06) |
+| Execution | The plan runs | Plan maturity `EXECUTING` (0.06) |
+| Verification, terminal | The goal is met, or the concern is folded in | `RESOLVED` / `ABSORBED` |
+
+The two axes ask different questions and both are derived, never stored:
+
+- **ArcState** — where does this Arc stand relative to the orienting loop right now, including its exit: `ENGAGED`, `INCUBATING`, `INHIBITED`, `RESOLVED`, `ABSORBED`. Derived at query time from Arc facts plus the current tick.
+- **Plan maturity** — how far has the Arc's concern unfolded: `UNDECOMPOSED`, `PLANNED`, `EXECUTING`, `RESOLVED`. Proposed in 0.06; derived from the Arc's Tasks, not stored.
+
+Because the axes are orthogonal, one Arc can be `INHIBITED` (lost the contest, focus went elsewhere) while `PLANNED` (design complete) — or `ENGAGED` while its plan is `EXECUTING`. Collapsing the two axes into one state machine is the drift the projection model exists to prevent.
+
+Numbering note: only one Wallas stage needed a new ArcState — incubation. The current code projects it from the absence of `activated_at`; 0.06 re-keys the same branch to "no design fact" (plan still `UNDECOMPOSED`), so that display keeps its "not yet worked" semantics after an Arc has entered the loop but its plan still does not exist. Preparation is the work done *during* `ENGAGED` — design is engagement, so it owns no state of its own — and illumination is plan maturity, a plan fact, not an Arc display. Wallas names the vocabulary; the state machine stays five.
+
+#### Stored atoms vs derived state
+
+CARL stores facts, never states. The Arc record holds only the atoms: `title`, `target`, `summary`, lifecycle timestamps (`created_at`, `activated_at`, `resolved_at`), `budget` (`max_model_calls`, `max_faculty_dispatches`, `max_wall_time_ms`), `resource_needs`, `tasks`, `trace_refs`, `relations`, `resolution`, `absorbed_into_arc_id`. Everything else — how the Arc *presents* — is recomputed at query time from those atoms (SPEC §1.1, invariants INV-ARC-1 … INV-ARC-9):
+
+```ts
+if (arc.resolved_at) return "RESOLVED";
+if (arc.absorbed_into_arc_id) return "ABSORBED";
+if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
+if (arc.activated_at === undefined) return "INCUBATING";
+return "INHIBITED";
+```
+
+The state you see is always recomputed from facts, so it can't drift. ArcState is the orienting loop's verdict on the Arc — recomputed per query. An Arc in the loop that lost the priority contest projects `INHIBITED`, carrying an optional cause (no cause = the resting default). An Arc that never entered the loop projects `INCUBATING`: held, warming, not suppressed — it holds no claim, and inhibition requires an invested claim. `activated_at` is never deleted once written (INV-ARC-9), so an Arc that entered the loop never reprojects `INCUBATING`.
+
+Terminology: the fifth state shipped as `PENDING_DESIGN` in 2026-08-25 and was renamed `INCUBATING` the same day. "Pending" is queue vocabulary; "incubating" is the cognitive one — before a plan exists, the concern is held and warming, which is precisely the state it is in.
+
+#### What the Arc is not
+
+- **Not a session.** CARL has no session layer. The Arc is the bounded continuity object.
+- **Not a message or chat turn.** One message may open one Arc; the Arc is a bounded concern that resolves, not a conversation thread.
+- **Not a Task.** Tasks (0.06+) are durable executable units inside an Arc — one per Arc in the current scope. The Arc is the concern; a Task is one step of its plan.
+- **Not a Sub-Arc.** A Sub-Arc is a Task promoted to its own concern thread when it needs independent budget, focus, and lifecycle.
+
 
 ### Task
 

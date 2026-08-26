@@ -226,6 +226,8 @@ RESULT BUFFER — per Arc, collects async Faculty results, non-blocking
 SYNTHESIS GATE — per Arc, notifies Persona when Arc ready for synthesis
 ```
 
+The Arc is CARL's defining object — one bounded operator concern, a goal made executable. The concept, lifecycle, two-axis projection (ArcState × plan maturity), and stored-facts/derived-state split are stated in [`docs/cortex-persona-arc.md`](docs/cortex-persona-arc.md#arc) and enforced in [`SPEC.md`](SPEC.md) §1.
+
 ---
 
 ### Persona — The Main Loop
