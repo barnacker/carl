@@ -156,8 +156,8 @@ test('Arc presentation state is derived from current OrientationTick engagement 
     relations: [],
   }
 
-  assert.equal(deriveArcState(baseArc), 'PENDING_DESIGN')
-  assert.equal(deriveArcState(baseArc, { currentTick: { engaged_arc_id: 'other-arc' } }), 'PENDING_DESIGN')
+  assert.equal(deriveArcState(baseArc), 'INCUBATING')
+  assert.equal(deriveArcState(baseArc, { currentTick: { engaged_arc_id: 'other-arc' } }), 'INCUBATING')
   assert.equal(deriveArcState(baseArc, { currentTick: { engaged_arc_id: 'arc-derived' } }), 'ENGAGED')
   assert.equal(deriveArcState({ ...baseArc, activated_at: 100 }), 'INHIBITED')
       assert.equal(deriveArcState({ ...baseArc, resolved_at: 200 }, { currentTick: { engaged_arc_id: 'arc-derived' } }), 'RESOLVED')
@@ -228,8 +228,8 @@ test('OrientationLoop creates an explainable FocusCycle from multiple unresolved
     ['OPENING_EVIDENCE', 'OPERATOR_RECENCY', 'URGENCY_MARKER', 'SECURITY_MARKER'],
   )
   assert.deepEqual(focusCycle.candidates.map((candidate) => candidate.arcId), [urgentSecurity.id, background.id, ordinary.id])
-  assert.deepEqual(focusCycle.candidates.map((candidate) => candidate.state), ['ENGAGED', 'PENDING_DESIGN', 'PENDING_DESIGN'])
-  assert.deepEqual(focusCycle.candidates.map((candidate) => candidate.presentationState), ['ENGAGED', 'PENDING_DESIGN', 'PENDING_DESIGN'])
+  assert.deepEqual(focusCycle.candidates.map((candidate) => candidate.state), ['ENGAGED', 'INCUBATING', 'INCUBATING'])
+  assert.deepEqual(focusCycle.candidates.map((candidate) => candidate.presentationState), ['ENGAGED', 'INCUBATING', 'INCUBATING'])
   })
 
 test('OrientationLoop tie behavior chooses newest created_at then lexicographic Arc id', () => {

@@ -101,7 +101,7 @@ CARL uses two related inhibition terms with different scope.
 
 **Competitive Inhibition** is the system-level priority competition between active Reasoning Arcs. Each Arc carries Synaptic Weight (`W`) and Temporal Decay (`λ`). The Arc with the strongest effective signal receives processing focus; weaker signals may be deferred without being erased. This replaces request-response blocking with weighted, interruptible attention.
 
-**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc gains focus, neighboring or competing lower-weight signals are deferred until their weight rises, the active Arc resolves, or operator input changes the priority surface. Inhibition applies only inside the loop; an Arc that never activated projects PENDING_DESIGN and is not subject to suppression. Temporal Decay lowers unattended signal strength over time; if decay exhausts recoverability, the Arc may become `ABSORBED` and require a new operator signal to restart.
+**Lateral Inhibition** is the local suppression mechanism that implements Competitive Inhibition. When one Arc gains focus, neighboring or competing lower-weight signals are deferred until their weight rises, the active Arc resolves, or operator input changes the priority surface. Inhibition applies only inside the loop; an Arc that never activated projects INCUBATING and is not subject to suppression. Temporal Decay lowers unattended signal strength over time; if decay exhausts recoverability, the Arc may become `ABSORBED` and require a new operator signal to restart.
 
 The distinction matters operationally: Competitive Inhibition describes the global scheduling behavior; Lateral Inhibition describes the local suppression operation used to enforce that schedule. Neither term implies unsupervised deletion of work. `ABSORBED` is auditable cognitive debt flushed by decay, not silent success.
 
@@ -114,7 +114,7 @@ If the active Arc is safe to yield, CARL may defer it and activate the new Arc. 
 3. capture the new request as next — store `ATTENTION_QUEUED` evidence with operator-recency weight while the current tick remains engaged with the current Arc;
 4. merge the new request into the current Arc only after operator confirmation of the merged intent.
 
-Inhibition reaches only Arcs in the loop: an Arc that has never activated projects `PENDING_DESIGN`, not `INHIBITED`. `INHIBITED` suppresses Cortex focus, not auditability. Already-dispatched bounded Faculty work may continue and publish results into the Arc buffer, but a deferred Arc cannot silently perform new Cortex reasoning, expand its plan, execute irreversible action, or extend budget. If a deferred Arc reaches a clarification or proposal step, it remains `INHIBITED(reason=OPERATOR_INPUT_REQUIRED)` and Persona queues the notification until attention priority allows surfacing it, unless the question is urgent or safety-relevant.
+Inhibition reaches only Arcs in the loop: an Arc that has never activated projects `INCUBATING`, not `INHIBITED`. `INHIBITED` suppresses Cortex focus, not auditability. Already-dispatched bounded Faculty work may continue and publish results into the Arc buffer, but a deferred Arc cannot silently perform new Cortex reasoning, expand its plan, execute irreversible action, or extend budget. If a deferred Arc reaches a clarification or proposal step, it remains `INHIBITED(reason=OPERATOR_INPUT_REQUIRED)` and Persona queues the notification until attention priority allows surfacing it, unless the question is urgent or safety-relevant.
 
 ---
 
@@ -333,7 +333,7 @@ ArcState is derived presentation, not a stored operational field:
 - `RESOLVED` — `arc.resolved_at` exists.
 - `ABSORBED` — `arc.absorbed_into_arc_id` exists.
 - `ENGAGED` — `currentTick?.engaged_arc_id === arc.id`.
-- `PENDING_DESIGN` — `arc.activated_at` absent (not yet entered the loop): stored, being designed, or fresh and unfocused.
+- `INCUBATING` — `arc.activated_at` absent (not yet entered the loop): stored, being designed, or fresh and unfocused.
 - `INHIBITED` — in-the-loop live/resting projection (`activated_at` present, focus went elsewhere).
 
 ```
@@ -351,7 +351,7 @@ RESOURCE GAP HANDLING
 
 ```
 ARC PERSISTENCE: store facts/events/commitments; derive operational state at query time
-PRESENTATION: resolved_at → RESOLVED; absorbed_into_arc_id → ABSORBED; currentTick.engaged_arc_id match → ENGAGED; activated_at absent → PENDING_DESIGN; otherwise → INHIBITED
+PRESENTATION: resolved_at → RESOLVED; absorbed_into_arc_id → ABSORBED; currentTick.engaged_arc_id match → ENGAGED; activated_at absent → INCUBATING; otherwise → INHIBITED
 ```
 
 ---
@@ -930,7 +930,7 @@ carl/
 | Reasoning Arc | Unit of reasoning — trajectory with declared budget and resource needs |
 | Arc Store | All active Arcs held by Persona — isolated; no cross-Arc context bleed |
 | Arc Budget | Mandatory per-Arc resource limit — max_model_calls, max_faculty_dispatches, max_wall_time |
-| Resource Needs | Per-Arc declaration of external resources required for focus; unmet needs route an in-the-loop Arc to INHIBITED cognitive debt (a never-activated Arc stays PENDING_DESIGN) |
+| Resource Needs | Per-Arc declaration of external resources required for focus; unmet needs route an in-the-loop Arc to INHIBITED cognitive debt (a never-activated Arc stays INCUBATING) |
 | Stale Read | Signal returned when previously read data may no longer be valid before synthesis |
 | Persona | Main loop — event-driven, zero tokens per cycle, presentation/interaction layer only |
 | Synapse | Typed abstraction between Faculty code and Nervous System; Faculty-facing API |

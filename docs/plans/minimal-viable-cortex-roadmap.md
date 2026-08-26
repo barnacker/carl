@@ -107,7 +107,7 @@
 
 **Accepted deliverables:**
 - Explicit `FocusCycle`, `FocusCandidate`, `SalienceScore`, and `FocusDecision` types/read models.
-- Derived ArcState: `resolved_at` projects `RESOLVED`, `absorbed_into_arc_id` projects `ABSORBED`, current tick/cycle engagement projects `ENGAGED`, `activated_at` absent projects `PENDING_DESIGN`, otherwise live Arcs project `INHIBITED`.
+- Derived ArcState: `resolved_at` projects `RESOLVED`, `absorbed_into_arc_id` projects `ABSORBED`, current tick/cycle engagement projects `ENGAGED`, `activated_at` absent projects `INCUBATING`, otherwise live Arcs project `INHIBITED`.
 - Deterministic salience rules for unresolved lifecycle state, operator recency, urgency/security markers, deferred penalty, and tie behavior.
 - OrientationLoop API for scoring candidates and selecting one FocusDecision.
 - Tests for candidate ordering, tie behavior, explainability, and Persona non-ownership of focus logic.
@@ -131,18 +131,18 @@
 
 **Proposal:** Resolve the design phase of the Arc lifecycle — the Arc from raw operator target to a stored plan — using the smallest possible surface: one Task per Arc.
 
-**How it fits:** The current projection makes an Arc project `PENDING_DESIGN` while it carries no design record and is not engaged. 0.06 gives design a durable, auditable fact: on the SAME tick that activates an Arc whose plan is UNDECOMPOSED, a pure-function decomposer creates exactly one Task (instruction = target + summary, status PENDING). Activating that Task flips plan maturity UNDECOMPOSED → PLANNED, after which the Arc's plan is DONE_DESIGN and the Arc projects `INHIBITED` while not engaged (INV: an Arc with a PLANNED-or-better plan never reprojects `PENDING_DESIGN`).
+**How it fits:** The current projection makes an Arc project `INCUBATING` while it carries no design record and is not engaged. 0.06 gives design a durable, auditable fact: on the SAME tick that activates an Arc whose plan is UNDECOMPOSED, a pure-function decomposer creates exactly one Task (instruction = target + summary, status PENDING). Activating that Task flips plan maturity UNDECOMPOSED → PLANNED, after which the Arc's plan is DONE_DESIGN and the Arc projects `INHIBITED` while not engaged (INV: an Arc with a PLANNED-or-better plan never reprojects `INCUBATING`).
 
 **Candidate deliverables:**
 1. Plan-maturity vocabulary + derivation from Task facts (UNDECOMPOSED / PLANNED / EXECUTING / RESOLVED).
 2. Deterministic decomposer (pure function, no model call, no dispatch): activate UNDECOMPOSED → create one Task PENDING; execute → Task ACTIVE; model-faculty result → Task DONE with result text; failing dispatch → Task FAILED with error text.
 3. `resolved_at` fires only when the plan's tasks are all terminal (or the operator closes the goal).
 4. Trace: Task movement is evidenced by existing task snapshot facts on the Arc record — NO new TASK_* trace events.
-5. Change `deriveArcState`'s PENDING_DESIGN predicate from "activated_at absent" to "no design fact" (plan remains UNDECOMPOSED), keeping every existing test outcome (in 0.06 an arc is activated and designed in one tick, so open arcs are never PENDING_DESIGN afterward).
+5. Change `deriveArcState`'s INCUBATING predicate from "activated_at absent" to "no design fact" (plan remains UNDECOMPOSED), keeping every existing test outcome (in 0.06 an arc is activated and designed in one tick, so open arcs are never INCUBATING afterward).
 6. `carltest --arc <handle>` normal output shows plan and task; task IDs stay debug-only.
 
 **Candidate acceptance:**
-- The operator message opens an Arc (PENDING_DESIGN before its tick).
+- The operator message opens an Arc (INCUBATING before its tick).
 - The opening tick activates it and creates its one Task.
 - The trace replays to show the Arc carried plan PLANNED + Task DONE + resolved_at.
 - A failing model-faculty fake dispatch shows plan PLANNED + Task FAILED + resolved_at with the error text.
@@ -153,7 +153,7 @@
 **Known review risks:**
 1. Task deadlines (wall-clock) need operator definition before Task DONE/FAILED can mean "in time" vs "done" — 0.06 ships no deadline.
 2. Migration story: journal replay of pre-0.06 arcs (no task facts) must re-project INHIBITED without breaking (they have activated_at) — keep the 0.05 behavior as the replay fallback.
-3. The PENDING_DESIGN predicate switch (activated_at → design fact) must not re-open the "in loop but unfocused" projection for activated arcs.
+3. The INCUBATING predicate switch (activated_at → design fact) must not re-open the "in loop but unfocused" projection for activated arcs.
 
 ---
 

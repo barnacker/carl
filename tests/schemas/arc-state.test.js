@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import { ARC_STATES, isArcState } from '../../dist/schemas/index.js'
 
 test('ArcState is the derived presentation set', () => {
-  assert.deepEqual(ARC_STATES, ['ENGAGED', 'PENDING_DESIGN', 'INHIBITED', 'RESOLVED', 'ABSORBED'])
+  assert.deepEqual(ARC_STATES, ['ENGAGED', 'INCUBATING', 'INHIBITED', 'RESOLVED', 'ABSORBED'])
 })
 
 test('isArcState rejects obsolete stored lifecycle labels', () => {

@@ -29,14 +29,14 @@ Canonical projection:
 if (arc.resolved_at) return "RESOLVED";
 if (arc.absorbed_into_arc_id) return "ABSORBED";
 if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
-if (arc.activated_at === undefined) return "PENDING_DESIGN";
+if (arc.activated_at === undefined) return "INCUBATING";
 return "INHIBITED";
 ```
 
 ```text
 DERIVED STATES
   ENGAGED     Current queried OrientationTick engages this Arc.
-  PENDING_DESIGN  Stored but never entered the loop. `activated_at` absent:
+  INCUBATING  Stored but never entered the loop. `activated_at` absent:
                   created, being analyzed/designed, or fresh and unfocused.
   INHIBITED    In the loop, now without focus. `activated_at` present, tick
                does not engage: alive, invested, suppressed by weaker focus or
@@ -44,7 +44,7 @@ DERIVED STATES
   RESOLVED    Terminal projection from `resolved_at`.
   ABSORBED    Terminal projection from `absorbed_into_arc_id`.
 
-INITIAL PROJECTION:  PENDING_DESIGN, unless the opening tick engages the Arc.
+INITIAL PROJECTION:  INCUBATING, unless the opening tick engages the Arc.
 TERMINAL PROJECTIONS: RESOLVED, ABSORBED
 ```
 
@@ -61,7 +61,7 @@ TERMINAL PROJECTIONS: RESOLVED, ABSORBED
 | `arc.resolved_at` exists | `RESOLVED` | Resolution record exists and Arc no longer engages. |
 | `arc.absorbed_into_arc_id` exists | `ABSORBED` | Absorption target is auditable; new operator signal starts new work. |
 | `currentTick?.engaged_arc_id === arc.id` | `ENGAGED` | Arc is the current tick's selected work. |
-| `arc.activated_at` absent | `PENDING_DESIGN` | Arc is stored but has not entered the loop; analysis/design is open. |
+| `arc.activated_at` absent | `INCUBATING` | Arc is stored but has not entered the loop; analysis/design is open. |
 | none of the above | `INHIBITED` | Arc is in the loop without current focus; reasons are derived from stored facts/events. |
 
 **Forbidden interpretations:**
@@ -69,7 +69,7 @@ TERMINAL PROJECTIONS: RESOLVED, ABSORBED
 | Interpretation | Reason |
 |---|---|
 | Persisting `ENGAGED` as a long-lived Arc state | Engagement is tick-local projection only. |
-| Treating absence from `currentTick.engaged_arc_id` as terminal | It only means the Arc projects `INHIBITED` (in-the-loop, focus went elsewhere) — or `PENDING_DESIGN` if the Arc never entered the loop. |
+| Treating absence from `currentTick.engaged_arc_id` as terminal | It only means the Arc projects `INHIBITED` (in-the-loop, focus went elsewhere) — or `INCUBATING` if the Arc never entered the loop. |
 | Treating any persisted `state` field as projection authority | ArcState projection is keyed by terminal facts and current tick engagement. |
 | Adding stored states for blocked, pending Faculty, priority gap, or operator input | These are classifications derived from stored facts/events/reasons. |
 
@@ -82,8 +82,8 @@ TERMINAL PROJECTIONS: RESOLVED, ABSORBED
 - `INV-ARC-5`: Resource needs are declared at Arc open and audited through the budget model.
 - `INV-ARC-6`: Arc context is isolated. No Arc can read or write another Arc's result buffer, working context, or intermediate facts except through approved memory/reference mechanisms.
 - `INV-ARC-7`: Deferral reasons are metadata/facts only. They do not add Arc states or bypass the derived projection rule.
-- `INV-ARC-8`: `PENDING_DESIGN` is derived only from the absence of `activated_at` on live, unengaged Arcs. No deferral reason applies to `PENDING_DESIGN`; it means the Arc was never in the loop to be suppressed.
-- `INV-ARC-9`: `activated_at` is never deleted once written. An Arc that has entered the loop never reprojects as `PENDING_DESIGN`.
+- `INV-ARC-8`: `INCUBATING` is derived only from the absence of `activated_at` on live, unengaged Arcs. No deferral reason applies to `INCUBATING`; it means the Arc was never in the loop to be suppressed.
+- `INV-ARC-9`: `activated_at` is never deleted once written. An Arc that has entered the loop never reprojects as `INCUBATING`.
 
 **Deferral reasons:**
 
@@ -814,8 +814,8 @@ All named invariants in this document, collected for reference and automated ver
 | INV-ARC-4 | 1.1 | Arc context is isolated; no cross-Arc reads/writes |
 | INV-ARC-5 | 1.1 | INHIBITED remains auditable cognitive debt until active or absorbed |
 | INV-ARC-6 | 1.1 | ABSORBED is terminal and never equivalent to successful resolution |
-| INV-ARC-8 | 1.1 | PENDING_DESIGN derives only from absent `activated_at`; no deferral reason applies |
-| INV-ARC-9 | 1.1 | `activated_at` is never deleted; an Arc that entered the loop never reprojects PENDING_DESIGN |
+| INV-ARC-8 | 1.1 | INCUBATING derives only from absent `activated_at`; no deferral reason applies |
+| INV-ARC-9 | 1.1 | `activated_at` is never deleted; an Arc that entered the loop never reprojects INCUBATING |
 | INV-CONF-1 | 1.2 | HIGH/LOCKED requires minimum M distinct origins |
 | INV-CONF-2 | 1.2 | Every confidence transition logged to Tier 1a |
 | INV-CONF-3 | 1.2 | LOCKED exempt from decay; all others subject |
@@ -864,22 +864,22 @@ All named invariants in this document, collected for reference and automated ver
 
 #### A.1 ArcState Projection
 **Derived states:**
-`ENGAGED | PENDING_DESIGN | INHIBITED | RESOLVED | ABSORBED`
+`ENGAGED | INCUBATING | INHIBITED | RESOLVED | ABSORBED`
 
 **Projection function:**
 ```ts
 if (arc.resolved_at) return "RESOLVED";
 if (arc.absorbed_into_arc_id) return "ABSORBED";
 if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
-if (arc.activated_at === undefined) return "PENDING_DESIGN";
+if (arc.activated_at === undefined) return "INCUBATING";
 return "INHIBITED";
 ```
 
 **Key Invariants**:
 - INV-ARC-1: ENGAGED is tick-local and never persisted as a long-lived Arc state
 - INV-ARC-2: RESOLVED requires `resolved_at`; resolution never reopens an Arc
-- INV-ARC-8: PENDING_DESIGN is derived only from the absence of `activated_at` on live, unengaged Arcs; no deferral reason applies
-- INV-ARC-9: `activated_at` is never deleted; an Arc that entered the loop never reprojects as PENDING_DESIGN
+- INV-ARC-8: INCUBATING is derived only from the absence of `activated_at` on live, unengaged Arcs; no deferral reason applies
+- INV-ARC-9: `activated_at` is never deleted; an Arc that entered the loop never reprojects as INCUBATING
 - INV-ARC-5: INHIBITED remains auditable cognitive debt when no terminal fact or tick engagement applies
 - INV-ARC-6: ABSORBED is terminal and not success
 - Forbidden: deriving terminal state from anything except `resolved_at` / `absorbed_into_arc_id`; silent resolutions or silent reactivation
@@ -1022,7 +1022,7 @@ export const ScopeEnum = z.enum(['TEMPORAL', 'SPATIAL', 'TOPICAL'])
 export const RiskLevel = z.enum(['LOW', 'ELEVATED', 'HIGH', 'CRITICAL'])
 export const ConfidenceState = z.enum(['UNSET', 'LOW', 'PROVISIONAL', 'HIGH', 'LOCKED'])
 export const RoutingTier = z.enum(['REFLEX', 'EXECUTION', 'REASONING'])
-export const ArcState = z.enum(['ENGAGED', 'PENDING_DESIGN', 'INHIBITED', 'RESOLVED', 'ABSORBED'])
+export const ArcState = z.enum(['ENGAGED', 'INCUBATING', 'INHIBITED', 'RESOLVED', 'ABSORBED'])
 export const DeferralReason = z.enum([
   'ATTENTION_QUEUED',
   'ATTENTION_PREEMPTED',

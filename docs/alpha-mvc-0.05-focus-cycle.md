@@ -20,11 +20,11 @@ ArcState is a read-model projection derived from stored facts and the current ti
 if (arc.resolved_at) return "RESOLVED";
 if (arc.absorbed_into_arc_id) return "ABSORBED";
 if (currentTick?.engaged_arc_id === arc.id) return "ENGAGED";
-if (arc.activated_at === undefined) return "PENDING_DESIGN";
+if (arc.activated_at === undefined) return "INCUBATING";
 return "INHIBITED";
 ```
 
-`ENGAGED` is ephemeral and derived from the current FocusCycle / future OrientationTick. `PENDING_DESIGN` projects when the Arc never entered the loop (`activated_at` absent): fresh, stored, or being designed. `INHIBITED` projects for alive in-the-loop Arcs the current tick does not engage. Specific conditions such as blocked, pending Faculty, operator-input-required, priority-gap, suppressed, or resource-gap remain derived from stored facts/events/reasons; none of them apply to `PENDING_DESIGN`.
+`ENGAGED` is ephemeral and derived from the current FocusCycle / future OrientationTick. `INCUBATING` projects when the Arc never entered the loop (`activated_at` absent): fresh, stored, or being designed. `INHIBITED` projects for alive in-the-loop Arcs the current tick does not engage. Specific conditions such as blocked, pending Faculty, operator-input-required, priority-gap, suppressed, or resource-gap remain derived from stored facts/events/reasons; none of them apply to `INCUBATING`.
 
 ## Current bridge vocabulary
 
