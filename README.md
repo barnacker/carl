@@ -226,7 +226,21 @@ RESULT BUFFER — per Arc, collects async Faculty results, non-blocking
 SYNTHESIS GATE — per Arc, notifies Persona when Arc ready for synthesis
 ```
 
-The Arc is CARL's defining object — one bounded operator concern, a goal made executable. The concept, lifecycle, two-axis projection (ArcState × plan maturity), and stored-facts/derived-state split are stated in [`docs/cortex-persona-arc.md`](docs/cortex-persona-arc.md#arc) and enforced in [`SPEC.md`](SPEC.md) §1.
+**The Arc — CARL's defining object.** Everything in the system — Cortex, Persona, the loops, the faculties — exists to serve Arcs. An Arc is *one bounded operator concern: a goal made executable.* Not a session, not a message, not a task. One operator message opens one Arc, and the Arc carries the lifecycle, budget, and decay that make work persist across the system's busyness.
+
+An Arc's state is its relationship with the orienting loop across its whole life, including its exit:
+
+- **`INCUBATING`** — held and warming, not yet admitted. It has no invested claim yet, so it cannot be inhibited; it is simply not in the contest.
+- **`ENGAGED`** — won the focus contest this tick.
+- **`INHIBITED`** — in the contest, currently outcompeted. It holds its claim; focus went elsewhere, and it re-enters on the next salience pass. Inhibition suppresses focus, not existence: the concern stays fully auditable.
+- **`RESOLVED`** — goal met; the relationship with the loop is terminated.
+- **`ABSORBED`** — folded into another Arc; terminated by incorporation.
+
+Orthogonally, the Arc's *plan maturity* (`UNDECOMPOSED → PLANNED → EXECUTING → RESOLVED`) tracks how far the concern has unfolded, derived from its Task facts (0.06). An Arc can be `INHIBITED` while `PLANNED` — heating done, focus elsewhere.
+
+**No state is ever stored.** The Arc record holds facts only — activation, resolution, absorption, budget, tasks, relations. Every state above is *projected* from those facts at query time (SPEC §1, invariants INV-ARC-1…9), so what you see can't drift: there is no saved state to reconcile. That is also why CARL is never blocked — every tick finishes and gives the hand back to the operator immediately, and because nothing inside is pending, the system never waits on itself. If you were chatting with it, you never wait.
+
+Full concept, lifecycle table (mapped to Wallas's *Art of Thought* stages), and the projection algorithm: [`docs/cortex-persona-arc.md`](docs/cortex-persona-arc.md#arc).
 
 ---
 
