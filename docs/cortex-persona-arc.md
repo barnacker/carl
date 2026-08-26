@@ -74,7 +74,7 @@ Terminology: the fifth state shipped as `PENDING_DESIGN` in 2026-08-25 and was r
 
 #### Why CARL never blocks
 
-This is also what makes CARL never blocked. If you were chatting with him, you never wait — he gives you the hand back immediately. Every tick finishes and returns the operator; decision time is never spent waiting on faculties, so the human stays an operator, not a spectator in a blocking queue. And because nothing is stored as "current," nothing is pending inside the system either: there is no saved state to reconcile, so there is nothing the runtime must wait and clear before acting. Projection keeps the system non-blocking about its own state, the same way ticks keep it non-blocking for the operator.
+This is also what makes CARL never blocked. If you were chatting with him, you never wait — he gives you the hand back immediately. Every tick finishes and returns the operator; decision time is never spent waiting on faculties, so the human stays an operator, not a spectator in a blocking queue. And because nothing is stored as "current," nothing is pending inside the system either: there is no saved state to reconcile and nothing to wait on before acting. Projection keeps the system non-blocking about its own state, the same way ticks keep it non-blocking for the operator.
 
 #### What the Arc is not
 
