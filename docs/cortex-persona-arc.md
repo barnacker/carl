@@ -72,6 +72,10 @@ The state you see is always recomputed from facts, so it can't drift. ArcState i
 
 Terminology: the fifth state shipped as `PENDING_DESIGN` in 2026-08-25 and was renamed `INCUBATING` the same day. "Pending" is queue vocabulary; "incubating" is the cognitive one — before a plan exists, the concern is held and warming, which is precisely the state it is in.
 
+#### Why CARL never blocks
+
+This is also what makes CARL never blocked. If you were chatting with him, you never wait — he gives you the hand back immediately. Every tick finishes and returns the operator; decision time is never spent waiting on faculties, so the human stays an operator, not a spectator in a blocking queue. And because nothing is stored as "current," nothing is pending inside the system either: there is no saved state to reconcile, so there is nothing the runtime must wait and clear before acting. Projection keeps the system non-blocking about its own state, the same way ticks keep it non-blocking for the operator.
+
 #### What the Arc is not
 
 - **Not a session.** CARL has no session layer. The Arc is the bounded continuity object.
