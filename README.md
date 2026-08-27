@@ -226,9 +226,11 @@ RESULT BUFFER — per Arc, collects async Faculty results, non-blocking
 SYNTHESIS GATE — per Arc, notifies Persona when Arc ready for synthesis
 ```
 
+**The orienting loop — the center the Arc orbits.** Cortex's main loop repeatedly asks: what is happening, what changed, what matters now, which Arcs are open, what can advance cheaply, what needs expensive reasoning? It reads the ArcStore, computes salience, and decides where this tick's focus goes. It is mechanism, not memory — every tick it re-derives the world. Nothing in it is queued, and it ends by giving the hand back to the operator.
+
 **The Arc — CARL's defining object.** Everything in the system — Cortex, Persona, the loops, the faculties — exists to serve Arcs. An Arc is *one bounded operator concern: a goal made executable.* Not a session, not a message, not a task. One operator message opens one Arc, and the Arc carries the lifecycle, budget, and decay that make work persist across the system's busyness.
 
-An Arc's state is its relationship with the orienting loop across its whole life, including its exit:
+Where the orienting loop is the *present moment* — which Arc gets focus in the current tick — the Arc is the *persistent concern* the loop decides about: the loop re-derives itself every tick, the Arc outlives it. An Arc's state is precisely its relationship with that loop across its whole life, including its exit:
 
 - **`INCUBATING`** — held and warming, not yet admitted. It has no invested claim yet, so it cannot be inhibited; it is simply not in the contest.
 - **`ENGAGED`** — won the focus contest this tick.
