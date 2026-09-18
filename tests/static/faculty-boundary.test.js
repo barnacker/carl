@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
 function walk(dir) {
@@ -15,7 +16,7 @@ function walk(dir) {
 }
 
 test('Faculty source does not import Cortex or Nervous System internals', () => {
-  const files = walk(new URL('../../faculties', import.meta.url).pathname)
+  const files = walk(fileURLToPath(new URL('../../faculties', import.meta.url)))
   assert.ok(files.length > 0, 'expected faculty source files')
 
   for (const file of files) {

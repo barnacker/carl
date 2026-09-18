@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
-const root = new URL('..', import.meta.url).pathname
+const root = fileURLToPath(new URL('..', import.meta.url))
 
 test('workspace-template tracks seed files while runtime workspace remains ignored', () => {
   for (const name of ['PRIME.md', 'PERSONA.md', 'PROTOCOL.md', 'SCHEMA.md', 'AGENTS.yaml']) {
