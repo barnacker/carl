@@ -170,6 +170,40 @@ function arcOutput(arc, debugTrace) {
   }
 }
 
+function salienceOutput(salience) {
+  return {
+    total: salience.total,
+    terms: salience.terms.map((term) => ({
+      name: term.name,
+      value: term.value,
+      reason: term.reason,
+    })),
+  }
+}
+
+function focusCycleOutput(focusCycle, debugTrace) {
+  return {
+    ruleset: focusCycle.ruleset,
+    candidates: focusCycle.candidates.map((candidate) => ({
+      title: candidate.title,
+      presentation_state: candidate.presentationState,
+      state: candidate.state,
+      salience: salienceOutput(candidate.salience),
+      ...(debugTrace ? { arc_id: candidate.arcId } : {}),
+    })),
+    decision: {
+      selected_title: focusCycle.decision.selectedTitle,
+      selected_state: focusCycle.decision.selectedState,
+      faculty_id: focusCycle.decision.facultyId,
+      faculty_role: focusCycle.decision.facultyRole,
+      reason: focusCycle.decision.reason,
+      salience: salienceOutput(focusCycle.decision.salience),
+      ...(debugTrace ? { selected_arc_id: focusCycle.decision.arcId } : {}),
+    },
+    ...(debugTrace ? { cycle_id: focusCycle.cycleId } : {}),
+  }
+}
+
 function printJson(value) {
   console.log(JSON.stringify(value, null, 2))
 }
@@ -278,7 +312,12 @@ try {
     run,
     output: result.output,
     arc: arcOutput(result.cortex.arc, debugTrace),
-    ...(debugTrace ? { trace: result.trace, journal_trace: journalEvents, arc_history: arcHistoryRecord } : {}),
+    ...(debugTrace ? {
+      focus_cycle: focusCycleOutput(result.cortex.focusCycle, debugTrace),
+      trace: result.trace,
+      journal_trace: journalEvents,
+      arc_history: arcHistoryRecord,
+    } : {}),
   })
 } catch (error) {
   printStructuredError(error)

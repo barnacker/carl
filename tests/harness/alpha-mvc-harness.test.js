@@ -155,3 +155,53 @@ test('carltest --discord command runs the Alpha MVC harness with a fake model re
   assert.equal(typeof parsed.run.journal_path, 'string')
   assert.equal(parsed.trace, undefined)
 })
+
+test('carltest --discord --debug-trace exposes FocusCycle evidence with raw Arc IDs', () => {
+  const output = execFileSync('node', ['bin/carltest.js', '--discord', 'Urgent security focus cycle check', '--debug-trace'], {
+    cwd: new URL('../..', import.meta.url),
+    env: {
+      ...process.env,
+      CARLTEST_FAKE_MODEL_RESPONSE: 'CLI fake model result',
+      CARLTEST_TRACE_ID: 'trace-0-05-focus-debug',
+      CARLTEST_RUN_ID: 'run-0-05-focus-debug',
+      CARLTEST_TRACE_DIR: 'runtime/alpha-mvc/traces-focus-debug',
+    },
+    encoding: 'utf8',
+  })
+  const parsed = JSON.parse(output)
+
+  assert.equal(parsed.run.debug_trace, true)
+  assert.equal(parsed.focus_cycle.ruleset, 'alpha-mvc-focus-cycle/v1')
+  assert.equal(typeof parsed.focus_cycle.cycle_id, 'string')
+  assert.equal(parsed.focus_cycle.candidates.length, 1)
+  const candidate = parsed.focus_cycle.candidates[0]
+  assert.equal(candidate.presentation_state, 'ENGAGED')
+  assert.equal(candidate.state, 'ENGAGED')
+  assert.equal(typeof candidate.arc_id, 'string')
+  assert.equal(candidate.arc_id.length > 0, true)
+  assert.equal(candidate.salience.total > 0, true)
+  assert.ok(Array.isArray(candidate.salience.terms))
+  assert.equal(parsed.focus_cycle.decision.selected_arc_id, candidate.arc_id)
+  assert.equal(parsed.focus_cycle.decision.faculty_role, 'MODEL_FACULTY')
+  assert.match(parsed.focus_cycle.decision.reason, /alpha-mvc-focus-cycle\/v1/)
+})
+
+test('carltest --discord normal output does not expose FocusCycle raw Arc IDs', () => {
+  const output = execFileSync('node', ['bin/carltest.js', '--discord', 'Urgent security focus cycle check'], {
+    cwd: new URL('../..', import.meta.url),
+    env: {
+      ...process.env,
+      CARLTEST_FAKE_MODEL_RESPONSE: 'CLI fake model result',
+      CARLTEST_TRACE_ID: 'trace-0-05-focus-normal',
+      CARLTEST_RUN_ID: 'run-0-05-focus-normal',
+      CARLTEST_TRACE_DIR: 'runtime/alpha-mvc/traces-focus-normal',
+    },
+    encoding: 'utf8',
+  })
+  const parsed = JSON.parse(output)
+
+  assert.equal(parsed.run.debug_trace, false)
+  assert.equal(parsed.focus_cycle, undefined)
+  assert.equal(parsed.trace, undefined)
+  assert.equal(parsed.arc.id, undefined)
+})
