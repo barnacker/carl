@@ -46,7 +46,7 @@ Everything else follows from this sentence:
 
 - **No component can bypass the gate.** All traffic goes through the Nervous System. That makes the audit surface one, not N.
 - **A capability is a plug-in.** A new capability is a new Faculty — it registers with the Nervous System and starts handling signals. The core is not touched.
-- **Decision-making is not confused with doing.** Faculties do, Cortex tells. They do not talk to each other. When a new operator message arrives while another Arc is active, attention arbitration applies — safe-yield check, then the operator's four choices (defer, finish first, queue, or merge after merged-intent confirmation). One of them happens inside the active Arc, and the deferred Arc re-enters on the next salience pass.
+- **Decision-making is not confused with doing.** Faculties do, Cortex tells. They do not talk to each other. When a new operator message arrives while another Arc is active, attention arbitration applies — safe-yield check, then the operator's four choices (defer, finish first, queue, or merge after merged-intent confirmation). One of them happens inside the active Arc, and the deferred Arc re-enters on the next pass.
 - **Names are cognitive, not a claim.** Cortex, Nervous System, Faculty, Reflex - the names come from cognitive biology because the role correspondences are useful. Every claim in this document is tied to a named mechanism with a falsification condition.
 
 ### The laws
@@ -85,7 +85,7 @@ operator message
   │     ├─ yes → replay a cached Cortex route; zero model context; respond.
   │     └─ no
   │
-  ├─► CORTEX                   the loop of thought reads outstanding Arcs, scores salience,
+  ├─► CORTEX                   the loop of thought reads outstanding Arcs, scores them,
   │                            opens or advances the Arc in convoy for this tick
   │
   ├─► REASONING ENGINE         Gating model picks the step's tier
