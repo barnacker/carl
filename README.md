@@ -64,7 +64,7 @@ Full derivation and projection algorithm: [`docs/cortex-persona-arc.md`](docs/co
 The Nervous System is the only backbone everything talks on. No model runs in it — it routes, validates, carries. In production it is compiled together with the Imune System and the Cortex as one binary, with the Prime Directives compiled in. **In that binary sits the skill index — a doc on a disk, versioned, edited, and deployed like code — the thing that decides charge and domain for every rule, and whose edit is the only thing that can legitimately change the rules.** Gate = index, in production.
 
 - **Imune System** — the gate around every bus entry. Origin-chain validation on every hop (Law 6); per-Faculty permission registry (Law 1); behavioral write restriction — Faculties write facts, never behavior; circuit breakers on anomalous Faculties (operator-approved re-connections); an audit log the gate itself writes, directly, so the gate itself can't be bypassed from the bus.
-- **Relay** — turns raw LLM text into a typed object (Zod in prototype, Zig comptime in production). A payload that fails the schema is rejected at the bus boundary. No untyped data on the bus, by construction.
+- **Relay** — turns raw LLM text into a typed object (Zod in prototype, strict static types in Rust in production). A payload that fails the schema is rejected at the bus boundary. No untyped data on the bus, by construction.
 - **Dark Lane** — a data path out from the inference path. Payloads in the Dark Lane are seen by no model and reasoned over by no model; the Cortex sees only metadata. Directed at fetches the operator has approved, token/secret writes, and cold files that should remain inert to prompt injection until the operator pulls them into a trusted state. Protocol: `SPEC.md` "Dark Transit".
 
 ---
@@ -206,15 +206,15 @@ Full detail (claims, scope, falsification, proof-of-life) now lives in [`docs/bu
 - **Stage 4 — Self-Optimization.** Cost-performance tuning of four named thresholds, inside a compiled safety floor, driven by Resolution Records.
 - **Stage 5 — Dark Transit.** Data moves through the architecture and the model never reads it.
 
-Beyond stages: **Phase A** hardens Synapse transport (zero Faculty changes); **Phase B** compiles Nervous System + Imune System + Cortex to Zig (Faculties stay TypeScript forever); **Phase C** is a full rollout of all Faculty categories, with the System Evolution Boundary under a 13-step lifecycle, and the Optimization Pass on schedule.
+Beyond stages: **Phase A** hardens Synapse transport (zero Faculty changes); **Phase B** compiles Nervous System + Imune System + Cortex to Rust (Faculties stay TypeScript forever); **Phase C** is a full rollout of all Faculty categories, with the System Evolution Boundary under a 13-step lifecycle, and the Optimization Pass on schedule.
 
 | The stack | Prototype | Production |
 |---|---|---|
-| Runtime | Bun | Bun (Faculties) + Zig (core) |
-| Language | TypeScript | TypeScript (Faculties) + Zig (core) |
+| Runtime | Bun | Bun (Faculties) + Rust (core) |
+| Language | TypeScript | TypeScript (Faculties) + Rust (core) |
 | Bus | Node EventEmitter through Synapse | Compiled typed channels via Synapse |
-| Schema validation | Zod | Zig comptime types |
-| Memory 1b / 1a / 1c | In-process hash map / Append-only hash-chained file / LevelDB or SQLite | Zig HashMap / Hash-chained file + archive / abstracted K/V |
+| Schema validation | Zod | Rust (comptime-style strict types) |
+| Memory 1b / 1a / 1c | In-process hash map / Append-only hash-chained file / LevelDB or SQLite | std HashMap / Hash-chained file + archive / abstracted K/V |
 | Semantic Index | Local vector store (LanceDB, FAISS) over 1a + 1c keys | Abstracted vector index |
 | Channel / LLM | Telegram (Grammy) / Vercel AI SDK | Same |
 
