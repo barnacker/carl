@@ -15,7 +15,7 @@ Inside the Cortex there are four things:
 - **The reasoning engine** — a subordinate loop, one per Arc that needs it. The only part of the Cortex that may run the expensive models (the deeper work, the planning).
 - **The persona** — the identity that colors how it behaves. It shapes addressing, caution, and the rules of output (reflect ambiguity back, propose before an irreversible step, no protocol on the research channel). It does not decide.
 
-In production the Cortex is compiled together with the Nervous System and the Imune System, with Prime Directives compiled in. Everything outside the Cortex reaches it through the Nervous System — and nothing reaches the Arcs except through the Cortex.
+In production the Cortex is compiled together with the Nervous System and the Immune System, with Prime Directives compiled in. Everything outside the Cortex reaches it through the Nervous System — and nothing reaches the Arcs except through the Cortex.
 
 ---
 
@@ -61,9 +61,9 @@ Full derivation and projection algorithm: [`docs/cortex-persona-arc.md`](docs/co
 
 ## 3. The Nervous System
 
-The Nervous System is the only backbone everything talks on. No model runs in it — it routes, validates, carries. In production it is compiled together with the Imune System and the Cortex as one binary, with the Prime Directives compiled in. **In that binary sits the skill index — a doc on a disk, versioned, edited, and deployed like code — the thing that decides charge and domain for every rule, and whose edit is the only thing that can legitimately change the rules.** Gate = index, in production.
+The Nervous System is the only backbone everything talks on. No model runs in it — it routes, validates, carries. In production it is compiled together with the Immune System and the Cortex as one binary, with the Prime Directives compiled in. **In that binary sits the skill index — a doc on a disk, versioned, edited, and deployed like code — the thing that decides charge and domain for every rule, and whose edit is the only thing that can legitimately change the rules.** Gate = index, in production.
 
-- **Imune System** — the gate around every bus entry. Origin-chain validation on every hop (Law 6); per-Faculty permission registry (Law 1); behavioral write restriction — Faculties write facts, never behavior; circuit breakers on anomalous Faculties (operator-approved re-connections); an audit log the gate itself writes, directly, so the gate itself can't be bypassed from the bus.
+- **Immune System** — the gate around every bus entry. **It is what blocks prompt injection:** it protects the Cortex and every Faculty from receiving orders they are not supposed to — and stops any Faculty that is not supposed to from polluting the Nervous System with hostile data. Origin-chain validation on every hop (Law 6); per-Faculty permission registry (Law 1); behavioral write restriction — Faculties write facts, never behavior; circuit breakers on anomalous Faculties (operator-approved re-connections); an audit log the gate itself writes, directly, so the gate itself cannot be bypassed from the bus.
 - **Relay** — turns raw LLM text into a typed object (Zod in prototype, strict static types in Rust in production). A payload that fails the schema is rejected at the bus boundary. No untyped data on the bus, by construction.
 - **Dark Lane** — a data path out from the inference path. Payloads in the Dark Lane are seen by no model and reasoned over by no model; the Cortex sees only metadata. Directed at fetches the operator has approved, token/secret writes, and cold files that should remain inert to prompt injection until the operator pulls them into a trusted state. Protocol: `SPEC.md` "Dark Transit".
 
@@ -87,17 +87,17 @@ The **Memory Faculty** is where all persistence lives. It is not a tier on the b
 
 Every ambiguity confirmation writes to 1a + 1b together. When a threshold fires, 1b collapses into 1c; 1a never moves. A Semantic Index (vector store) indexes 1a + 1c; it is a query interface, not a source of truth, and the Reflex path is not available there. Tier details and vector constraints: `SPEC.md`.
 
-**The System Evolution Boundary** — the one component that can change CARL itself. It is a compiler-and-deploy pipeline, not an Execution Faculty in the same trust class as Gmail. 13-step promotion lifecycle; step 11 is operator approval, no override path. A compiled boundary keeps it from touching the Nervous System, the Imune System, Synapse, or the Core (and its own validation pipeline as well). Full lifecycle + threat model: `SPEC.md`.
+**The System Evolution Boundary** — the one component that can change CARL itself. It is a compiler-and-deploy pipeline, not an Execution Faculty in the same trust class as Gmail. 13-step promotion lifecycle; step 11 is operator approval, no override path. A compiled boundary keeps it from touching the Nervous System, the Immune System, Synapse, or the Core (and its own validation pipeline as well). Full lifecycle + threat model: `SPEC.md`.
 
 ---
 
-## 5. The Refex
+## 5. The Reflex
 
-**Refex is the cost-saver of the whole system: the zero-model, zero-cost fast path.** Every time the Cortex derives a route for a pattern it has seen before, it crystallizes it into the Memory Faculty (Tier 1c). A matching signal then hits Refex **before** the router ever runs — and the replay runs with **zero model calls: no gating, no reasoner, and often zero tokens.** Only the executed Faculty call cost goes, which is vastly smaller than a reasoning turn — and that cost is what pays for the Authority, ring-stamped on every hop, and its Field divides all other cost (Energy = tokens called ÷ quota tokens in the wallet).
+**Reflex is the cost-saver of the whole system: the zero-model, zero-cost fast path.** Every time the Cortex derives a route for a pattern it has seen before, it crystallizes it into the Memory Faculty (Tier 1c). A matching signal then hits Reflex **before** the router ever runs — and the replay runs with **zero model calls: no gating, no reasoner, and often zero tokens.** Only the executed Faculty call cost goes, which is vastly smaller than a reasoning turn — and that cost is what pays for the Authority, ring-stamped on every hop, and its Field divides all other cost (Energy = tokens called ÷ quota tokens in the wallet).
 
-Reflex does not decide — it **re-runs a route that the Cortex derived and approved.** No model, no inference. For every replay pass, four conditions are re-checked: Faculty health, permission against the origin stamp, confidence (HIGH or LOCKED), risk (HIGH or CRITICAL always bypass Refex to Cortex). Failing any of them degrades to Cortex with a `REFLEX_DEGRADED` signal. Fast path — never a blind path.
+Reflex does not decide — it **re-runs a route that the Cortex derived and approved.** No model, no inference. For every replay pass, four conditions are re-checked: Faculty health, permission against the origin stamp, confidence (HIGH or LOCKED), risk (HIGH or CRITICAL always bypass Reflex to Cortex). Failing any of them degrades to Cortex with a `REFLEX_DEGRADED` signal. Fast path — never a blind path.
 
-That is also why Refex is standing on everything you've just read: it exists because of the Immune gate (permissions still hold), because of the deterministic rule of operation (the route is stored, not re-derived), and because of the Memory Faculty (it reads what the Memory Faculty holds), and because of the routing (it is what the rule launch would have gone to). The **crystallization loop** is this: operator confirms an ambiguity → the observation is stored (1a + 1b) → threshold reached → 1b collapses to a Reflex entry in 1c → the next matching signal is handled at zero cost. Every confirm strengthens the fast path.
+That is also why Reflex is standing on everything you've just read: it exists because of the Immune gate (permissions still hold), because of the deterministic rule of operation (the route is stored, not re-derived), and because of the Memory Faculty (it reads what the Memory Faculty holds), and because of the routing (it is what the rule launch would have gone to). The **crystallization loop** is this: operator confirms an ambiguity → the observation is stored (1a + 1b) → threshold reached → 1b collapses to a Reflex entry in 1c → the next matching signal is handled at zero cost. Every confirm strengthens the fast path.
 
 ```
 signal arrives
@@ -108,65 +108,60 @@ signal arrives
   → EXECUTION FACULTY      cheap action or expensive reasoning
 ```
 
-Without Refex, every request — even a request you've repeated 200 times — pays for a model call. With it, the majority of steady-state traffic runs **no model at all.** That delta is where "real cost savings" lives.
+Without Reflex, every request — even a request you've repeated 200 times — pays for a model call. With it, the majority of steady-state traffic runs **no model at all.** That delta is where "real cost savings" lives.
 
 **The queue, when the loop is lit up.** When something big is in the middle of its engagement (a Long Arc, a Large decision), the movements of the orienting loop happen in the small queue: the Full-Arc blocks, the queue holds, the new signals get processed cheaply (Reflex first), and when the Arc yields — completed step, budget edge, ambiguity, or safe yield point — they get served in order. Nothing is lost; the queue is the `INHIBITED` phase with a memory: what's being held has its claim, and it re-enters without re-reasoning.
 
 ---
 
-## 6. The Player — the system in operation
+## 6. The cast — one message, end to end
 
-Here is the system with the pieces you just met, and who does what:
+With all those pieces, here is who does what, and who lives where:
 
 | Component | Role | Where it lives |
 |---|---|---|
-| **The Orienting Loop** | The system's attention — awake, looking, scoring. One decision per tick: which Arc gets this tick. | In the Cortex |
-| **The Arcs** | The work being tracked — goal, budget, state, the operator's request on arrival | In the Cortex, in the Arc store |
-| **The Persona** | The identity that speaks — the tone, the words, the rules of conversation. It does not decide. | In the Cortex |
-| **The Nervous System + Imune System** | The only backbone + the gate. Everything goes through it; nothing that fails the gate comes farther. | Its own binary (compiled in production) |
-| **The Refex** | The zero-model fast path. Replays routes the Cortex derived-said-approved. | In the Nervous System |
-| **The Sensory Faculties** | The inputs. Stamp the origin, publish to the backbone. | Orthogonal to the Cortex, chat through Synapse |
-| **The Execution Faculties** | The hands. Act on the world. | Orthogonal to the Cortex, chat through Synapse |
-| **The Memory Faculty** | All persistence — the observation log, the working set, the crystal. | Orthogonal to the Cortex, chat through Synapse |
+| **The orienting loop** | The decisive judgment of the whole system: which Arc is advanced in this tick. | Inside the Cortex |
+| **The Arcs** | One operator concern each: goal, budget, state, shape of the request. | Inside the Cortex (Arc store) |
+| **The Persona** | Identity: the address, the warmth, the presenter. Not the decider. | Inside the Cortex |
+| **The reasoning engine** | High-cost thinking, a single loop per Arc. | Inside the Cortex |
+| **The Nervous System** | The trunk: routing, verification, carrying. All lines traverse it. | Separate binary (compiled in production) |
+| **The Immune System** | The gate: origin chain, permissions, write restrictions, circuit breaker. | Inside the Nervous System binary |
+| **The Reflex** | No-model replay path: reruns routes the Cortex has already derived and approved. | Inside the Nervous System, on the fast path |
+| **The Synapse** | The typed interface every Faculty speaks through. Law 9: direct-to-bus is not allowed. | Between every Faculty and the Nervous System |
+| **Sensory Faculty** | Input: Telegram, file watcher. Stamps the origin. | Outside, talks via Synapse |
+| **Execution Faculty** | Acts on the world: Gmail, Web, File IO, code. | Outside, talks via Synapse |
+| **Memory Faculty** | All persistence: observation (1a), short-term (1b), crystallization (1c). | Outside, talks via Synapse |
 
-In production the Numbers behave like three actors:
+The two halves do not directly touch each other: the Cortex talks to a Faculty, and the Faculty talks back to the Cortex, **"only through the Nervous System."** In reverse: every signal that passes through it is stamped with an origin (Law 6) and is only accepted by the Immune System. That is the trunk on which the brain communicates. Faculties never touch the bus — Synapse is a transport abstraction, and that is what makes core reimplementation (Law 9) never touch any Faculty code.
 
-```
-the NERVOUS SYSTEM    the spokes + the gate    refex + refex
-        \                     |           /
- the CORTEX              the FACULTIES
-  (orienting, stark)    (sensory, execution, memory)
-```
+### One full message
 
-How they talk: **every line is the Nervous System.** A Faculty writes a result, it enters the bus and the Immune System sees it sent; if it's an operator message, the gate stamps it and publishes; when there's a match, the Refex reacts and skips the model; when there isn't, the loop in the Cortex wakes up to the next step. There is no "FACULTY_A → FACULTY_B" anywhere in the system — and that is Law 2 holding, and also what makes law 6 (origin travelling the whole chain) actually stand.
-
-### One message — end to end
-
-The inner side (the Arc's journey) is the tracker holding the work, and this here is what it looks like from the outside when the operator speaks:
+The operator speaks; the full path, end to end:
 
 ```
-Operator message
-  ├─► Sensory Faculty          Signal publish, origin stamped
+operator message
   │
-  ├─► NERVOUS SYSTEM           Immune System verifies client + permission at the gate
+  ├─► Sensory Faculty          signal is emitted, origin stamped
   │
-  ├─► REFLEX CHECK             a proven pattern matches this signal?
-  │     ├─ yes → replay a Cortex-derived route; zero model calls; answer.
+  ├─► NERVOUS SYSTEM           Immune-system gate validates origin + permissions
+  │
+  ├─► REFLEX                   Proven pattern?
+  │     ├─ yes → replay a Cortex-derived route; zero model calls; respond.
   │     └─ no
   │
-  ├─► ORIENTING LOOP           scores outstanding Arcs (Cortex decision)
-  │     └─ maybe: Attention Arbitration (active Arc engaged? 4 options:
-  │                                                         defer / finish / queue / merge)
+  ├─► ORIENTING LOOP           Scores open Arcs (the Cortex's judgment)
+  │     └─ (if the active Arc is engaged: arbitration — 4 choices:
+  │                                   defer / complete / queue / merge)
   │
-  ├─► GATING MODEL             picks the tier for this step
-  ├─► FACULTY (via Synapse)    execute step; results to Result Buffer
+  ├─► REASONING ENGINE         Gating decides the layer of the step
+  ├─► FACULTY (via Synapse)    the step runs; result to Result Buffer
   │
-  ├─► SYNTHESIS GATE           Arc ready for output (or stopped)
+  ├─► SYNTHESIS GATE           Arc is ready to return (or is halted)
   │
-  └─► the operator receives right back.
+  └─► Operator gets the hand back.
 ```
 
-The steps of the inner Arc (the loop) and the steps of the message (this list) run at different speeds and should not be confused: the loop is deciding **which** Arc to advance, and the message path is **what** happens once it's picked. Details of each gate (safe-yield point, what merge means) in `docs/cortex-persona-arc.md` and `SPEC.md` "Attention Arbitration".
+That's the whole pass. Every component is named once with its job attached; everything after this is spec and prose.
 
 ---
 
@@ -176,11 +171,11 @@ Invariants. A system that violates any of these is not CARL.
 
 1. **Everything is a Faculty.** Every capability follows the same pattern; the core never changes.
 2. **The Nervous System is the only path.** No component talks directly with another.
-3. **Single policy origination.** Only the Cortex originates or approves decision policy. Faculties do not re-derive it; Refex only re-runs it.
+3. **Single policy origination.** Only the Cortex originates or approves decision policy. Faculties do not re-derive it; Reflex only re-runs it.
 4. **Faculties are decision-stateless.** Between any two calls of a Faculty, no decision state is carried that could change what it does.
 5. **Security is structural, not prompt-based.** Authorization is enforced in code — compiled in production. No prompt can rewrite the rules.
 6. **Origin travels the whole chain.** Every message carries an unforgeable stamp of who approved; each hop verifies it.
-7. **CARL self-optimizes but cannot define itself.** Memory, refexes, and thresholds can be auto-tuned; identity, protocol, and Prime Directives cannot.
+7. **CARL self-optimizes but cannot define itself.** Memory, reflexes, and thresholds can be auto-tuned; identity, protocol, and Prime Directives cannot.
 8. **Model-invisible transit is first-class.** Data can move through CARL without a model ever seeing a single byte.
 9. **No Faculty touches the bus directly.** All Faculty code goes through Synapse. Synapse is the abstraction that will allow the transport to change.
 10. **Act only on confirmed intent.** Ambiguity reflects back before acting; irreversible actions are proposed before proceeding.
@@ -199,14 +194,14 @@ Five stages. Each stage proves exactly one theoretical claim. **Minimum Viable C
 
 Full detail (claims, scope, falsification, proof-of-life) now lives in [`docs/build-stages.md`](docs/build-stages.md). One line per stage here:
 
-- **Stage 0 — The Spine.** Typed routing, authority propagation, and event-driven coordination are maintained with zero direct bus access. The Arc opens with a budget and the Refex path is opened up (empty, no-op).
+- **Stage 0 — The Spine.** Typed routing, authority propagation, and event-driven coordination are maintained with zero direct bus access. The Arc opens with a budget and the Reflex path is opened up (empty, no-op).
 - **Stage 1 — Confirmed Intent.** Single-wildcard ambiguity is detected, pushed back, confirmed before routing; irreversible is proposed before acting.
 - **Stage 2 — The Learning Loop.** Confirmed resolutions solidify into Reflex routes, with identity-scoped confidence and decay; LLM call count on repeated intents measurably drops. This is where the cost curve bends: (token called) ÷ (quota tokens in the wallet), or a²/a³/a⁴ tag on the Arc.
 - **Stage 3 — Continuous Entity.** Concurrent Arc processing: short tasks finish quickly while long-running Arc A advances independently, and results go out the instant they're ready.
 - **Stage 4 — Self-Optimization.** Cost-performance tuning of four named thresholds, inside a compiled safety floor, driven by Resolution Records.
 - **Stage 5 — Dark Transit.** Data moves through the architecture and the model never reads it.
 
-Beyond stages: **Phase A** hardens Synapse transport (zero Faculty changes); **Phase B** compiles Nervous System + Imune System + Cortex to Rust (Faculties stay TypeScript forever); **Phase C** is a full rollout of all Faculty categories, with the System Evolution Boundary under a 13-step lifecycle, and the Optimization Pass on schedule.
+Beyond stages: **Phase A** hardens Synapse transport (zero Faculty changes); **Phase B** compiles Nervous System + Immune System + Cortex to Rust (Faculties stay TypeScript forever); **Phase C** is a full rollout of all Faculty categories, with the System Evolution Boundary under a 13-step lifecycle, and the Optimization Pass on schedule.
 
 | The stack | Prototype | Production |
 |---|---|---|
@@ -220,10 +215,37 @@ Beyond stages: **Phase A** hardens Synapse transport (zero Faculty changes); **P
 
 ---
 
-## 10. Author
+## 9. Where things live
 
-**Conceived and designed by Samuël Tremblay** — Montréal, Québec, Canada — [github.com/barnacker](https://github.com/barnacker)
+| Path | What it owns |
+|---|---|
+| `SPEC.md` | Normative definitions: invariants, authority lattice, schemas, enforcement map, full protocols (Dark Transit, Reflex poisoning, Memory internals, SEB 13-step lifecycle, Optimization, Attention Arbitration), per-stage proof of life + falsification. |
+| `docs/cortex-persona-arc.md` | Derivation of the Arc: Wallas stage mapping, INV-ARC 1–9, projection algorithm, "what the Arc is not," attention-arbitration details. |
+| `docs/build-stages.md` | Stage-by-stage targets, scope claims, falsification conditions, and what each stage adds. |
+| `TESTING.md` | Acceptance harness: static checks, replay tests, fixtures, adversarial corpus, stage gates. |
+| `CONTRIBUTING.md` | Contribution rules, doc expectations, PR requirements. |
+| `docs/plans/` | Roadmap and stage plans (review-required proposals — never permission to implement). |
 
-CARL is the phase where Samuël stops tweaking prompts and starts building the **harness side**: the context discipline, the skill inventory, the verifications, the authority model — the layer that used to sit between the operator and the model, invisible, and now gets built as a system, on purpose.
+Repo top level: `nervous-system/`, `synapse/`, `cortex/`, `faculties/` (memory, telegram, gmail, calendar, web, jobs, monitor), `system-evolution-boundary/`, `workspace/` (all `.md` — PRIME, PERSONA, PROTOCOL, SCHEMA, AGENTS), `examples/`, `tests/`, `harness/`.
+
+### Scope statement
+
+CARL is a bounded control architecture. What this document states:
+
+- A design with named mechanisms and falsification conditions.
+- A staged build path, with a verification obligation per stage.
+- Threat models whose structural defenses answer to named surfaces.
+- An explicit limit on what is claimed, at every level.
+
+What this document does not provide:
+
+- Proof that the implementation will behave as specified.
+- Security proofs beyond what the compiled boundaries close (one class of attacks, not all).
+- Claims about cognition beyond what the mechanisms demonstrably do.
+- Proof of safe autonomy — operator gating exists precisely because autonomy is not yet trustworthy.
+
+**Author.** Conceived and designed by **Samuël Tremblay** — Montréal, Québec, Canada — [github.com/barnacker](https://github.com/barnacker)
+
+CARL is the phase where Samuël stops tweaking prompts and starts building the **harness side**: the context discipline, the skill inventory, the verifications, the permission model — the layer that used to sit between the operator and the model invisible, and is now built as a system, on purpose.
 
 Apache 2.0 — see `CONTRIBUTING.md`.
