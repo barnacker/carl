@@ -93,26 +93,26 @@ Every ambiguity confirmation writes to 1a + 1b together. When a threshold fires,
 
 ## 5. The Reflex
 
-**Reflex is the cost-saver of the whole system: the zero-model, zero-cost fast path.** Every time the Cortex derives a route for a pattern it has seen before, it crystallizes it into the Memory Faculty (Tier 1c). A matching signal then hits Reflex **before** the router ever runs — and the replay runs with **zero model calls: no gating, no reasoner, and often zero tokens.** Only the executed Faculty call cost goes, which is vastly smaller than a reasoning turn — and that cost is what pays for the Authority, ring-stamped on every hop, and its Field divides all other cost (Energy = tokens called ÷ quota tokens in the wallet).
+**The Reflex is the cache of the whole system.** It recognizes a re-query — a request that matches one you've already resolved, possibly rephrased — and replays the route the Cortex previously derived and approved. No model starts up; no reasoning turn. Only the cost of the Faculty actually performing the action.
+
+It is not a mini-model on a smaller circuit, and not a heuristic scorer: it's recognition of a known query against Memory (where the crystallized routes live, Tier 1c). The Cortex *teaches* the Reflex each time a resolution crystallizes; the Reflex *replays* — gate still in front (permission, confidence, risk, health re-checked on every pass).
 
 Reflex does not decide — it **re-runs a route that the Cortex derived and approved.** No model, no inference. For every replay pass, four conditions are re-checked: Faculty health, permission against the origin stamp, confidence (HIGH or LOCKED), risk (HIGH or CRITICAL always bypass Reflex to Cortex). Failing any of them degrades to Cortex with a `REFLEX_DEGRADED` signal. Fast path — never a blind path.
 
-That is also why Reflex is standing on everything you've just read: it exists because of the Immune gate (permissions still hold), because of the deterministic rule of operation (the route is stored, not re-derived), and because of the Memory Faculty (it reads what the Memory Faculty holds), and because of the routing (it is what the rule launch would have gone to). The **crystallization loop** is this: operator confirms an ambiguity → the observation is stored (1a + 1b) → threshold reached → 1b collapses to a Reflex entry in 1c → the next matching signal is handled at zero cost. Every confirm strengthens the fast path.
+That is also why Reflex stands on everything you read in §1–§4: the Immune gate (permission is still enforced before a route gets re-run), the conservation rule (the route is stored, not re-derived), Memory Faculty (it reads what the Memory Faculty holds), Routing (the replay goes where the literal route would have gone). The **crystallization loop** is this: operator confirms an ambiguity → observation is stored (1a + 1b) → threshold reached → 1b folds into a Reflex entry in 1c → next matching signal is served at zero cost. Every confirmation strengthens the fast path.
 
 ```
 signal arrives
-  → IMUANE GATE            (origin + permission, always)
+  → IMMUNE GATE            (origin + permission, always)
   → REFLEX CHECK           proven pattern?  -> replay (ZERO model calls)
-  → ORIENTING LOOP         scores the Arcs this tick
+  → ORIENTING LOOP         scores arcs this tick
   → GATING MODEL           picks the tier
-  → EXECUTION FACULTY      cheap action or expensive reasoning
+  → EXECUTION FACULTY      cheap action or expensive inference
 ```
 
-Without Reflex, every request — even a request you've repeated 200 times — pays for a model call. With it, the majority of steady-state traffic runs **no model at all.** That delta is where "real cost savings" lives.
+Without Reflex, every request — even one that's been repeated 200 times — pays for a model call. With it, the large share of steady-state traffic runs **no model at all.** That delta is where "real cost savings" lives.
 
-**The queue, when the loop is lit up.** When something big is in the middle of its engagement (a Long Arc, a Large decision), the movements of the orienting loop happen in the small queue: the Full-Arc blocks, the queue holds, the new signals get processed cheaply (Reflex first), and when the Arc yields — completed step, budget edge, ambiguity, or safe yield point — they get served in order. Nothing is lost; the queue is the `INHIBITED` phase with a memory: what's being held has its claim, and it re-enters without re-reasoning.
-
----
+**Queue, when the loop is lit.** When something big is mid-engagement (a long arc, a large-scale decision), the orienting loop's moves go into the small queue: the full-arc blocks, the queue is retained, and new signals are still processed cheaply (Reflex first), then when the arc releases — completed step, budget edge, ambiguity, or a safe yield point — they're served in order. Nothing is lost; the queue is the `INHIBITED` phase with a memory: what's retained holds the claim, and re-enters without re-reasoning.
 
 ## 6. The cast — one message, end to end
 
