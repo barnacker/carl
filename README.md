@@ -93,9 +93,9 @@ Every ambiguity confirmation writes to 1a + 1b together. When a threshold fires,
 
 ## 5. The Reflex
 
-**The Reflex is the cache of the whole system.** It recognizes a re-query — a request that matches one you've already resolved, possibly rephrased — and replays the route the Cortex previously derived and approved. No model starts up; no reasoning turn. Only the cost of the Faculty actually performing the action.
+**The Reflex is the cache *retrieval*.** The cache itself is in Memory (Tier 1c, where the crystallized routes live). When a new request comes in that matches a *re-query* — something you've asked before, possibly rephrased — the Reflex looks it up in Memory, fetches the previously-correct route, and replays it. No model starts up; no reasoning turn. Only the cost of the Faculty actually performing the action.
 
-It is not a mini-model on a smaller circuit, and not a heuristic scorer: it's recognition of a known query against Memory (where the crystallized routes live, Tier 1c). The Cortex *teaches* the Reflex each time a resolution crystallizes; the Reflex *replays* — gate still in front (permission, confidence, risk, health re-checked on every pass).
+Reflex is **not** the store and **not** a mini-model on a smaller circuit and **not** a heuristic scorer: it is the lookup-and-replay path over what Memory holds. The direction is the point: every time the Cortex resolves a novel signal and the resolution crystallizes into a Reflex entry in 1c, Memory gets bigger, and the next matching query is answered at zero model cost.
 
 Reflex does not decide — it **re-runs a route that the Cortex derived and approved.** No model, no inference. For every replay pass, four conditions are re-checked: Faculty health, permission against the origin stamp, confidence (HIGH or LOCKED), risk (HIGH or CRITICAL always bypass Reflex to Cortex). Failing any of them degrades to Cortex with a `REFLEX_DEGRADED` signal. Fast path — never a blind path.
 
