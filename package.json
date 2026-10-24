@@ -5,10 +5,12 @@
   "type": "module",
   "description": "CARL Stage 0 executable spine prototype.",
   "bin": {
+    "carl": "./bin/carl.js",
     "carltest": "./bin/carltest.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "carl": "node bin/carl.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/**/*.test.js tests/*.test.js"
   },
