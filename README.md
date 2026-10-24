@@ -1,6 +1,6 @@
 # CARL — Cognitive Autonomous Recursive Learning
 
-CARL is a control architecture for AI systems that need to reason persistently, act safely, and improve through operation rather than retraining. Don't see it as a new Agent, but rather a new modern harness to drive real work and deliver real cost savings. The **Cortex** is what is *aware* — and what *reasons*, *decides*, and *teams up with you*. That's where consciousness resides: the **Persona**, the **Orienting Loop**, the **Arcs**. It does not work. It *thinks and orchestrates everything*.
+CARL is a control architecture for AI systems that need to reason persistently, act safely, and improve through operation rather than retraining. Don't see it as a new Agent, but rather a new modern harness to drive real work and deliver real cost savings. **Its first goal is communication and organization of ideas and Arcs** — that's the core, and everything else (the tool layers, Reflex, orchestration, dark transit) is built around it. The **Cortex** is what is *aware* — and what *reasons*, *decides*, and *teams up with you*. That's where consciousness resides: the **Persona**, the **Orienting Loop**, the **Arcs**. It does not work. It *thinks and orchestrates everything*.
 
 ---
 
