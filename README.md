@@ -190,27 +190,33 @@ One claim, from the original spec, that ties it together: **the Cortex speaks, t
 
 ## 8. Building CARL
 
-Five stages. Each stage proves exactly one theoretical claim. **Minimum Viable CARL = Stages 0 + 1 + 2.** Stages 3–5 extend beyond MVC.
+**Minimum Viable CARL = a bare Cortex you can talk to.** That's it for step 0: the reasoning loop, the Persona, the operator talking to it directly. No Nervous System, no Faculty, no Arc store, no Reflex, no gate — none of that is part of MVC. The whole architecture in this document builds out from there, and those builds are ordered below. (If a claim in §1–§3 needs to be proven, MVC alone covers the decision principle. Everything else needs at least Stage 1.)
 
-Full detail (claims, scope, falsification, proof-of-life) now lives in [`docs/build-stages.md`](docs/build-stages.md). One line per stage here:
+**Stage map (what's being built, in order):**
 
-- **Stage 0 — The Spine.** Typed routing, authority propagation, and event-driven coordination are maintained with zero direct bus access. The Arc opens with a budget and the Reflex path is opened up (empty, no-op).
-- **Stage 1 — Confirmed Intent.** Single-wildcard ambiguity is detected, pushed back, confirmed before routing; irreversible is proposed before acting.
-- **Stage 2 — The Learning Loop.** Confirmed resolutions solidify into Reflex routes, with identity-scoped confidence and decay; LLM call count on repeated intents measurably drops. This is where the cost curve bends: (token called) ÷ (quota tokens in the wallet), or a²/a³/a⁴ tag on the Arc.
-- **Stage 3 — Continuous Entity.** Concurrent Arc processing: short tasks finish quickly while long-running Arc A advances independently, and results go out the instant they're ready.
-- **Stage 4 — Self-Optimization.** Cost-performance tuning of four named thresholds, inside a compiled safety floor, driven by Resolution Records.
-- **Stage 5 — Dark Transit.** Data moves through the architecture and the model never reads it.
+| Stage | Name | What it adds |
+|---|---|---|
+| 0 | **Bare Cortex** | The operator talks to the model directly. The reasoning loop works. The Persona is present. No Nervous System, no Faculty, no storage layer yet. |
+| 1 | **Confirmed Intent** | Single-wildcard ambiguity is caught and asked before acting. Irreversible actions are proposed before executing. The rejection path exists from here on. |
+| 2 | **Learning Loop** | The reflex pathway is opened up (empty). Operator confirmations crystallize into Memory 1c, and re-queries replay at zero model call cost. This is where the cost curve bends. |
+| 3 | **Continuous Entity** | Concurrent Arcs: short tasks finish while long-running ones advance independently. Results ship as soon as they become available. |
+| 4 | **Self-Optimization** | Cost-performance tuning of four named thresholds with a compiled safety floor, driven by Resolution Records. |
+| 5 | **Dark Transit** | Data moves through the architecture and the model never reads it. |
 
-Beyond stages: **Phase A** hardens Synapse transport (zero Faculty changes); **Phase B** compiles Nervous System + Immune System + Cortex to Rust (Faculties stay TypeScript forever); **Phase C** is a full rollout of all Faculty categories, with the System Evolution Boundary under a 13-step lifecycle, and the Optimization Pass on schedule.
+**Phase A** hardens Synapse transport (zero Faculty code changes). **Phase B** compiles Nervous System + Immune System + Cortex to Rust (Faculties stay TypeScript). **Phase C** is full Faculty rollout + System Evolution Boundary (13-step lifecycle) + Optimization Pass on schedule.
 
-| The stack | Prototype | Production |
+Full detail (claims, scope, falsification, proof-of-life) lives in [`docs/build-stages.md`](docs/build-stages.md).
+
+### The stack
+
+| Component | Prototype | Production |
 |---|---|---|
 | Runtime | Bun | Bun (Faculties) + Rust (core) |
 | Language | TypeScript | TypeScript (Faculties) + Rust (core) |
 | Bus | Node EventEmitter through Synapse | Compiled typed channels via Synapse |
 | Schema validation | Zod | Rust (comptime-style strict types) |
-| Memory 1b / 1a / 1c | In-process hash map / Append-only hash-chained file / LevelDB or SQLite | std HashMap / Hash-chained file + archive / abstracted K/V |
-| Semantic Index | Local vector store (LanceDB, FAISS) over 1a + 1c keys | Abstracted vector index |
+| Memory 1a / 1b / 1c | Append-only hash-chained file / In-process hash map / LevelDB or SQLite | Hash-chained file + archive / std HashMap / abstracted K/V |
+| Semantic index | Local vector store (LanceDB, FAISS) over 1a + 1c keys | Abstracted vector index |
 | Channel / LLM | Telegram (Grammy) / Vercel AI SDK | Same |
 
 ---
