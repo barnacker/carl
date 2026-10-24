@@ -190,18 +190,19 @@ One claim, from the original spec, that ties it together: **the Cortex speaks, t
 
 ## 8. Building CARL
 
-**Minimum Viable CARL = a bare Cortex you can talk to.** That's it for step 0: the reasoning loop, the Persona, the operator talking to it directly. No Nervous System, no Faculty, no Arc store, no Reflex, no gate — none of that is part of MVC. The whole architecture in this document builds out from there, and those builds are ordered below. (If a claim in §1–§3 needs to be proven, MVC alone covers the decision principle. Everything else needs at least Stage 1.)
+**Minimum Viable CARL = talking to a model directly.** That's step 0: one input, one output, operator → model, model → operator. No bus, no gate, no loop, no state. Just the raw call. The whole architecture in this document builds out from there, and the builds are ordered below. (If a claim in §1–§3 needs to be proven, MVC alone covers the decision principle. Everything else needs at least Stage 1.)
 
 **Stage map (what's being built, in order):**
 
 | Stage | Name | What it adds |
 |---|---|---|
-| 0 | **Bare Cortex** | The operator talks to the model directly. The reasoning loop works. The Persona is present. No Nervous System, no Faculty, no storage layer yet. |
-| 1 | **Confirmed Intent** | Single-wildcard ambiguity is caught and asked before acting. Irreversible actions are proposed before executing. The rejection path exists from here on. |
-| 2 | **Learning Loop** | The Reflex path opens up (empty). Operator confirmations crystallize into Memory 1c, and re-queries replay at zero model call cost. This is where the cost curve bends. |
-| 3 | **Continuous Entity** | Concurrent Arcs: short tasks finish while long-running ones advance independently. Results ship as soon as they become available. |
-| 4 | **Self-Optimization** | Cost-performance tuning of four named thresholds with a compiled safety floor, driven by Resolution Records. |
-| 5 | **Dark Transit** | Data moves through the architecture and the model never reads it. |
+| 0 | **Bare Model** | Input → model → output. Nothing else. No loop, no state, no retention. |
+| 1 | **Cortex** | Reasoning loop + Persona. Multi-step reasoning. |
+| 2 | **Confirmed Intent** | Single-wildcard ambiguities are caught and asked before acting. Irreversibles are proposed before executing. Rejection path exists from here on. |
+| 3 | **Learning Loop** | Reflex path is opened up (empty). Operator confirmations crystallize into Memory 1c, and re-queries replay at zero model call cost. This is where the cost curve bends. |
+| 4 | **Continuous Entity** | Concurrent Arcs: short tasks finish while long-running ones advance independently. Results ship as soon as they become available. |
+| 5 | **Self-Optimization** | Cost-performance tuning of four named thresholds with a compiled safety floor, driven by Resolution Records. |
+| 6 | **Dark Transit** | Data moves through the architecture and the model never reads it. |
 
 **Phase A** hardens Synapse transport (zero Faculty code changes). **Phase B** compiles Nervous System + Immune System + Cortex to Rust (Faculties stay TypeScript). **Phase C** is full Faculty rollout + System Evolution Boundary (13-step lifecycle) + Optimization Pass on schedule.
 
