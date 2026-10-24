@@ -200,7 +200,7 @@ One claim, from the original spec, that ties it together: **the Cortex speaks, t
 | 1 | **Web Interface** | A web frontend the operator talks to the Cortex through. Browse, type, see the reply. Still one brain, one model, one reply. |
 | 2 | **File Faculty** | The first real Faculty: read/write on the local disk. Arc-less for now — the model calls it directly. |
 | 3 | **Web Faculty** | The second Faculty: web crawl. Still no Arc system: the model calls it directly when asked. |
-| 4 | **Arc System** | Because there are tools to call, Arcs get tracked. Orienting loop (which Arc advances this tick), Arc store (goal, budget, state, shape of intent), 4-choice arbitration (defer / complete / queue / merge), budget enforcement, and Reflex path opens up (empty). Cost curve bends here. |
+| 4 | **Arc System** | Because there are tools to call, Arcs get tracked. Orienting loop (which Arc advances this tick), Arc store (goal, budget, state, shape of intent), 4-choice arbitration (defer / complete / queue / merge), budget enforcement. |
 | 5 | **Continuous Entity** | Concurrent Arc processing: short tasks finish while long-running ones advance independently. Results ship the moment they're ready. |
 | 6 | **Self-Optimization** | Cost-performance tuning of four named thresholds with a compiled safety floor, driven by Resolution Records. |
 | 7 | **Dark Transit** | Data moves through the architecture and the model never reads it. |
