@@ -4,11 +4,19 @@
   const SYSTEM_PROMPT = 'You are the response faculty for CARL. Respond concisely.';
   const SESSION_KEY = 'carl.web-ui.v1';
 
-  type Msg = { kind: 'user' | 'assistant' | 'system'; text: string; done?: boolean };
+  type Msg = {
+    kind: 'user' | 'assistant' | 'system';
+    text: string;
+    reasoningText?: string;
+    contentText?: string;
+    done?: boolean;
+  };
 
   let history = $state<Msg[]>([]);
   let input = $state('');
   let sending = $state(false);
+  let streaming = $state(false);
+  let lampState = $state<'idle' | 'posting' | 'receiving'>('idle');
   let controller: AbortController | null = null;
   let lastFirstByte: number | null = $state(null);
   let lastLastByte: number | null = $state(null);
@@ -23,14 +31,44 @@
     return ms === null ? '—' : new Date(ms).toISOString().split('T')[1];
   }
 
-  function pushAssistantToken(payload: string) {
+  function pushAssistantToken(
+    frame: { choices?: Array<{ delta?: { role?: string; content?: string; reasoning?: string } }> } | undefined,
+    fallback: string,
+  ) {
     if (lastFirstByte === null) lastFirstByte = Date.now();
+    const delta = frame?.choices?.[0]?.delta;
+    const reasoningPiece = delta?.reasoning;
+    const contentPiece = delta?.content;
+    // Role-marker-only frames append nothing; if nothing lands at all (e.g. the
+    // wire sent a bare non-JSON token) keep the legacy behaviour: append verbatim
+    // to the Content lane so no token is dropped.
+    const useFallback =
+      reasoningPiece === undefined && contentPiece === undefined && fallback.length > 0;
+    streaming = true;
     const lastIdx = history.length - 1;
     if (lastIdx < 0) return;
     const cur = history[lastIdx];
     if (!cur || cur.kind !== 'assistant') return;
+    const reasoning =
+      reasoningPiece !== undefined && reasoningPiece.length > 0
+        ? reasoningPiece
+        : useFallback
+          ? fallback
+          : '';
+    const content =
+      contentPiece !== undefined && contentPiece.length > 0
+        ? contentPiece
+        : useFallback
+          ? fallback
+          : '';
+    if (reasoning === '' && content === '') return;
     const next = history.slice();
-    next[lastIdx] = { ...cur, text: cur.text + payload };
+    next[lastIdx] = {
+      ...cur,
+      text: cur.text + reasoning + content,
+      reasoningText: (cur.reasoningText ?? '') + reasoning,
+      contentText: (cur.contentText ?? '') + content,
+    };
     history = next;
     setTimeout(scrollToBottom, 0);
   }
@@ -87,6 +125,7 @@
     if (text.length === 0 || sending) return;
     input = '';
     sending = true;
+    lampState = 'posting';
     lastFirstByte = null;
     lastLastByte = null;
     inputEl?.focus();
@@ -117,7 +156,10 @@
 
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+          lampState = 'idle';
+          break;
+        }
         buf += decoder.decode(value, { stream: true });
         let sep;
         while ((sep = buf.indexOf('\n\n')) !== -1) {
@@ -127,15 +169,35 @@
             const t = line.trim();
             if (!t.startsWith('data:')) continue;
             const payload = t.slice(5).trim();
-            if (payload === '[DONE]') continue;
-            pushAssistantToken(payload);
+            if (payload === '[DONE]') {
+              lampState = 'idle';
+              continue;
+            }
+            let parsed: {
+              choices?: Array<{ delta?: { role?: string; content?: string; reasoning?: string } }>;
+            } | undefined;
+            try {
+              parsed = JSON.parse(payload);
+            } catch {
+              parsed = undefined;
+            }
+            pushAssistantToken(parsed, payload);
+            if (
+              lampState === 'posting' &&
+              ((typeof parsed?.choices?.[0]?.delta?.reasoning === 'string' && parsed.choices[0].delta.reasoning !== '') ||
+               (typeof parsed?.choices?.[0]?.delta?.content === 'string' && parsed.choices[0].delta.content !== ''))
+            ) {
+              lampState = 'receiving';
+            }
             got = true;
           }
         }
       }
       markAssistantDone();
+      streaming = false;
       if (!got) pushSystemAndSave('stream ended with no tokens');
     } catch (err) {
+      lampState = 'idle';
       const message =
         err instanceof DOMException && err.name === 'AbortError'
           ? 'aborted'
@@ -146,6 +208,7 @@
       markAssistantDone();
     } finally {
       sending = false;
+      streaming = false;
       controller = null;
       setTimeout(scrollToBottom, 0);
     }
@@ -160,6 +223,15 @@
   <header class="head">
     <span class="head-title">CARL — web UI v1</span>
     <span class="head-meta">
+      <span
+        class="lamp lamp-{lampState}"
+        role="button"
+        aria-live="polite"
+        tabindex="0"
+        title={lampState.toUpperCase()}
+      >
+        {lampState.toUpperCase()}
+      </span>
       <span class="meta-line">
         <span class="meta-k">harness</span>
         <span class="meta-v">localhost:3000</span>
@@ -178,7 +250,20 @@
       {#each history as m, i (i)}
         <div class="row {m.kind}">
           <span class="who">{m.kind === 'user' ? 'you' : m.kind === 'system' ? 'harness' : 'carl'}</span>
-          <pre class="bubble {m.kind}">{m.text}{m.kind === 'assistant' && !m.done ? '▌' : ''}</pre>
+          {#if m.kind === 'assistant'}
+            <div class="reply-boxes">
+              <div class="box reasoning">
+                <span class="box-title">Reasoning</span>
+                <pre class="box-body">{m.reasoningText ?? ''}{!m.done ? '▌' : ''}</pre>
+              </div>
+              <div class="box content">
+                <span class="box-title">Content</span>
+                <pre class="box-body">{m.contentText ?? ''}{!m.done ? '▌' : ''}</pre>
+              </div>
+            </div>
+          {:else}
+            <pre class="bubble {m.kind}">{m.text}</pre>
+          {/if}
         </div>
       {/each}
     {/if}
@@ -258,6 +343,31 @@
   .meta-v {
     color: var(--ink-2);
   }
+  .lamp {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e5484d;
+    font-size: 0;
+    color: transparent;
+    outline: none;
+    flex-shrink: 0;
+  }
+  .lamp-idle {
+    background-color: #e5484d;
+  }
+  .lamp-posting {
+    background-color: #d29922;
+  }
+  .lamp-receiving {
+    background-color: #3fb950;
+  }
+  .lamp:focus-visible,
+  .lamp:hover {
+    font-size: 9px;
+    color: var(--ink-3);
+  }
   .log {
     flex: 1;
     overflow: auto;
@@ -313,9 +423,52 @@
     border-color: var(--line-2);
     color: var(--ink);
   }
-  .assistant .bubble {
+  .assistant {
+    flex: 1;
+    min-width: 0;
+  }
+  .assistant .reply-boxes {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    align-items: flex-start;
+  }
+  @media (max-width: 719.98px) {
+    .assistant .reply-boxes {
+      flex-direction: column;
+    }
+  }
+  .box {
+    flex: 1;
+    min-width: 0;
+    border-radius: 8px;
     background: var(--panel-2);
-    border-color: var(--line);
+    border: 1px solid var(--line);
+  }
+  .box.reasoning {
+    border-left: 2px solid #e5484d;
+  }
+  .box.content {
+    border-left: 2px solid #3fb950;
+  }
+  .box-title {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 6px 12px 2px;
+  }
+  .box-body {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0;
+    padding: 2px 12px 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
     color: var(--ink);
   }
   .system .bubble {
