@@ -19,12 +19,18 @@ function main() {
   const question = args[1]
 
   const { chat } = createVllmModel(resolveModelConfig(process.env))
-  chat([
-    { role: 'system', content: 'You are the cortex result for CARL. Respond concisely.' },
-    { role: 'user', content: question },
-  ]).then(
-    (reply) => {
-      process.stdout.write(`${reply}\n`)
+  // Live stack: each SSE token hits stdout the moment it arrives, while the
+  // model is still generating. The resolved string is NOT reprinted — the
+  // tokens on the wire ARE the output, plus a trailing newline.
+  chat(
+    [
+      { role: 'system', content: 'You are the cortex result for CARL. Respond concisely.' },
+      { role: 'user', content: question },
+    ],
+    { onToken: (tok) => process.stdout.write(tok) },
+  ).then(
+    () => {
+      process.stdout.write('\n')
       process.exit(0)
     },
     (error) => {

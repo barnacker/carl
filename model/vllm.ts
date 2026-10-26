@@ -24,13 +24,68 @@ export interface VllmMessages {
   content: string
 }
 
+export interface VllmChatOptions {
+  /**
+   * Live-stack pipe: called immediately as each SSE chunk carrying
+   * choices[0].delta.content or choices[0].delta.reasoning arrives, in
+   * arrival order. Absent (or throwing) callbacks must not affect the
+   * resolved value.
+   */
+  onToken?: (tok: string) => void
+}
+
 export interface VllmModel {
-  chat(messages: VllmMessages[]): Promise<string>
+  chat(messages: VllmMessages[], options?: VllmChatOptions): Promise<string>
+}
+
+async function collectStreamText(stream: AsyncIterable<unknown>, onToken?: (tok: string) => void): Promise<string> {
+  let fullText = ''
+  let buffer = ''
+  const decoder = new TextDecoder('utf8')
+  for await (const raw of stream) {
+    buffer += typeof raw === 'string' ? raw : decoder.decode(new Uint8Array(raw as Uint8Array))
+    let sepIndex: number
+    // SSE frames are separated by blank lines; split on \n\n (vLLM/OpenAI frames end in \n\n).
+    while ((sepIndex = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, sepIndex)
+      buffer = buffer.slice(sepIndex + 2)
+      for (const line of frame.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data:')) continue
+        const payload = trimmed.slice(5).trim()
+        if (payload === '[DONE]') {
+          return fullText
+        }
+        let parsed: { choices?: ReadonlyArray<{ delta?: { content?: unknown; reasoning?: unknown } }> }
+        try {
+          parsed = JSON.parse(payload)
+        } catch {
+          continue
+        }
+        const delta = parsed.choices?.[0]?.delta
+        // Live pipe: every token the model emits goes to the terminal in
+        // arrival order — answers (delta.content) and reasoning
+        // (delta.reasoning) both, and the resolved text is exactly what the
+        // pipe showed.
+        if (delta !== undefined) {
+          for (const key of ['content', 'reasoning'] as const) {
+            const piece = delta[key]
+            if (typeof piece === 'string' && piece.length > 0) {
+              if (onToken !== undefined) onToken(piece)
+              fullText += piece
+            }
+          }
+        }
+      }
+    }
+  }
+  // Stream ended without an explicit [DONE] — settle with whatever accumulated.
+  return fullText
 }
 
 export function createVllmModel(config: VllmModelConfig, fetchImpl: typeof fetch = fetch): VllmModel {
   return {
-    async chat(messages) {
+    async chat(messages, options: VllmChatOptions = {}) {
       if (config.apiKey === undefined || config.apiKey === '') {
         if (config.noAuth !== true) {
           throw new Error(
@@ -43,6 +98,7 @@ export function createVllmModel(config: VllmModelConfig, fetchImpl: typeof fetch
       const endpoint = `${config.baseUrl.replace(/\/$/, '')}/v1/chat/completions`
       const headers: Record<string, string> = {
         'content-type': 'application/json',
+        accept: 'text/event-stream',
       }
       if (config.apiKey !== undefined && config.apiKey !== '') {
         headers.authorization = `Bearer ${config.apiKey}`
@@ -53,7 +109,7 @@ export function createVllmModel(config: VllmModelConfig, fetchImpl: typeof fetch
         body: JSON.stringify({
           model: config.model,
           messages,
-          stream: false,
+          stream: true,
         }),
       })
 
@@ -61,11 +117,13 @@ export function createVllmModel(config: VllmModelConfig, fetchImpl: typeof fetch
         const text = await response.text()
         throw new Error(`VLLM_HTTP_ERROR: HTTP ${response.status} ${text.slice(0, 500)}`)
       }
-
-      const json = await response.json()
-      const content = json?.choices?.[0]?.message?.content
-      if (typeof content !== 'string' || content.length === 0) {
-        throw new Error('VLLM_BAD_RESPONSE: missing choices[0].message.content')
+      const body = response.body
+      if (body === null) {
+        throw new Error('VLLM_BAD_RESPONSE: streamed response body is empty')
+      }
+      const content = await collectStreamText(body, options.onToken)
+      if (content.length === 0) {
+        throw new Error('VLLM_BAD_RESPONSE: streamed response had no delta.content or delta.reasoning')
       }
       return content
     },

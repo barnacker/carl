@@ -47,10 +47,15 @@ async function invokeCurrentHermesModel(invocation) {
   }
 
   const { chat } = createVllmModel(resolveModelConfig(process.env))
-  const content = await chat([
-    { role: 'system', content: 'You are the current model faculty inside CARL Alpha MVC 0.03. Respond concisely as a faculty result to Cortex.' },
-    { role: 'user', content: invocation.prompt },
-  ])
+  // Live stack: the harness model-faculty path pipes tokens out as they
+  // arrive (stderr so the JSON result report on stdout stays clean).
+  const content = await chat(
+    [
+      { role: 'system', content: 'You are the current model faculty inside CARL Alpha MVC 0.03. Respond concisely as a faculty result to Cortex.' },
+      { role: 'user', content: invocation.prompt },
+    ],
+    { onToken: (tok) => process.stderr.write(tok) },
+  )
   return { content }
 }
 
