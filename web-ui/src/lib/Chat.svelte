@@ -4,15 +4,9 @@
   const SYSTEM_PROMPT = 'You are the response faculty for CARL. Respond concisely.';
   const SESSION_KEY = 'carl.web-ui.v1';
 
-  type Msg = {
-    kind: 'user' | 'assistant' | 'system';
-    text: string;
-    reasoningText?: string;
-    contentText?: string;
-    done?: boolean;
-  };
-
-  let history = $state<Msg[]>([]);
+  let reasoningText = $state('');
+  let contentText = $state('');
+  let streamDone = $state(false);
   let input = $state('');
   let sending = $state(false);
   let streaming = $state(false);
@@ -20,105 +14,48 @@
   let controller: AbortController | null = null;
   let lastFirstByte: number | null = $state(null);
   let lastLastByte: number | null = $state(null);
-  let logEl: HTMLDivElement;
+  let reasoningEl: HTMLPreElement;
+  let contentEl: HTMLPreElement;
   let inputEl: HTMLInputElement;
 
-  function scrollToBottom() {
-    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  function scrollPanels() {
+    if (reasoningEl) reasoningEl.scrollTop = reasoningEl.scrollHeight;
+    if (contentEl) contentEl.scrollTop = contentEl.scrollHeight;
   }
 
   function formatTs(ms: number | null) {
     return ms === null ? '—' : new Date(ms).toISOString().split('T')[1];
   }
 
-  function pushAssistantToken(
-    frame: { choices?: Array<{ delta?: { role?: string; content?: string; reasoning?: string } }> } | undefined,
-    fallback: string,
-  ) {
+  function pushAssistantToken(lane: 'reasoning' | 'content', tok: string) {
     if (lastFirstByte === null) lastFirstByte = Date.now();
-    const delta = frame?.choices?.[0]?.delta;
-    const reasoningPiece = delta?.reasoning;
-    const contentPiece = delta?.content;
-    // Role-marker-only frames append nothing; if nothing lands at all (e.g. the
-    // wire sent a bare non-JSON token) keep the legacy behaviour: append verbatim
-    // to the Content lane so no token is dropped.
-    const useFallback =
-      reasoningPiece === undefined && contentPiece === undefined && fallback.length > 0;
+    if (lampState === 'posting' && tok.length > 0) lampState = 'receiving';
     streaming = true;
-    const lastIdx = history.length - 1;
-    if (lastIdx < 0) return;
-    const cur = history[lastIdx];
-    if (!cur || cur.kind !== 'assistant') return;
-    const reasoning =
-      reasoningPiece !== undefined && reasoningPiece.length > 0
-        ? reasoningPiece
-        : useFallback
-          ? fallback
-          : '';
-    const content =
-      contentPiece !== undefined && contentPiece.length > 0
-        ? contentPiece
-        : useFallback
-          ? fallback
-          : '';
-    if (reasoning === '' && content === '') return;
-    const next = history.slice();
-    next[lastIdx] = {
-      ...cur,
-      text: cur.text + reasoning + content,
-      reasoningText: (cur.reasoningText ?? '') + reasoning,
-      contentText: (cur.contentText ?? '') + content,
-    };
-    history = next;
-    setTimeout(scrollToBottom, 0);
+    if (tok.length === 0) return;
+    if (lane === 'reasoning') {
+      reasoningText += tok;
+      setTimeout(() => {
+        if (reasoningEl) reasoningEl.scrollTop = reasoningEl.scrollHeight;
+      }, 0);
+      return;
+    }
+    contentText += tok;
+    setTimeout(() => {
+      if (contentEl) contentEl.scrollTop = contentEl.scrollHeight;
+    }, 0);
   }
 
   function markAssistantDone() {
-    const lastIdx = history.length - 1;
-    if (lastIdx >= 0) {
-      const cur = history[lastIdx];
-      if (cur && cur.kind === 'assistant' && !cur.done) {
-        const next = history.slice();
-        next[lastIdx] = { ...cur, done: true };
-        history = next;
-      }
-    }
+    streamDone = true;
     if (lastLastByte === null) lastLastByte = Date.now();
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(history));
-    } catch {
-      // storage unavailable
-    }
-    setTimeout(scrollToBottom, 0);
+    setTimeout(scrollPanels, 0);
   }
 
-  function pushSystemAndSave(text: string) {
-    history.push({ kind: 'system', text, done: true });
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(history));
-    } catch {
-      // storage unavailable
-    }
-    setTimeout(scrollToBottom, 0);
-  }
-
-  function loadSession() {
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Msg[];
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        for (const m of parsed) history.push(m);
-      }
-    } catch {
-      // bad session
-    }
-  }
-
-  onMount(() => {
-    loadSession();
+  function focusInput() {
     setTimeout(() => inputEl?.focus(), 0);
-  });
+  }
+
+  onMount(focusInput);
 
   async function send() {
     const text = input.trim();
@@ -128,11 +65,9 @@
     lampState = 'posting';
     lastFirstByte = null;
     lastLastByte = null;
-    inputEl?.focus();
-
-    history.push({ kind: 'user', text, done: true });
-    history.push({ kind: 'assistant', text: '', done: false });
-    setTimeout(scrollToBottom, 0);
+    reasoningText = '';
+    contentText = '';
+    streamDone = false;
 
     controller = new AbortController();
     try {
@@ -173,21 +108,16 @@
               lampState = 'idle';
               continue;
             }
-            let parsed: {
-              choices?: Array<{ delta?: { role?: string; content?: string; reasoning?: string } }>;
-            } | undefined;
+            let parsed: { lane?: 'reasoning' | 'content'; tok?: string } | undefined;
             try {
               parsed = JSON.parse(payload);
             } catch {
               parsed = undefined;
             }
-            pushAssistantToken(parsed, payload);
-            if (
-              lampState === 'posting' &&
-              ((typeof parsed?.choices?.[0]?.delta?.reasoning === 'string' && parsed.choices[0].delta.reasoning !== '') ||
-               (typeof parsed?.choices?.[0]?.delta?.content === 'string' && parsed.choices[0].delta.content !== ''))
-            ) {
-              lampState = 'receiving';
+            if (parsed && (parsed.lane === 'reasoning' || parsed.lane === 'content') && typeof parsed.tok === 'string') {
+              pushAssistantToken(parsed.lane, parsed.tok);
+            } else {
+              pushAssistantToken('content', payload);
             }
             got = true;
           }
@@ -195,22 +125,15 @@
       }
       markAssistantDone();
       streaming = false;
-      if (!got) pushSystemAndSave('stream ended with no tokens');
     } catch (err) {
       lampState = 'idle';
-      const message =
-        err instanceof DOMException && err.name === 'AbortError'
-          ? 'aborted'
-          : err instanceof Error
-            ? err.message
-            : String(err);
-      pushSystemAndSave(message || 'stream failed');
       markAssistantDone();
     } finally {
       sending = false;
       streaming = false;
       controller = null;
-      setTimeout(scrollToBottom, 0);
+      setTimeout(scrollPanels, 0);
+      focusInput();
     }
   }
 
@@ -221,7 +144,7 @@
 
 <div class="col">
   <header class="head">
-    <span class="head-title">CARL — web UI v1</span>
+    <span class="head-title">CARL — WEB UI</span>
     <span class="head-meta">
       <span
         class="lamp lamp-{lampState}"
@@ -242,32 +165,6 @@
       </span>
     </span>
   </header>
-
-  <div class="log" bind:this={logEl}>
-    {#if history.length === 0}
-      <p class="hint">Type a prompt below — tokens stream in as the model emits them.</p>
-    {:else}
-      {#each history as m, i (i)}
-        <div class="row {m.kind}">
-          <span class="who">{m.kind === 'user' ? 'you' : m.kind === 'system' ? 'harness' : 'carl'}</span>
-          {#if m.kind === 'assistant'}
-            <div class="reply-boxes">
-              <div class="box reasoning">
-                <span class="box-title">Reasoning</span>
-                <pre class="box-body">{m.reasoningText ?? ''}{!m.done ? '▌' : ''}</pre>
-              </div>
-              <div class="box content">
-                <span class="box-title">Content</span>
-                <pre class="box-body">{m.contentText ?? ''}{!m.done ? '▌' : ''}</pre>
-              </div>
-            </div>
-          {:else}
-            <pre class="bubble {m.kind}">{m.text}</pre>
-          {/if}
-        </div>
-      {/each}
-    {/if}
-  </div>
 
   <div class="input-row">
     <input
@@ -290,6 +187,16 @@
       <button class="send" onclick={() => send()} disabled={input.trim().length === 0}>Send</button>
     {/if}
   </div>
+
+  <section class="panel reasoning-panel">
+    <span class="panel-title">Reasoning</span>
+    <pre class="panel-body" bind:this={reasoningEl}>{reasoningText}{!streamDone && streaming ? '▌' : ''}</pre>
+  </section>
+
+  <section class="panel content-panel">
+    <span class="panel-title">Content</span>
+    <pre class="panel-body" bind:this={contentEl}>{contentText}{!streamDone && streaming ? '▌' : ''}</pre>
+  </section>
 
   <footer class="foot">
     <span class="foot-k">firstByte</span>
@@ -368,100 +275,35 @@
     font-size: 9px;
     color: var(--ink-3);
   }
-  .log {
-    flex: 1;
-    overflow: auto;
-    padding: 4px 6px;
-    border: 1px solid var(--line);
-    background: var(--panel);
-    border-radius: 8px;
+  .panel {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    min-height: 0;
+    max-height: 40vh;
+    background: var(--panel);
+    border-radius: 8px;
+    border-left: 2px solid #1d2a38;
   }
-  .hint {
-    color: var(--ink-3);
-    margin: 0;
-    font-size: 13px;
-    padding: 8px 4px;
+  .panel.reasoning-panel {
+    border-left-color: #e5484d;
   }
-  .row {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
+  .panel.content-panel {
+    border-left-color: #3fb950;
   }
-  .row.user {
-    justify-content: flex-end;
-  }
-  .row.user .who {
-    display: none;
-  }
-  .who {
+  .panel-title {
+    position: absolute;
+    top: -8px;
+    left: 12px;
     font-family: var(--mono);
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-3);
-    padding-top: 6px;
-    min-width: 56px;
-    flex-shrink: 0;
+    background: var(--bg);
+    padding: 0 6px;
   }
-  .bubble {
-    font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1.5;
-    margin: 0;
-    padding: 8px 12px;
-    border-radius: 8px;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-width: 78%;
-    border: 1px solid var(--line);
-  }
-  .user .bubble {
-    background: var(--user);
-    border-color: var(--line-2);
-    color: var(--ink);
-  }
-  .assistant {
-    flex: 1;
-    min-width: 0;
-  }
-  .assistant .reply-boxes {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-    min-width: 0;
-    align-items: flex-start;
-  }
-  @media (max-width: 719.98px) {
-    .assistant .reply-boxes {
-      flex-direction: column;
-    }
-  }
-  .box {
-    flex: 1;
-    min-width: 0;
-    border-radius: 8px;
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-  }
-  .box.reasoning {
-    border-left: 2px solid #e5484d;
-  }
-  .box.content {
-    border-left: 2px solid #3fb950;
-  }
-  .box-title {
-    display: block;
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--ink-3);
-    padding: 6px 12px 2px;
-  }
-  .box-body {
+  .panel-body {
     font-family: var(--mono);
     font-size: 13px;
     line-height: 1.5;
@@ -470,12 +312,8 @@
     white-space: pre-wrap;
     word-break: break-word;
     color: var(--ink);
-  }
-  .system .bubble {
-    background: transparent;
-    border: 1px dashed var(--line-2);
-    color: var(--accent-2);
-    font-size: 12px;
+    overflow-y: auto;
+    min-height: 40px;
   }
   .input-row {
     display: flex;

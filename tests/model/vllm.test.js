@@ -225,3 +225,36 @@ test('vllm model resolves config from env (baseUrl + model only — no auth fiel
     model: 'Qwen/Qwen3.8-27B-FP8',
   })
 })
+
+test('vllm model tags each streamed token with its lane (reasoning vs content) in order', async () => {
+  const [fakeFetch, done] = sseFetch([
+    JSON.stringify({ choices: [{ delta: { reasoning: 'First thought' } }] }),
+    JSON.stringify({ choices: [{ delta: { reasoning: '— second half' } }] }),
+    JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] }),
+    JSON.stringify({ choices: [{ delta: { content: ' world' } }] }),
+  ])
+
+  const events = []
+  const { chat } = createVllmModel(
+    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8' },
+    fakeFetch,
+  )
+  const replyPromise = chat([{ role: 'user', content: 'ping' }], {
+    onToken: (tok, lane) => {
+      events.push({ tok, lane })
+    },
+  })
+
+  await done
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(events, [
+    { tok: 'First thought', lane: 'reasoning' },
+    { tok: '— second half', lane: 'reasoning' },
+    { tok: 'Hello', lane: 'content' },
+    { tok: ' world', lane: 'content' },
+  ])
+
+  const reply = await replyPromise
+  assert.equal(reply, 'First thought— second halfHello world')
+})

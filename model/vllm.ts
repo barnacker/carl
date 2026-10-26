@@ -27,14 +27,17 @@ export interface VllmChatOptions {
    * arrival order. Absent (or throwing) callbacks must not affect the
    * resolved value.
    */
-  onToken?: (tok: string) => void
+  onToken?: (tok: string, lane: 'reasoning' | 'content') => void
 }
 
 export interface VllmModel {
   chat(messages: VllmMessages[], options?: VllmChatOptions): Promise<string>
 }
 
-async function collectStreamText(stream: AsyncIterable<unknown>, onToken?: (tok: string) => void): Promise<string> {
+async function collectStreamText(
+  stream: AsyncIterable<unknown>,
+  onToken?: (tok: string, lane: 'reasoning' | 'content') => void,
+): Promise<string> {
   let fullText = ''
   let buffer = ''
   const decoder = new TextDecoder('utf8')
@@ -59,15 +62,16 @@ async function collectStreamText(stream: AsyncIterable<unknown>, onToken?: (tok:
           continue
         }
         const delta = parsed.choices?.[0]?.delta
-        // Live pipe: every token the model emits goes to the terminal in
-        // arrival order — answers (delta.content) and reasoning
-        // (delta.reasoning) both, and the resolved text is exactly what the
-        // pipe showed.
+        // Live pipe: every token the model emits goes to the callback in
+        // arrival order, tagged with its lane — answers (delta.content)
+        // arrive as 'content', reasoning (delta.reasoning) as 'reasoning'.
         if (delta !== undefined) {
-          for (const key of ['content', 'reasoning'] as const) {
-            const piece = delta[key]
+          for (const [key, piece] of [
+            ['content', delta.content],
+            ['reasoning', delta.reasoning],
+          ] as const) {
             if (typeof piece === 'string' && piece.length > 0) {
-              if (onToken !== undefined) onToken(piece)
+              if (onToken !== undefined) onToken(piece, key)
               fullText += piece
             }
           }

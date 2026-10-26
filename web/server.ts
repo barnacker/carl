@@ -160,9 +160,9 @@ export function createWebServer(options: {
         })
         res.flushHeaders()
 
-        const send = (data: string) => {
+        const send = (data: string, lane: 'reasoning' | 'content') => {
           if (closed) return
-          const buf = Buffer.from(`data: ${data}\n\n`, 'utf8')
+          const buf = Buffer.from(`data: ${JSON.stringify({ lane, tok: data })}\n\n`, 'utf8')
           writes.push({ at: Date.now(), bytes: buf.length })
           res.write(buf)
         }
@@ -177,10 +177,12 @@ export function createWebServer(options: {
         )
 
         chat(messages, {
-          onToken: (tok) => send(tok),
+          onToken: (tok, lane) => send(tok, lane),
         })
           .then(() => {
-            send('[DONE]')
+            const buf = Buffer.from('data: [DONE]\n\n', 'utf8')
+            writes.push({ at: Date.now(), bytes: buf.length })
+            res.write(buf)
             end()
             const first = writes.length > 0 ? (writes[0] as { at: number }).at : 0
             const last = writes.length > 0 ? (writes[writes.length - 1] as { at: number }).at : 0
@@ -191,8 +193,12 @@ export function createWebServer(options: {
           })
           .catch((err: Error) => {
             log(`web-ui stream error: ${err.message}`)
-            send(err.message)
-            send('[DONE]')
+            const errBuf = Buffer.from(`data: ${err.message}\n\n`, 'utf8')
+            writes.push({ at: Date.now(), bytes: errBuf.length })
+            res.write(errBuf)
+            const doneBuf = Buffer.from('data: [DONE]\n\n', 'utf8')
+            writes.push({ at: Date.now(), bytes: doneBuf.length })
+            res.write(doneBuf)
             end()
           })
 
