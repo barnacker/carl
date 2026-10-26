@@ -10,7 +10,7 @@ export const DEFAULT_VLLM_MODEL = 'Qwen/Qwen3.8-27B-FP8'
 
 export function resolveModelConfig(env: Record<string, string | undefined> = {}): VllmModelConfig {
   const apiKey = (env.CARL_VLLM_API_KEY ?? env.OPENAI_API_KEY) || undefined
-  const noAuth = env.CARL_VLLM_NO_AUTH === '1' || /\*\*\*/.test(env.CARL_VLLM_NO_AUTH ?? '')
+  const noAuth = env.CARL_VLLM_NO_AUTH === '1'
   return {
     baseUrl: env.CARL_VLLM_BASE_URL || DEFAULT_VLLM_BASE_URL,
     model: env.CARL_VLLM_MODEL || DEFAULT_VLLM_MODEL,
