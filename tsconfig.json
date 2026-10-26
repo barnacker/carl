@@ -20,7 +20,8 @@
     "nervous-system/**/*.ts",
     "cortex/**/*.ts",
     "faculties/**/*.ts",
-    "harness/**/*.ts"
+    "harness/**/*.ts",
+    "web/**/*.ts"
   ],
   "exclude": [
     "dist",
