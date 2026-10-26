@@ -1,8 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  const SYSTEM_PROMPT = 'You are the response faculty for CARL. Respond concisely.';
+  // Default values for the visible, editable parameter fields below — not
+  // wire constants: every byte sent to vLLM comes from a field on this page.
+  const DEFAULT_MODEL = 'Qwen/Qwen3.8-27B-FP8';
+  const DEFAULT_SYSTEM_PROMPT = 'You are the response faculty for CARL. Respond concisely.';
   const SESSION_KEY = 'carl.web-ui.v1';
+
+  type Role = 'system' | 'user' | 'assistant';
 
   let reasoningText = $state('');
   let contentText = $state('');
@@ -17,6 +22,24 @@
   let reasoningEl: HTMLPreElement;
   let contentEl: HTMLPreElement;
   let inputEl: HTMLInputElement;
+
+  // Visible, editable request parameters (everything sent to vLLM).
+  const DEFAULT_BASE_URL = 'http://10.240.232.32:8000';
+  let baseUrl = $state(DEFAULT_BASE_URL);
+  let model = $state(DEFAULT_MODEL);
+  let systemRole = $state<Role>('system');
+  let systemText = $state(DEFAULT_SYSTEM_PROMPT);
+  let userRole = $state<Role>('user');
+  let stream = $state(true);
+  let systemOpen = $state(false);
+  let temperature = $state('1.0');
+  let top_p = $state('1.0');
+  let max_tokens = $state('');
+  let stop = $state('');
+  let presence_penalty = $state('0.0');
+  let frequency_penalty = $state('0.0');
+  let seed = $state('');
+  let n = $state('');
 
   function scrollPanels() {
     if (reasoningEl) reasoningEl.scrollTop = reasoningEl.scrollHeight;
@@ -71,15 +94,41 @@
 
     controller = new AbortController();
     try {
+      const sysTrimmed = systemText.trim();
+      const messages: { role: Role; content: string }[] = [];
+      if (sysTrimmed.length > 0) {
+        messages.push({ role: systemRole, content: systemText });
+      }
+      messages.push({ role: userRole, content: text });
+
+      const body: Record<string, unknown> = {
+        model,
+        messages,
+        stream,
+      };
+      const bu = baseUrl.trim();
+      if (bu.length > 0) body.base_url = bu;
+      const t = parseFloat(temperature);
+      if (!Number.isNaN(t) && t > 0) body.temperature = t;
+      const tp = parseFloat(top_p);
+      if (!Number.isNaN(tp) && tp > 0) body.top_p = tp;
+      const mt = parseInt(max_tokens, 10);
+      if (!Number.isNaN(mt) && mt > 0) body.max_tokens = mt;
+      const stopTrimmed = stop.trim();
+      if (stopTrimmed.length > 0) body.stop = stopTrimmed.split(',').map((s) => s.trim());
+      const pp = parseFloat(presence_penalty);
+      if (!Number.isNaN(pp) && pp !== 0) body.presence_penalty = pp;
+      const fp = parseFloat(frequency_penalty);
+      if (!Number.isNaN(fp) && fp !== 0) body.frequency_penalty = fp;
+      const seedInt = parseInt(seed, 10);
+      if (seed.trim().length > 0 && Number.isInteger(seedInt) && seedInt >= 0) body.seed = seedInt;
+      const nInt = parseInt(n, 10);
+      if (n.trim().length > 0 && Number.isInteger(nInt) && nInt >= 1) body.n = nInt;
+
       const res = await fetch('/v1/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: text },
-          ],
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -137,7 +186,7 @@
     }
   }
 
-  function stop() {
+  function abortStream() {
     controller?.abort();
   }
 </script>
@@ -181,12 +230,39 @@
         }
       }}
     />
+    <select class="role-select" bind:value={userRole} aria-label="user message role">
+      <option value="user">user</option>
+      <option value="system">system</option>
+      <option value="assistant">assistant</option>
+    </select>
     {#if sending}
-      <button class="stop" onclick={stop}>Stop</button>
+      <button class="stop" onclick={abortStream}>Stop</button>
     {:else}
       <button class="send" onclick={() => send()} disabled={input.trim().length === 0}>Send</button>
     {/if}
   </div>
+
+  <section class="panel system-panel">
+    <button class="panel-toggle" onclick={() => (systemOpen = !systemOpen)} aria-expanded={systemOpen}>
+      <span class="panel-title">SYSTEM (optional — empty = no system message sent)</span>
+      <span class="toggle-mark">{systemOpen ? '−' : '+'}</span>
+    </button>
+    {#if systemOpen}
+      <div class="system-body">
+        <select class="role-select" bind:value={systemRole} aria-label="system message role">
+          <option value="system">system</option>
+          <option value="user">user</option>
+          <option value="assistant">assistant</option>
+        </select>
+        <textarea
+          class="system-textarea"
+          bind:value={systemText}
+          rows="3"
+          placeholder="(empty — no system message sent)"
+        ></textarea>
+      </div>
+    {/if}
+  </section>
 
   <section class="panel reasoning-panel">
     <span class="panel-title">Reasoning</span>
@@ -196,6 +272,60 @@
   <section class="panel content-panel">
     <span class="panel-title">Content</span>
     <pre class="panel-body" bind:this={contentEl}>{contentText}{!streamDone && streaming ? '▌' : ''}</pre>
+  </section>
+
+  <section class="panel params-panel">
+    <span class="panel-title">Parameters (vLLM /v1/chat/completions)</span>
+    <div class="params-body">
+      <label class="param-row">
+        <span class="param-label">base_url</span>
+        <input class="param-input" bind:value={baseUrl} type="text" autocomplete="off" spellcheck="false" placeholder="vLLM endpoint (empty → server default)" />
+      </label>
+      <label class="param-row">
+        <span class="param-label">model</span>
+        <input class="param-input" bind:value={model} type="text" autocomplete="off" />
+      </label>
+      <label class="param-row param-row-inline">
+        <span class="param-label">stream</span>
+        <input type="checkbox" bind:checked={stream} />
+      </label>
+      <label class="param-row">
+        <span class="param-label">temperature</span>
+        <input class="param-input" bind:value={temperature} type="number" step="0.1" />
+      </label>
+      <label class="param-row">
+        <span class="param-label">top_p</span>
+        <input class="param-input" bind:value={top_p} type="number" step="0.01" />
+      </label>
+      <label class="param-row">
+        <span class="param-label">max_tokens</span>
+        <input class="param-input" bind:value={max_tokens} type="number" placeholder="(empty → omit)" />
+      </label>
+      <label class="param-row">
+        <span class="param-label">stop</span>
+        <input class="param-input" bind:value={stop} type="text" autocomplete="off" placeholder="comma-separated (empty → omit)" />
+      </label>
+      <label class="param-row">
+        <span class="param-label">presence_penalty</span>
+        <input class="param-input" bind:value={presence_penalty} type="number" step="0.1" />
+      </label>
+      <label class="param-row">
+        <span class="param-label">frequency_penalty</span>
+        <input class="param-input" bind:value={frequency_penalty} type="number" step="0.1" />
+      </label>
+      <label class="param-row">
+        <span class="param-label">seed</span>
+        <input class="param-input" bind:value={seed} type="number" placeholder="(empty → omit)" />
+      </label>
+      <label class="param-row">
+        <span class="param-label">n</span>
+        <input class="param-input" bind:value={n} type="number" placeholder="(empty → omit)" />
+      </label>
+      <p class="wire-line">
+        <span class="param-label">wire</span>
+        content-type: application/json · accept: text/event-stream · auth: none
+      </p>
+    </div>
   </section>
 
   <footer class="foot">
@@ -378,5 +508,124 @@
   .foot-sep {
     color: var(--ink-3);
     opacity: 0.5;
+  }
+  .role-select {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0 10px;
+    color: var(--ink-2);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    flex-shrink: 0;
+  }
+  .role-select:focus {
+    border-color: var(--accent);
+  }
+  .system-panel {
+    border-left-color: #d29922;
+    padding-top: 10px;
+  }
+  .panel-toggle {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    outline: none;
+  }
+  .panel-toggle .panel-title {
+    position: static;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+  }
+  .toggle-mark {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .system-body {
+    display: flex;
+    gap: 8px;
+    padding: 8px 4px 2px;
+  }
+  .system-body .role-select {
+    flex-shrink: 0;
+  }
+  .system-textarea {
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.4;
+    outline: none;
+    resize: vertical;
+  }
+  .system-textarea:focus {
+    border-color: var(--accent);
+  }
+  .params-panel {
+    border-left-color: var(--accent);
+    max-height: none;
+    padding-top: 12px;
+  }
+  .params-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 12px 10px;
+  }
+  .param-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .param-row-inline {
+    align-items: center;
+  }
+  .param-label {
+    flex: 0 0 130px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .param-input {
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+  }
+  .param-input:focus {
+    border-color: var(--accent);
+  }
+  .param-row input[type='checkbox'] {
+    accent-color: var(--accent);
+  }
+  .wire-line {
+    margin: 6px 0 0;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-3);
+    letter-spacing: 0.04em;
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
   }
 </style>

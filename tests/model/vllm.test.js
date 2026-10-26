@@ -258,3 +258,58 @@ test('vllm model tags each streamed token with its lane (reasoning vs content) i
   const reply = await replyPromise
   assert.equal(reply, 'First thought— second halfHello world')
 })
+
+test('vllm model composes the body from params: keys present are sent, absent keys are omitted', async () => {
+  const calls = []
+  const fakeFetch = async (url, init) => {
+    calls.push({ url, init })
+    return sseResponse([{ content: 'pong' }])
+  }
+
+  const { chat } = createVllmModel(
+    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8' },
+    fakeFetch,
+  )
+  await chat([{ role: 'user', content: 'ping' }], {
+    params: { model: 'foo/model', temperature: 0.5 },
+  })
+
+  assert.equal(calls.length, 1)
+  const body = JSON.parse(calls[0].init.body)
+  // Present params win.
+  assert.equal(body.model, 'foo/model')
+  assert.equal(body.temperature, 0.5)
+  // `!= null` guards: absent params are not sent.
+  for (const key of ['top_p', 'max_tokens', 'stop', 'presence_penalty', 'frequency_penalty', 'seed', 'n']) {
+    assert.ok(!(key in body), `body must not contain ${key} when absent from params`)
+  }
+  assert.equal(body.stream, true)
+
+  // Full param set: every present key lands in the body.
+  calls.length = 0
+  await chat([{ role: 'user', content: 'ping' }], {
+    params: {
+      model: 'foo/model',
+      stream: false,
+      temperature: 0.1,
+      top_p: 0.9,
+      max_tokens: 42,
+      stop: ['A', 'B'],
+      presence_penalty: 0.3,
+      frequency_penalty: 0.2,
+      seed: 7,
+      n: 2,
+    },
+  })
+  const full = JSON.parse(calls[0].init.body)
+  assert.equal(full.model, 'foo/model')
+  assert.equal(full.stream, false)
+  assert.equal(full.temperature, 0.1)
+  assert.equal(full.top_p, 0.9)
+  assert.equal(full.max_tokens, 42)
+  assert.deepEqual(full.stop, ['A', 'B'])
+  assert.equal(full.presence_penalty, 0.3)
+  assert.equal(full.frequency_penalty, 0.2)
+  assert.equal(full.seed, 7)
+  assert.equal(full.n, 2)
+})

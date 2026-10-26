@@ -32,7 +32,18 @@ import { createVllmModel, resolveModelConfig, type VllmMessages } from '../model
  */
 
 export interface ChatRequest {
+  model?: string
+  base_url?: string
   messages: VllmMessages[]
+  stream?: boolean
+  temperature?: number
+  top_p?: number
+  max_tokens?: number
+  stop?: string[] | string
+  presence_penalty?: number
+  frequency_penalty?: number
+  seed?: number
+  n?: number
 }
 
 export interface WebServer {
@@ -141,10 +152,11 @@ export function createWebServer(options: {
         if (raw.length > 1_000_000) req.destroy()
       })
       req.on('end', () => {
-        let messages: VllmMessages[]
+        let parsed: ChatRequest
         try {
-          const parsed: unknown = JSON.parse(raw)
-          messages = (parsed as ChatRequest).messages
+          const json: unknown = JSON.parse(raw)
+          parsed = json as ChatRequest
+          const messages = parsed.messages
           if (!Array.isArray(messages) || messages.length === 0) throw new Error('bad messages')
         } catch {
           res.writeHead(400, { 'content-type': 'application/json' }).end('{}')
@@ -173,11 +185,26 @@ export function createWebServer(options: {
         }
 
         log(
-          `web-ui request: ${messages.length} message(s), model=${modelConfig.model}, t0=${new Date().toISOString()}`,
+          `web-ui request: ${parsed.messages.length} message(s), model=${
+            parsed.model ?? modelConfig.model
+          }, t0=${new Date().toISOString()}`,
         )
 
-        chat(messages, {
+        chat(parsed.messages, {
           onToken: (tok, lane) => send(tok, lane),
+          params: {
+            model: parsed.model,
+            base_url: parsed.base_url,
+            stream: parsed.stream,
+            temperature: parsed.temperature,
+            top_p: parsed.top_p,
+            max_tokens: parsed.max_tokens,
+            stop: parsed.stop,
+            presence_penalty: parsed.presence_penalty,
+            frequency_penalty: parsed.frequency_penalty,
+            seed: parsed.seed,
+            n: parsed.n,
+          },
         })
           .then(() => {
             const buf = Buffer.from('data: [DONE]\n\n', 'utf8')

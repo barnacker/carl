@@ -20,6 +20,20 @@ export interface VllmMessages {
   content: string
 }
 
+export interface VllmParams {
+  model?: string | undefined
+  base_url?: string | undefined
+  stream?: boolean | undefined
+  temperature?: number | undefined
+  top_p?: number | undefined
+  max_tokens?: number | undefined
+  stop?: string[] | string | undefined
+  presence_penalty?: number | undefined
+  frequency_penalty?: number | undefined
+  seed?: number | undefined
+  n?: number | undefined
+}
+
 export interface VllmChatOptions {
   /**
    * Live-stack pipe: called immediately as each SSE chunk carrying
@@ -28,6 +42,12 @@ export interface VllmChatOptions {
    * resolved value.
    */
   onToken?: (tok: string, lane: 'reasoning' | 'content') => void
+  /**
+   * Per-request vLLM parameters from the UI. Each key present here is
+   * forwarded into the request body; each key absent (null/undefined) is
+   * omitted via the `!= null` spread guards in the body composition.
+   */
+  params?: VllmParams
 }
 
 export interface VllmModel {
@@ -88,7 +108,8 @@ export function createVllmModel(config: VllmModelConfig, fetchImpl: typeof fetch
     async chat(messages, options: VllmChatOptions = {}) {
       // vLLM's OpenAI-compat chat endpoint is /v1/chat/completions (FastAPI); ${baseUrl} is the bare base, so append /v1/ here.
       // The endpoint is open — no Authorization header, ever.
-      const endpoint = `${config.baseUrl.replace(/\/$/, '')}/v1/chat/completions`
+      const baseOverride = options.params?.base_url?.trim()
+      const endpoint = `${(baseOverride !== undefined && baseOverride.length > 0 ? baseOverride : config.baseUrl).replace(/\/+$/, '')}/v1/chat/completions`
       const headers: Record<string, string> = {
         'content-type': 'application/json',
         accept: 'text/event-stream',
@@ -97,9 +118,17 @@ export function createVllmModel(config: VllmModelConfig, fetchImpl: typeof fetch
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model: config.model,
+          model: options.params?.model || config.model,
           messages,
-          stream: true,
+          stream: options.params?.stream ?? true,
+          ...(options.params?.temperature   != null ? { temperature:  options.params.temperature   } : {}),
+          ...(options.params?.top_p         != null ? { top_p:         options.params.top_p        } : {}),
+          ...(options.params?.max_tokens    != null ? { max_tokens:    options.params.max_tokens    } : {}),
+          ...(options.params?.stop          != null ? { stop:          options.params.stop         } : {}),
+          ...(options.params?.presence_penalty    != null ? { presence_penalty:    options.params.presence_penalty    } : {}),
+          ...(options.params?.frequency_penalty   != null ? { frequency_penalty:   options.params.frequency_penalty   } : {}),
+          ...(options.params?.seed          != null ? { seed:          options.params.seed         } : {}),
+          ...(options.params?.n             != null ? { n:             options.params.n            } : {}),
         }),
       })
 
