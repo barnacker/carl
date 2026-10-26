@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ReadableStream } from 'node:stream/web'
 
-import { createVllmModel } from '../../dist/model/vllm.js'
+import { createVllmModel, resolveModelConfig } from '../../dist/model/vllm.js'
 
 function sseResponse(payloads) {
   const encoder = new TextEncoder()
@@ -210,3 +210,23 @@ test('vllm model rejects empty streamed responses', async () => {
   )
 })
 
+
+test('vllm model resolves keyless no-auth flag from env via resolveModelConfig (no fetch auth throw)', async () => {
+  const env = { CARL_VLLM_NO_AUTH: '1', CARL_VLLM_API_KEY: undefined, OPENAI_API_KEY: undefined }
+  const cfg = resolveModelConfig(env)
+
+  const calls = []
+  const fakeFetch = async (url, init) => {
+    calls.push({ url, init })
+    return sseResponse([{ content: 'pong' }])
+  }
+
+  const { chat } = createVllmModel(cfg, fakeFetch)
+  const reply = await chat([{ role: 'user', content: 'ping' }])
+
+  assert.equal(reply, 'pong')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, 'http://10.240.232.32:8000/v1/chat/completions')
+  assert.ok(!('authorization' in calls[0].init.headers), 'keyless path must not send authorization')
+  assert.ok(!('Authorization' in calls[0].init.headers))
+})
