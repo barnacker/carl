@@ -7,13 +7,17 @@ becomes one SSE frame at the moment it arrives — no buffering.
 ## Run
 
 ```
-CARL_VLLM_NO_AUTH=1 PORT=3000 web/run.sh
+PORT=3000 web/run.sh
 # -> http://localhost:3000
 ```
 
+No auth configuration: the vLLM endpoint is open — there is no API key, no
+keyless flag, and no env var to set. The client does not send an
+Authorization header. The unit's contract is just the port.
+
 `run.sh` is a pre-flight gate: builds the SvelteKit SPA if missing (web-ui/),
-tsc if dist/ is missing, runs one real 1-token vLLM call so a broken key fails at
-boot, then execs the harness.
+tsc if dist/ is missing, runs one real 1-token vLLM call so an unreachable
+endpoint fails at boot, then execs the harness.
 
 ## Endpoints
 
@@ -45,9 +49,12 @@ state, no extension.
 
 ## Test
 
-- `npm test` in the root — 48 tests. Two of them cover the host allowlist
+- `npm test` in the root — 49 tests. Two of them cover the host allowlist
   boundary (accepts loopback/localhost/hermes with/without port; rejects external
-  IPs and odd hostnames). All 46 pre-existing tests are unchanged.
+  IPs and odd hostnames). The vLLM model unit tests cover the no-auth wire
+  contract (an Authorization header is never sent) and upstream error surfacing
+  (a rejected response — 401 or 500 — surfaces as a response error, never as a
+  keyless-gate error).
 
 ## Live-streaming proof
 

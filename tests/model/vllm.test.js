@@ -85,7 +85,7 @@ test('vllm model streams SSE tokens to onToken in order and resolves with the co
   assert.equal(reply, 'thinking…Helnow I dolo world')
 })
 
-test('vllm model posts to chat completions with bearer auth and maps content', async () => {
+test('vllm model posts to chat completions with NO authorization header and maps content', async () => {
   const calls = []
   const fakeFetch = async (url, init) => {
     calls.push({ url, init })
@@ -93,7 +93,7 @@ test('vllm model posts to chat completions with bearer auth and maps content', a
   }
 
   const { chat } = createVllmModel(
-    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8', apiKey: 'test-key-123' },
+    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8' },
     fakeFetch,
   )
   const reply = await chat([
@@ -104,7 +104,8 @@ test('vllm model posts to chat completions with bearer auth and maps content', a
   assert.equal(reply, 'pong')
   assert.equal(calls.length, 1)
   assert.equal(calls[0].url, 'http://10.240.232.32:8000/v1/chat/completions')
-  assert.equal(calls[0].init.headers.authorization, 'Bearer test-key-123')
+  assert.ok(!('authorization' in calls[0].init.headers), 'the endpoint is open — no Authorization header is ever sent')
+  assert.ok(!('Authorization' in calls[0].init.headers))
   assert.equal(calls[0].init.headers['content-type'], 'application/json')
   assert.equal(calls[0].init.headers.accept, 'text/event-stream')
   const body = JSON.parse(calls[0].init.body)
@@ -138,27 +139,7 @@ test('vllm model rejects non-2xx responses with status and body', async () => {
   )
 })
 
-test('vllm model rejects without calling fetch when api key is missing', async () => {
-  let fetchCalled = false
-  const fakeFetch = async () => {
-    fetchCalled = true
-    return sseResponse([])
-  }
-  const { chat } = createVllmModel(
-    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8' },
-    fakeFetch,
-  )
-  await assert.rejects(
-    chat([{ role: 'user', content: 'ping' }]),
-    (error) => {
-      assert.match(error.message, /VLLM_NO_API_KEY/)
-      return true
-    },
-  )
-  assert.equal(fetchCalled, false)
-})
-
-test('vllm model omits authorization header and calls fetch when no auth flag is set', async () => {
+test('vllm model never sends an Authorization header', async () => {
   const calls = []
   const fakeFetch = async (url, init) => {
     calls.push({ url, init })
@@ -166,7 +147,7 @@ test('vllm model omits authorization header and calls fetch when no auth flag is
   }
 
   const { chat } = createVllmModel(
-    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8', noAuth: true },
+    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8' },
     fakeFetch,
   )
   const reply = await chat([
@@ -177,7 +158,7 @@ test('vllm model omits authorization header and calls fetch when no auth flag is
   assert.equal(reply, 'pong')
   assert.equal(calls.length, 1)
   assert.equal(calls[0].url, 'http://10.240.232.32:8000/v1/chat/completions')
-  assert.ok(!('authorization' in calls[0].init.headers))
+  assert.ok(!('authorization' in calls[0].init.headers), 'the endpoint is open — no Authorization header is ever sent')
   assert.ok(!('Authorization' in calls[0].init.headers))
   assert.equal(calls[0].init.headers['content-type'], 'application/json')
   const body = JSON.parse(calls[0].init.body)
@@ -198,7 +179,7 @@ test('vllm model rejects empty streamed responses', async () => {
     }),
   })
   const { chat } = createVllmModel(
-    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8', apiKey: 'test-key' },
+    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8' },
     fakeFetch,
   )
   await assert.rejects(
@@ -211,22 +192,36 @@ test('vllm model rejects empty streamed responses', async () => {
 })
 
 
-test('vllm model resolves keyless no-auth flag from env via resolveModelConfig (no fetch auth throw)', async () => {
-  const env = { CARL_VLLM_NO_AUTH: '1', CARL_VLLM_API_KEY: undefined, OPENAI_API_KEY: undefined }
-  const cfg = resolveModelConfig(env)
+test('vllm model surfaces a 401 from the open endpoint as an upstream response error, never a keyless-gate error', async () => {
+  const fakeFetch = async () => ({
+    ok: false,
+    status: 401,
+    text: async () => '401 Unauthorized (endpoint is open — upstream rejected regardless)',
+  })
+  const { chat } = createVllmModel(
+    { baseUrl: 'http://10.240.232.32:8000', model: 'Qwen/Qwen3.8-27B-FP8' },
+    fakeFetch,
+  )
+  await assert.rejects(
+    chat([{ role: 'user', content: 'ping' }]),
+    (error) => {
+      assert.match(error.message, /401/)
+      assert.doesNotMatch(error.message, /VLLM_NO_API_KEY/)
+      return true
+    },
+  )
+})
 
-  const calls = []
-  const fakeFetch = async (url, init) => {
-    calls.push({ url, init })
-    return sseResponse([{ content: 'pong' }])
-  }
+test('vllm model resolves config from env (baseUrl + model only — no auth fields)', async () => {
+  const cfg = resolveModelConfig({
+    CARL_VLLM_BASE_URL: 'http://127.0.0.1:8000',
+    CARL_VLLM_MODEL: 'test/model',
+  })
+  assert.deepEqual(cfg, { baseUrl: 'http://127.0.0.1:8000', model: 'test/model' })
 
-  const { chat } = createVllmModel(cfg, fakeFetch)
-  const reply = await chat([{ role: 'user', content: 'ping' }])
-
-  assert.equal(reply, 'pong')
-  assert.equal(calls.length, 1)
-  assert.equal(calls[0].url, 'http://10.240.232.32:8000/v1/chat/completions')
-  assert.ok(!('authorization' in calls[0].init.headers), 'keyless path must not send authorization')
-  assert.ok(!('Authorization' in calls[0].init.headers))
+  const defaults = resolveModelConfig({})
+  assert.deepEqual(defaults, {
+    baseUrl: 'http://10.240.232.32:8000',
+    model: 'Qwen/Qwen3.8-27B-FP8',
+  })
 })

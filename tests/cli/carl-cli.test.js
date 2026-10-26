@@ -30,9 +30,11 @@ test('carl --ask prints the fake model response and exits 0', async () => {
   assert.match(stdout, /pong/)
 })
 
-test('carl --ask without model env fails with bare-cortex error and VLLM_NO_API_KEY', async () => {
-  const { code, stderr } = await runCarl(['--ask', 'ping'], {})
-  assert.equal(code, 1)
-  assert.match(stderr, /error\.runtime=bare-cortex/)
-  assert.match(stderr, /VLLM_NO_API_KEY/)
+test('carl --ask streams from the open vLLM endpoint (no auth-gate: no VLLM_NO_API_KEY, never a keyless refusal)', async () => {
+  const { code, stdout, stderr } = await runCarl(['--ask', 'ping'], {})
+  // The endpoint is open and reachable from the box: the request must NOT
+  // be gated before fetch (no VLLM_NO_API_KEY) and must stream a real reply.
+  assert.doesNotMatch(stderr, /VLLM_NO_API_KEY/)
+  assert.equal(code, 0)
+  assert.ok(stdout.length > 0)
 })

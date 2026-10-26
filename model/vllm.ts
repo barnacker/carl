@@ -1,21 +1,17 @@
 export interface VllmModelConfig {
   baseUrl: string
   model: string
-  apiKey?: string
-  noAuth?: boolean
 }
 
 export const DEFAULT_VLLM_BASE_URL = 'http://10.240.232.32:8000'
 export const DEFAULT_VLLM_MODEL = 'Qwen/Qwen3.8-27B-FP8'
 
+// The vLLM endpoint is open: no auth of any kind. The client never sends an
+// Authorization header, and no env var can add one.
 export function resolveModelConfig(env: Record<string, string | undefined> = {}): VllmModelConfig {
-  const apiKey = (env.CARL_VLLM_API_KEY ?? env.OPENAI_API_KEY) || undefined
-  const noAuth = env.CARL_VLLM_NO_AUTH === '1'
   return {
     baseUrl: env.CARL_VLLM_BASE_URL || DEFAULT_VLLM_BASE_URL,
     model: env.CARL_VLLM_MODEL || DEFAULT_VLLM_MODEL,
-    ...(apiKey !== undefined ? { apiKey } : {}),
-    ...(noAuth ? { noAuth: true } : {}),
   }
 }
 
@@ -86,22 +82,12 @@ async function collectStreamText(stream: AsyncIterable<unknown>, onToken?: (tok:
 export function createVllmModel(config: VllmModelConfig, fetchImpl: typeof fetch = fetch): VllmModel {
   return {
     async chat(messages, options: VllmChatOptions = {}) {
-      if (config.apiKey === undefined || config.apiKey === '') {
-        if (config.noAuth !== true) {
-          throw new Error(
-            'VLLM_NO_API_KEY: provide CARL_VLLM_API_KEY or OPENAI_API_KEY, or set CARL_VLLM_NO_AUTH=1 for a keyless local vLLM',
-          )
-        }
-      }
-
       // vLLM's OpenAI-compat chat endpoint is /v1/chat/completions (FastAPI); ${baseUrl} is the bare base, so append /v1/ here.
+      // The endpoint is open — no Authorization header, ever.
       const endpoint = `${config.baseUrl.replace(/\/$/, '')}/v1/chat/completions`
       const headers: Record<string, string> = {
         'content-type': 'application/json',
         accept: 'text/event-stream',
-      }
-      if (config.apiKey !== undefined && config.apiKey !== '') {
-        headers.authorization = `Bearer ${config.apiKey}`
       }
       const response = await fetchImpl(endpoint, {
         method: 'POST',

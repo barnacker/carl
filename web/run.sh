@@ -5,21 +5,15 @@
 # The SvelteKit build is required — if `web-ui/build/200.html` is missing, the
 # script builds it first (web-ui/ has its own package.json + node_modules).
 #
-# Keyless local vLLM: set CARL_VLLM_NO_AUTH=1 (repo's own auth logic).
-# If no auth flag AND no CARL_VLLM_API_KEY/OPENAI_API_KEY, pre-flight runs one
-# real 1-token call so a broken key fails LOUDLY at boot, not in the UI.
+# The vLLM endpoint is open (no auth of any kind): the client does not send an
+# Authorization header, and there is no auth/keyless env var to configure. The
+# unit's contract is just the port. The pre-flight below still runs one real
+# 1-token call so an unreachable endpoint fails LOUDLY at boot, not in the UI.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-export CARL_VLLM_NO_AUTH="${CARL_VLLM_NO_AUTH:-1}"
 PORT="${PORT:-3000}"
-
-if [[ -z "${CARL_VLLM_NO_AUTH:-}" && -z "${CARL_VLLM_API_KEY:-${OPENAI_API_KEY:-}}" ]]; then
-  echo "carl-web: no auth flag AND no API key — refusing to boot" >&2
-  echo "set CARL_VLLM_NO_AUTH=1 (keyless) or CARL_VLLM_API_KEY / OPENAI_API_KEY" >&2
-  exit 2
-fi
 
 # Ensure the SvelteKit build exists (static dir served by the harness).
 if [[ ! -f web-ui/build/200.html ]]; then
@@ -32,7 +26,8 @@ if [[ ! -f dist/web/server.js ]]; then
   npm run build
 fi
 
-# Pre-flight: one real call from the model path. Avoids shipping a broken key.
+# Pre-flight: one real call from the model path. The endpoint is open — this
+# only proves it is reachable and streaming, not that any key is valid.
 node --input-type=module -e '
 const { createVllmModel, resolveModelConfig } = await import("./dist/model/vllm.js");
 const { chat } = createVllmModel(resolveModelConfig(process.env));
