@@ -166,7 +166,7 @@
       </span>
       <span class="meta-line">
         <span class="meta-k">model</span>
-        <span class="meta-v">Qwen/Qwen3.8-27B-FP8 @ 10.240.232.32:8000</span>
+        <span class="meta-v">Qwen3.8-27B-FP8</span>
       </span>
     </span>
   </header>
