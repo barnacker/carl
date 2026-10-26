@@ -20,7 +20,7 @@
   let lastFirstByte: number | null = $state(null);
   let lastLastByte: number | null = $state(null);
   let terminalEl: HTMLDivElement;
-  let inputEl: HTMLInputElement;
+  let inputEl: HTMLTextAreaElement;
 
   // Visible, editable request parameters (everything sent to vLLM).
   const DEFAULT_BASE_URL = 'http://10.240.232.32:8000';
@@ -212,21 +212,21 @@
     </div>
     <div class="term-prompt-row">
       <span class="term-caret">▸</span>
-      <input
+      <textarea
         bind:this={inputEl}
         bind:value={input}
-        type="text"
+        rows="3"
         autocomplete="off"
         spellcheck="false"
         placeholder=""
         disabled={sending}
         onkeydown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             void send();
           }
         }}
-      />
+      ></textarea>
     </div>
     <div class="term-role-row">
       <select class="term-role-select" bind:value={userRole} aria-label="user message role">
@@ -408,7 +408,7 @@
     font-size: 14px;
     flex-shrink: 0;
   }
-  .term-prompt-row input {
+  .term-prompt-row textarea {
     flex: 1;
     background: #000;
     border: none;
@@ -417,9 +417,11 @@
     color: #00ff41;
     font-family: var(--mono);
     font-size: 14px;
+    line-height: 1.25;
+    resize: none;
     outline: none;
   }
-  .term-prompt-row input:disabled {
+  .term-prompt-row textarea:disabled {
     opacity: 0.5;
   }
   .term-role-row {
