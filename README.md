@@ -66,7 +66,7 @@ The Nervous System is the only backbone everything talks on. No model runs in it
 - **Immune System** — the gate around every bus entry. **It is what blocks prompt injection:** it protects the Cortex and every Faculty from receiving orders they are not supposed to — and stops any Faculty that is not supposed to from polluting the Nervous System with hostile data. Origin-chain validation on every hop (Law 6); per-Faculty permission registry (Law 1); behavioral write restriction — Faculties write facts, never behavior; circuit breakers on anomalous Faculties (operator-approved re-connections); an audit log the gate itself writes, directly, so the gate itself cannot be bypassed from the bus.
 - **Relay** — turns raw LLM text into a typed object (Zod in prototype, strict static types in Rust in production). A payload that fails the schema is rejected at the bus boundary. No untyped data on the bus, by construction.
 - **Dark Lane** — a data path out from the inference path. Payloads in the Dark Lane are seen by no model and reasoned over by no model; the Cortex sees only metadata. Directed at fetches the operator has approved, token/secret writes, and cold files that should remain inert to prompt injection until the operator pulls them into a trusted state. Protocol: `SPEC.md` "Dark Transit".
-- **Telemetry** — a live view of everything on the backbone. Current Arc, what each Faculty instance is doing, gate decisions, route choices, budget spend, message flow. Real-time. No model ever reads it — it is the *system's own view of itself*, and it is the first thing any operator sees when they open the dashboard.
+- **Telemetry** — a live view of everything on the backbone. Current Arc, what each Faculty instance is doing, gate decisions, route choices, budget spend, message flow. Real-time. No model ever reads it — it is the *system's own view of itself*, and it is the first thing any operator sees when they open the dashboard. **Any Faculty that wants to read the Telemetry stream needs an explicit grant** — it is not a default permission. The Dashboard Faculty holds it. Nothing else does, by default.
 
 ---
 
@@ -88,7 +88,7 @@ The **Memory Faculty** is where all persistence lives. It is not a tier on the b
 
 Every ambiguity confirmation writes to 1a + 1b together. When a threshold fires, 1b collapses into 1c; 1a never moves. A Semantic Index (vector store) indexes 1a + 1c; it is a query interface, not a source of truth, and the Reflex path is not available there. Tier details and vector constraints: `SPEC.md`.
 
-The **Dashboard Faculty** is fed directly by the Nervous System's Telemetry stream: current Arc, what each Faculty instance is doing, gate decisions, budget spend, message flow. It renders a live view for the operator. It is a read-only consumer of Telemetry — it never writes, it only displays.
+The **Dashboard Faculty** is fed directly by the Nervous System's Telemetry stream — the only Faculty granted that read access by default: current Arc, what each Faculty instance is doing, gate decisions, budget spend, message flow. It renders a live view for the operator. It is a read-only consumer of Telemetry — it never writes, it only displays.
 
 **The System Evolution Boundary** — the one component that can change CARL itself. It is a compiler-and-deploy pipeline, not an Execution Faculty in the same trust class as Gmail. 13-step promotion lifecycle; step 11 is operator approval, no override path. A compiled boundary keeps it from touching the Nervous System, the Immune System, Synapse, or the Core (and its own validation pipeline as well). Full lifecycle + threat model: `SPEC.md`.
 
@@ -204,7 +204,7 @@ One claim, from the original spec, that ties it together: **the Cortex speaks, t
 | 2 | **File Faculty** | The first real Faculty: read/write on the local disk. Arc-less for now — the model calls it directly. |
 | 3 | **Web Faculty** | The second Faculty: web crawl. Still no Arc system: the model calls it directly when asked. |
 | 4 | **Arc System** | Because there are tools to call, Arcs get tracked. Orienting loop (which Arc advances this tick), Arc store (goal, budget, state, shape of intent), 4-choice arbitration (defer / complete / queue / merge), budget enforcement. |
-| 4.5 | **Dashboard Faculty** | A read-only Faculty that renders live telemetry for the operator: current Arc, what each Faculty instance is doing, gate decisions, budget spend, message flow. No model. No writes. The system's self-view. |
+| 4.5 | **Dashboard Faculty** | A read-only Faculty that renders live telemetry for the operator — current Arc, what each Faculty instance is doing, gate decisions, budget spend, message flow. Only Faculty granted default Telemetry read access. No model. No writes. The system's self-view. |
 | 5 | **Continuous Entity** | Concurrent Arc processing: short tasks finish while long-running ones advance independently. Results ship the moment they're ready. |
 | 6 | **Self-Optimization** | Cost-performance tuning of four named thresholds with a compiled safety floor, driven by Resolution Records. |
 | 7 | **Dark Transit** | Data moves through the architecture and the model never reads it. |
