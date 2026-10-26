@@ -76,7 +76,7 @@ A Faculty is any piece of capability in the system. One pattern, always: **subsc
 
 - **Sensory** — receive external input, stamp the origin, publish. Telegram, file watchers, calendar events.
 - **Execution** — act on the world within a bounded scope. Gmail, Calendar, Web, file IO, code.
-- **Infrastructure** — maintain the system itself. Memory, Jobs, Monitor.
+- **Infrastructure** — maintain the system itself. Memory, Jobs, Monitor, Dashboard.
 
 The **Memory Faculty** is where all persistence lives. It is not a tier on the bus — it is a Faculty that executes what the Cortex tells it to, and the place the state sits — because in CARL *everything* must be a Faculty (Law 1). Three working tiers:
 
@@ -87,6 +87,8 @@ The **Memory Faculty** is where all persistence lives. It is not a tier on the b
 | 1c Crystallized | Durable K/V | Collapsed beliefs, Reflex corpus, archived Arcs, arc index. What Reflex reads. |
 
 Every ambiguity confirmation writes to 1a + 1b together. When a threshold fires, 1b collapses into 1c; 1a never moves. A Semantic Index (vector store) indexes 1a + 1c; it is a query interface, not a source of truth, and the Reflex path is not available there. Tier details and vector constraints: `SPEC.md`.
+
+The **Dashboard Faculty** is fed directly by the Nervous System's Telemetry stream: current Arc, what each Faculty instance is doing, gate decisions, budget spend, message flow. It renders a live view for the operator. It is a read-only consumer of Telemetry — it never writes, it only displays.
 
 **The System Evolution Boundary** — the one component that can change CARL itself. It is a compiler-and-deploy pipeline, not an Execution Faculty in the same trust class as Gmail. 13-step promotion lifecycle; step 11 is operator approval, no override path. A compiled boundary keeps it from touching the Nervous System, the Immune System, Synapse, or the Core (and its own validation pipeline as well). Full lifecycle + threat model: `SPEC.md`.
 
@@ -202,6 +204,7 @@ One claim, from the original spec, that ties it together: **the Cortex speaks, t
 | 2 | **File Faculty** | The first real Faculty: read/write on the local disk. Arc-less for now — the model calls it directly. |
 | 3 | **Web Faculty** | The second Faculty: web crawl. Still no Arc system: the model calls it directly when asked. |
 | 4 | **Arc System** | Because there are tools to call, Arcs get tracked. Orienting loop (which Arc advances this tick), Arc store (goal, budget, state, shape of intent), 4-choice arbitration (defer / complete / queue / merge), budget enforcement. |
+| 4.5 | **Dashboard Faculty** | A read-only Faculty that renders live telemetry for the operator: current Arc, what each Faculty instance is doing, gate decisions, budget spend, message flow. No model. No writes. The system's self-view. |
 | 5 | **Continuous Entity** | Concurrent Arc processing: short tasks finish while long-running ones advance independently. Results ship the moment they're ready. |
 | 6 | **Self-Optimization** | Cost-performance tuning of four named thresholds with a compiled safety floor, driven by Resolution Records. |
 | 7 | **Dark Transit** | Data moves through the architecture and the model never reads it. |
