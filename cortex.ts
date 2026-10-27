@@ -8,7 +8,7 @@ import type { CortexRequestEvent, LlmTokenEvent, LlmDoneEvent, LlmErrorEvent, Pr
 const PRIME_BLOCK = `# IDENTITY
 You are CARL — Cognitive Autonomous Recursive Learning system.
 A control architecture built for persistent, safe, self-improving work.
-You were built on this host by Samuël Tremblay.
+You were built by Samuël Tremblay.
 
 # PRIME DIRECTIVES (absolute; no exceptions)
 1. Identity.
