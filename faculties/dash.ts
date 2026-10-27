@@ -1218,7 +1218,7 @@ export class DASHFaculty {
     s.boot.activeModule = name
     const label = DASH_BOOT_DISPLAY[name]
     const st = s.boot.moduleState[name]
-    this.type(s, '> ' + label.padEnd(4, ' '))
+    this.type(s, '> ' + label.padEnd(4, ' ') + '  ')
     if (st === 'done-ok') {
       this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + T_OK + String(s.boot.moduleMs[name] ?? 0).padStart(2, '0') + 'ms' + T_NL)
       s.boot.activeModule = null
@@ -1241,7 +1241,7 @@ export class DASHFaculty {
     this.startDotTimer(s)
   }
 
-  // THE TAIL (after all 6 rows have T_NL): footer (RSS from
+  // THE TAIL (after all 6 rows have T_NL): SELF-TEST verdict → footer (RSS from
   // process.memoryUsage()) → triad row → READY. → '❯ ' (no linefeed after
   // the prompt).
   private typeTail(s: DashSession): void {
@@ -1249,9 +1249,9 @@ export class DASHFaculty {
     s.boot.settled = true
     this.stopDotTimer(s)
     const anyFault = Object.values(s.boot.moduleState).some((v) => v === 'done-fault')
+    this.type(s, (anyFault ? 'SELF-TEST … FAULT' : 'SELF-TEST … PASSED') + T_NL)
     this.type(s, bannerStatsRow() + T_NL)
     this.type(s, BANNER_TRIAD_ROW + T_NL)
-    this.type(s, (anyFault ? 'SELF-TEST … FAULT' : 'SELF-TEST … PASSED') + T_NL)
     this.type(s, BANNER_READY_ROW + T_NL)
     this.type(s, T_PROMPT)
     this.recordProbe('SELFTEST', !anyFault, null, anyFault ? 'FAULT — header did not flip to PASSED' : 'PASSED — all 6 modules ok')
