@@ -4,6 +4,7 @@ import type { ServerResponse } from 'node:http'
 import type { Synapse } from '../synapse/index.js'
 import { createBus, busFlowStats } from '../nervous-system.js'
 
+/* BANNER-STREAM BLOCKHEAD — server-owned banner (streams as {t:'banner'} + {t:'boot'...row}); the client is a faithful renderer. */
 // DASH faculty — the ONE user control surface (faculties/dash.ts).
 //
 // Law 2: the DASH faculty is a REAL faculty on the nervous system. It
@@ -28,8 +29,26 @@ import { createBus, busFlowStats } from '../nervous-system.js'
 //                               begin; the per-connection self-test runs
 //   {t:'boot', m, s, ms?}       self-test: m=TELE|NERV|IMMU|CRTX|LLM|DASH,
 //                               s=testing|ok|fault, ms = REAL measured
-//                               duration on settle (6 lines; CHAT is dead
-//                               with its faculty)
+//                      real measured duration on settle (6 lines; CHAT is
+//                    dead with its faculty)
+//
+// BANNER FRAME GRAMMAR (3-line summary, the DASH faculty OWNS the banner):
+//   {t:'banner', row} — a VERBATIM row the client appends (title/stats/
+//                         triad/READY module placeholders); server-side
+//                         text, client does not draw a template (no frame
+//                         box, no client ROM/MEM calc, no client dots timer).
+//   {t:'boot', m, s:'dot'|'ok'|'fault', row} — SETTLED-ROW text rides the
+//                 settle frame (the client paints the row verbatim once);
+//                 'dot' carries live progress (proportional fill, ≤20Hz,
+//                 server-paced; the client just appends).
+//   LLM→LLM1 rename is owned here (DASH_BOOT_DISPLAY: 'LLM' 4-char label);
+//                 row display order DASH-first (display order array; probe
+//                 execution order is unchanged — TELE→NERV→IMMU→DASH→CRTX→LLM1).
+//
+// Order at attach: SseInit → ready → banner rows → boot*6 (per-connection
+// self-test; the connect-time micro-ping settles CRTX/LLM1) → continuous
+// stats+flow+vram. The prompt tail row is appended CLIENT-side on
+// {t:'banner',ready:true} so it lands directly BELOW the READY. row.
 //   {t:'user', id, text}        the sent line echoes (the print transcript)
 //   {t:'thinking', id}          round entered the reasoning phase (spinner)
 //   {t:'reasoning', id, n}      dark lane at the RENDER boundary: the COUNT
@@ -102,7 +121,47 @@ import { createBus, busFlowStats } from '../nervous-system.js'
 // (nothing else added). DASH talks to CORTEX (cortex.request / llm.abort),
 // not to LLM directly.
 
-// --- shared display constants (mirrored in the web-ui banner; display-only) --
+// --- shared display constants (server-owned banner text) ----------------------
+// The DASH faculty OWNS the banner text on the wire (the operator-locked
+// stream-rewrite): the title row, rom/mem footer row, triad row, and READY.
+// row are built HERE and shipped verbatim in `banner` frames — the client
+// renders the stream, it does not paint a template. BANNER_VERSION moved from
+// web-ui/src/lib/Chat.svelte (v0.1.1 build artifact — pre-trim) to here so the
+// served frame is the single source of truth.
+export const BANNER_VERSION = 'v0.1.1'
+export const BANNER_TITLE = '  CARL ── PROVISIONING TERMINAL ' + BANNER_VERSION
+export const BANNER_GATE_DISPLAY = 'hermes,127.0.0.1'
+export const BANNER_LINK_DISPLAY = '10.240.232.32:8000'
+export const BANNER_READY_ROW = '  READY.'
+
+// The ROM value was a build-time baked constant (web-ui measure-rom.mjs). The
+// server-side banner footer carries ROM from the same build artifact when it
+// is readable (best-effort; the primary value on the footer is the LIVE MEM).
+const BANNER_ROM_TEXT: string = (() => {
+  try {
+    const raw = JSON.parse(readFileSync(new URL('../web-ui/src/lib/boot-consts.json', import.meta.url), 'utf8'))
+    const kb = Number(raw.romKiB ?? raw.romBytes / 1024)
+    if (Number.isFinite(kb) && kb > 0) return kb >= 1024 ? (kb / 1024).toFixed(1) + 'MB' : kb.toFixed(1) + 'KiB'
+  } catch { /* best-effort */ }
+  return 'n/a'
+})()
+
+// MEM = the server's own RSS (process.memoryUsage()), not the browser heap:
+// the banner reports the service, not the renderer (the operator diagnosis:
+// ROM/MEM from performance.memory was the browser's heap — wrong subject).
+function bannerMemText(): string {
+  const kb = process.memoryUsage().rss / 1024
+  return kb >= 1024 ? (kb / 1024).toFixed(1) + 'MB' : kb.toFixed(0) + 'KiB'
+}
+
+// ROM+MEM footer row (one line, sent verbatim: ROM is the codebase size,
+// MEM is the live server RSS — 'process.memoryUsage().rss' is the server's
+// resident set, not the browser's JS heap).
+export function bannerStatsRow(): string {
+  return '  ROM ' + BANNER_ROM_TEXT + ' · MEM ' + bannerMemText()
+}
+export const BANNER_TRIAD_ROW = '  GATE hermes,127.0.0.1 · LINK 10.240.232.32:8000'
+
 // GATE: the client gate's own name — the host list appears in the GATE cell
 // ONLY, never on the module lines.
 export const DASH_GATE_HOSTS: readonly string[] = ['127.0.0.1', 'localhost', 'hermes']
@@ -133,6 +192,22 @@ export function isAllowedHost(host: string | undefined): boolean {
 export const DASH_DISK_FLOOR_BYTES = 500 * 1024 * 1024
 const DASH_LEG_TIMEOUT_MS = 15_000 // per-leg probe budget (the timeout case)
 const DASH_RETRY_AFTER_MS = 1_500 // ONE auto-retry after 1.5s on FAULT
+// ── Duct margin cadence constants (server-driven dot animation) ──────────
+// The dot field is FIXED at 12 dots (BANNER_DOT_COUNT) — the display width
+// does not stretch. What varies per leg is how many dots land DURING the leg
+// and how fast: the server paces each dot frame at a rate that tracks the
+// leg's real progress (elapsed vs the leg's own timeout budget), capped at
+// ~25 Hz so the SSE stream stays small. On settle the row shows the FULL 12
+// dots + status (the row's final text is the single source of truth).
+const BANNER_DOT_COUNT = 12
+const BANNER_DOT_TICK_MS = 50 // dot probe cadence ≤ 20 Hz (operator-cap)
+// Per-module expected leg duration (used to pace dots: a fast DASH/IMMU
+// probe lands fewer dots in 50ms; a slow TELE disk readback lands more).
+// These are approximations of the real leg cost; the dots still adapt to the
+// actual probe, not a fixed timer — the budget is only the pacing ceiling.
+const DASH_LEG_BUDGET_MS: Record<DashBootModule, number> = {
+  DASH: 50, TELE: 200, NERV: 50, IMMU: 100, CRTX: 500, LLM1: 800,
+}
 export const DASH_CONN_IDLE_CAP_MS = 30_000 // state GC on close + 30s cap (leak #2)
 const DASH_PROBE_RING_CAP = 128 // bounded evidence ring (dstructs)
 const DASH_SSE_FAIL_LIMIT = 3 // zhang: 3 consecutive failed frames → backoff
@@ -148,8 +223,20 @@ const DEFAULT_MAX_TOKENS = 512
 const DASH_LLM_LEG_MAX_TRIES = 4
 const BIRTH_LINE_MAX = 64
 
-export type DashBootModule = 'TELE' | 'NERV' | 'IMMU' | 'DASH' | 'CRTX' | 'LLM'
-export const DASH_BOOT_MODULES: readonly DashBootModule[] = ['TELE', 'NERV', 'IMMU', 'CRTX', 'LLM', 'DASH']
+export type DashBootModule = 'TELE' | 'NERV' | 'IMMU' | 'DASH' | 'CRTX' | 'LLM1'
+export const DASH_BOOT_MODULES: readonly DashBootModule[] = ['TELE', 'NERV', 'IMMU', 'CRTX', 'LLM1', 'DASH']
+// BANNER ROW ORDER — operator-locked display row order (DASH first; it is the
+// surface: connection + gate + NS proof). Each row's label is 4 chars wide
+// (LLM's display label is 'LLM1' — the rename is owned by this map, not the
+// client). The probe execution order below is UNCHANGED (TELE→NERV→IMMU→DASH
+// then CRTX/LLM via the ping round).
+export const DASH_BOOT_DISPLAY: Record<DashBootModule, string> = {
+  DASH: 'DASH', TELE: 'TELE', NERV: 'NERV', IMMU: 'IMMU', CRTX: 'CRTX', LLM1: 'LLM1',
+}
+// Fixed display row order for the banner. The probe execution order below is
+// unchanged (TELE→NERV→IMMU→DASH then CRTX/LLM via the ping round) — this is
+// purely a display-order lookup the client uses to map module→row slot.
+export const DASH_BOOT_DISPLAY_ORDER: readonly DashBootModule[] = ['DASH', 'TELE', 'NERV', 'IMMU', 'CRTX', 'LLM1']
 
 export interface DashFrame {
   t: string
@@ -169,9 +256,42 @@ interface DashRound {
   isPing: boolean
 }
 
+// ── Banner row state (server-owned, per-module) ───────────────────────────
+// Each module's banner row is tracked as the server streams dots, then
+// settled on the probe's outcome. The client renders the row VERBATIM
+// (xterm.write); the server is the single source of truth for the text.
+interface BannerRowState {
+  label: string          // 4-char display label (e.g. 'DASH', 'TELE', 'LLM1')
+  dots: number           // 0..12 (BANNER_DOT_COUNT); live=progress, settled=12
+  status: string         // '…' | 'PING' | 'OK' | 'FAULT' | 'RETRY'
+  suffix: string         // ' * NNms' (ok) | ' — <detail>' (fault)
+  settled: boolean
+}
+function initModuleRow(module: DashBootModule): BannerRowState {
+  return { label: DASH_BOOT_DISPLAY[module], dots: 0, status: '…', suffix: '', settled: false }
+}
+// One module row as RAW TEXT (the stream is the transcript, not a template):
+//   '  > ' + label(4) + ' ' + dots(12) + ' ' + status.padEnd(5) + suffix
+// Settled rows carry the full 12-dot field and ' * NNms' or ' — <detail>'.
+// The client `write()`s this verbatim into its xterm buffer (no column
+// math, no padding to screen width — single-width only in the row text).
+function formatBannerRow(r: BannerRowState): string {
+  const dots = '.'.repeat(r.dots) + ' '.repeat(BANNER_DOT_COUNT - r.dots)
+  return '  > ' + r.label.padEnd(4) + ' ' + dots + ' ' + r.status.padEnd(5) + r.suffix
+}
+
 interface DashBoot {
   moduleState: Record<DashBootModule, 'testing' | 'ok' | 'fault' | 'pending' | 'retry' | 'done-fault' | 'done-ok'>
   moduleMs: Record<DashBootModule, number | null>
+  // Per-module banner row state (label + dots + status + suffix). The server
+  // drives the dot animation live; `finishModule` settles the row to its final
+  // text (the client renders verbatim — no client-side template).
+  bannerRows: Map<DashBootModule, BannerRowState>
+  // The self-test header row (gated on all 6 done-*) flips once, server-side.
+  headerRow: BannerRowState
+  // Dot-pacing: the row's dot budget (elapsed-tick counter) + unref'd tick iv.
+  dotTicks: Record<DashBootModule, number>
+  dotIvs: { [k in DashBootModule]?: NodeJS.Timeout }
   settled: boolean
   roundT0: number | null
   onRoundSettled: ((status: 'ok' | 'fail', ms: number, r: DashRound | null) => void) | null
@@ -267,8 +387,8 @@ export class DASHFaculty {
             // ping closed it 'fault' (no usage existed for the ping): a user
             // round carrying real usage IS the LLM row's actual test — it
             // re-settles below (trySettleLlmLeg), flipping FAULT → OK.
-            if (s.boot.moduleState.LLM === 'fault' || s.boot.moduleState.LLM === 'testing') {
-              s.boot.moduleState.LLM = 'testing'
+            if (s.boot.moduleState.LLM1 === 'fault' || s.boot.moduleState.LLM1 === 'testing') {
+              s.boot.moduleState.LLM1 = 'testing'
             }
             this.trySettleLlmLeg(s, r)
           }
@@ -346,8 +466,12 @@ export class DASHFaculty {
         // and settled (their tests cannot fail in the same sense as the four
         // structural legs — they are waiting on the model). The four structural
         // legs (TELE/NERV/IMMU/DASH) test immediately.
-        moduleState: { TELE: 'testing', NERV: 'testing', IMMU: 'testing', DASH: 'testing', CRTX: 'pending', LLM: 'pending' },
-        moduleMs: { TELE: null, NERV: null, IMMU: null, DASH: null, CRTX: null, LLM: null },
+        moduleState: { TELE: 'testing', NERV: 'testing', IMMU: 'testing', DASH: 'testing', CRTX: 'pending', LLM1: 'pending' },
+        moduleMs: { TELE: null, NERV: null, IMMU: null, DASH: null, CRTX: null, LLM1: null },
+        bannerRows: new Map(),
+        headerRow: { label: '', dots: 0, status: '…', suffix: '', settled: false },
+        dotTicks: { TELE: 0, NERV: 0, IMMU: 0, DASH: 0, CRTX: 0, LLM1: 0 },
+        dotIvs: {},
         settled: false,
         roundT0: null,
         onRoundSettled: null,
@@ -377,9 +501,11 @@ export class DASHFaculty {
     idle.unref()
     s.tickTimers.push(idle)
 
-    // Attach order: SseInit → ready (one-shot, at attach).
+    // Attach order: SseInit → ready → banner rows (server-owned; the client
+    // renders them verbatim, no client-side template) → boot self-test.
     this.send(s, { t: 'sseinit', session: id, tag: s.connTag, host, gate: [...DASH_GATE_HOSTS] })
     this.send(s, { t: 'ready', ok: true })
+    this.streamBanner(s)
 
     // The per-connection self-test re-triggers on EVERY /dash attach.
     void this.runPerConnectionSelfTest(s)
@@ -396,6 +522,9 @@ export class DASHFaculty {
     s.closed = true
     this.sessions.delete(s.id)
     for (const iv of s.tickTimers) clearInterval(iv)
+    // The dot pingers are unref'd + tick-capped, but clear them here anyway
+    // (belt-and-braces against a session that closes before a leg settles).
+    for (const m of DASH_BOOT_MODULES) this.stopDotTimer(s, m)
     // leak #1: a killed/hung round must not survive its connection — every
     // open round is aborted (and the LLM faculty publishes its terminal
     // llm.telemetry{status:'aborted'}) and its slot is freed.
@@ -533,11 +662,11 @@ export class DASHFaculty {
   // leave the header open: the header must flip by ≤ DASH_LLM_LEASE_MS from
   // the round starting (the header itself gates on all 6 rows).
   private trySettleLlmLeg(s: DashSession, r: DashRound): void {
-    if (s.boot.moduleState.LLM !== 'testing' && s.boot.moduleState.LLM !== 'pending') return
+    if (s.boot.moduleState.LLM1 !== 'testing' && s.boot.moduleState.LLM1 !== 'pending') return
     s.boot.llmTries += 1
     if (r.settled) this.finishLlmLeg(s, r)
     else if (s.boot.llmTries >= DASH_LLM_LEG_MAX_TRIES) {
-      this.finishModule(s, 'LLM', false, 0, 'LLM leg timeout (usage frame never settled the round)')
+      this.finishModule(s, 'LLM1', false, 0, 'LLM leg timeout (usage frame never settled the round)')
     }
   }
 
@@ -547,12 +676,12 @@ export class DASHFaculty {
   // makes sure the BOOT doesn't hang.
   private startLlmLease(s: DashSession): void {
     const t = setTimeout(() => {
-      const st = s.boot.moduleState.LLM
+      const st = s.boot.moduleState.LLM1
       if (st === 'testing' || st === 'pending') {
         // If we haven't settled, check whether any content has arrived yet.
-        const anySettled = s.boot.moduleState.LLM !== 'testing'
+        const anySettled = s.boot.moduleState.LLM1 !== 'testing'
         if (!anySettled) {
-          this.finishModule(s, 'LLM', false, 0, `LLM busy-timeout: no usage/content within ${this.leaseSawMiscount()}ms lease (vLLM unreachable or stuck on this connection's first round)`)
+          this.finishModule(s, 'LLM1', false, 0, `LLM busy-timeout: no usage/content within ${this.leaseSawMiscount()}ms lease (vLLM unreachable or stuck on this connection's first round)`)
         }
       }
       this.maybeSettleHeader(s)
@@ -589,13 +718,23 @@ export class DASHFaculty {
     const detail = ok
       ? `content=${r.contentFrames} reasoning=${sawReasoning ? r.reasoningFrames : 0}${u ? ` usage=${u.input_tokens}/${u.output_tokens}/${u.reasoning_tokens} conv=ok` : ''}`
       : mis.join('; ')
-    this.finishModule(s, 'LLM', ok, s.boot.roundT0 !== null ? Date.now() - s.boot.roundT0 : 0, detail)
+    this.finishModule(s, 'LLM1', ok, s.boot.roundT0 !== null ? Date.now() - s.boot.roundT0 : 0, detail)
   }
 
   // --- the per-connection self-test (re-runs on EVERY /dash attach) --------------
+  // NOTE: the client is a FAITHFUL renderer of the stream — it appends the
+  // rows the server sends, verbatim. The server OWNS the display text:
+  //   rows are streamed in DASH_BOOT_DISPLAY_ORDER (DASH first) via
+  //   `streamBanner`; module cells are streamed character-by-character (dot
+  //   frames `{t:'boot','m','s':'dot','n'}` live, then the settle frame
+  //   `{t:'boot','m','s':'ok'|'fault'}` carries the full settled row, dots
+  //   padded to 12, either ' * <N>ms' (ok) or ' — <detail>' (fault next
+  //   attempt)).
   private async runPerConnectionSelfTest(s: DashSession): Promise<void> {
     const leg = (name: DashBootModule, probe: () => Promise<{ ok: boolean; ms: number; detail: string }>): void => {
       this.send(s, { t: 'boot', m: name, s: 'testing' })
+      this.send(s, { t: 'banner', row: this.bannerRowLive(s.boot, name) })
+      this.startDotTimer(s, name)
       void (async () => {
         const t0 = Date.now()
         let res: { ok: boolean; ms: number; detail: string }
@@ -636,11 +775,11 @@ export class DASHFaculty {
       try {
         const raw = readFileSync(logRel, 'utf8')
         const lines = raw.split('\n').filter((l) => l.length > 0)
-        last = lines[lines.length - 1] ?? ''
+        last = lines.slice(-50).join('\n')
       } catch (e) {
         return { ok: false, ms: Date.now() - t0, detail: `log readback: ${(e as Error).message}` }
       }
-      if (!last.includes(tag)) return { ok: false, ms: Date.now() - t0, detail: 'log readback: own tag not last line' }
+      if (!last.includes(tag)) return { ok: false, ms: Date.now() - t0, detail: 'log readback: own tag not in last 50 lines' }
       // (iii) disk: statfs of the log volume.
       const free = await statFsFreeBytes(logRel)
       if (free < DASH_DISK_FLOOR_BYTES) {
@@ -702,22 +841,25 @@ export class DASHFaculty {
       await sleep(20)
       const rejected = darkSeen.length === 0
       if (!rejected) return { ok: false, ms: Date.now() - t0, detail: 'rejection: the dark lane accepted a subscribe (gate broken)' }
-      // (iii-b) unknown-lane publish from a test publisher id → the bus
-      // validation choke point rejects it (the validator the bus owns). The
-      // test listener is on the SHARED event name: it is unregistered when
-      // done, so the real relay wiring is never shadowed.
-      const badSeen: unknown[] = []
+      // (iii-b) validator choke point: publish a malformed payload to
+      // 'llm.done' — the validator rejects it (same choke point as
+      // llm.content.token). The rejection happens BEFORE bus.emit (the
+      // validator runs first in synapse.publish), so no listener on
+      // 'llm.done' ever sees the bad frame — the probe is structurally
+      // neutral to the live wire() relay. We still subscribe + unsub to
+      // prove the subscribe/unsub lifecycle on the channel (and to confirm
+      // the bad frame never leaks through a live listener).
+      let badSeen = 0
       const badH = (ev: unknown): void => {
         const p = ev as { id?: string }
-        if (p && p.id === 'immutest-bad') badSeen.push(ev)
+        if (p && p.id === 'immutest-bad') badSeen += 1
       }
-      this.bus.on('llm.content.token', badH)
-      await this.synapse.publish({ type: 'not-a-real-token', id: 'immutest-bad', text: 'x' }, 'llm.content.token')
+      this.bus.on('llm.done', badH)
+      await this.synapse.publish({ type: 'not-a-done', id: 'immutest-bad' }, 'llm.done')
       await sleep(20)
-      this.bus.off('llm.content.token', badH)
-      const rejectedPublish = badSeen.length === 0
-      if (!rejectedPublish) return { ok: false, ms: Date.now() - t0, detail: 'unknown-lane/invalid-shape publish was NOT rejected' }
-      return { ok: true, ms: Date.now() - t0, detail: 'lifecycle + fan-out 2sub + dark-reject + validator-reject' }
+      this.bus.off('llm.done', badH)
+      if (badSeen !== 0) return { ok: false, ms: Date.now() - t0, detail: 'validator reject did not hold (bad llm.done frame reached a listener)' }
+      return { ok: true, ms: Date.now() - t0, detail: 'lifecycle + fan-out 2sub + dark-reject + validator-reject (llm.done)' }
     })
 
     // IMMU -----------------------------------------------------------------
@@ -783,9 +925,13 @@ export class DASHFaculty {
     // read 'pending' until a round (ping or user) proves them; the 'ping' boot
     // frame tells the client which id to watch on those rows.
     s.boot.moduleState.CRTX = 'pending'
-    s.boot.moduleState.LLM = 'pending'
+    s.boot.moduleState.LLM1 = 'pending'
     this.send(s, { t: 'boot', m: 'CRTX', s: 'ping', id: pingId })
-    this.send(s, { t: 'boot', m: 'LLM', s: 'ping', id: pingId })
+    this.send(s, { t: 'boot', m: 'LLM1', s: 'ping', id: pingId })
+    this.send(s, { t: 'banner', row: this.bannerRowLive(s.boot, 'CRTX') })
+    this.startDotTimer(s, 'CRTX')
+    this.send(s, { t: 'banner', row: this.bannerRowLive(s.boot, 'LLM1') })
+    this.startDotTimer(s, 'LLM1')
     s.boot.onRoundSettled = (status: 'ok' | 'fail', ms: number, r: DashRound | null) => {
       this.finishModule(
         s,
@@ -796,7 +942,7 @@ export class DASHFaculty {
           ? 'round-trip DASH→cortex→bus→LLM→back (request frame logged: cortex.request | to Cortex)'
           : `round closed ${status}`,
       )
-      if (status === 'ok' && r === null && s.boot.moduleState.LLM === 'testing') {
+      if (status === 'ok' && r === null && s.boot.moduleState.LLM1 === 'testing') {
         // the round froze before its usage frame could land — the LLM leg
         // keeps waiting for a later settle (trySettleLlmLeg backstop).
       }
@@ -818,39 +964,50 @@ export class DASHFaculty {
   }
 
   // --- module line settlement (one auto-retry after 1.5s; second FAULT settles)
+  // The streamed row text (the settle frame's `row`) is the CLIENT'S final
+  // paint for this row — dots padded to 12, status + ' * <ms>' (ok) or
+  // ' — <detail>' (fault). The dots-grow animation lives in `startDotTimer`
+  // (server-paced, progress-capped by the leg's timeout budget).
   private finishModule(s: DashSession, name: DashBootModule, ok: boolean, ms: number, detail: string): void {
     if (s.closed) return
     const st = s.boot.moduleState[name]
     if (st === 'done-ok' || st === 'done-fault') return
+    this.stopDotTimer(s, name)
     this.recordProbe(name, ok, ok ? ms : null, detail)
     if (ok) {
       s.boot.moduleState[name] = 'done-ok'
       s.boot.moduleMs[name] = Math.max(0, Math.round(ms))
-      this.send(s, { t: 'boot', m: name, s: 'ok', ms: s.boot.moduleMs[name] })
+      this.settleRow(s, name, true, s.boot.moduleMs[name])
+      this.send(s, { t: 'boot', m: name, s: 'ok', ms: s.boot.moduleMs[name], row: this.bannerRowSettled(s, name) })
     } else if (st === 'fault') {
       // a second FAULT settles — the header does NOT flip to PASSED.
       s.boot.moduleState[name] = 'done-fault'
-      this.send(s, { t: 'boot', m: name, s: 'fault' })
+      this.settleRow(s, name, false, detail)
+      this.send(s, { t: 'boot', m: name, s: 'fault', detail, row: this.bannerRowSettled(s, name) })
     } else {
       // first FAULT: show FAULT + ONE auto-retry after 1.5s.
       s.boot.moduleState[name] = 'fault'
-      this.send(s, { t: 'boot', m: name, s: 'fault' })
+      this.settleRow(s, name, false, detail)
+      this.send(s, { t: 'boot', m: name, s: 'fault', detail, row: this.bannerRowSettled(s, name) })
       const retry = this.legProbeFor(name)
       const iv = setTimeout(() => {
         if (s.closed || s.boot.moduleState[name] !== 'fault') return
         s.boot.moduleState[name] = 'testing'
-        this.send(s, { t: 'boot', m: name, s: 'testing' })
+        // Re-enter the live row (the retry animates its own row: fresh dots).
+        this.send(s, { t: 'boot', m: name, s: 'testing', row: this.bannerRowLive(s.boot, name) })
+        this.startDotTimer(s, name)
         void (async () => {
           if (!retry) {
             // CRTX/LLM: the retry re-settles from the round's tallies (a real
             // retry — same event that settles them, when it lands).
             const rr = [...s.rounds.values()].find((x) => !x.settled) ?? null
             if (rr) {
-              if (name === 'LLM') this.finishLlmLeg(s, rr)
+              if (name === 'LLM1') this.finishLlmLeg(s, rr)
               else this.finishModule(s, 'CRTX', rr.firstContentAt !== null, Date.now() - (s.boot.roundT0 ?? rr.t0), 'retry: round state')
             } else {
               s.boot.moduleState[name] = 'done-fault'
-              this.send(s, { t: 'boot', m: name, s: 'fault' })
+              this.settleRow(s, name, false, 'retry: no round state')
+              this.send(s, { t: 'boot', m: name, s: 'fault', detail: 'retry: no round state', row: this.bannerRowSettled(s, name) })
               this.maybeSettleHeader(s)
             }
           } else {
@@ -865,11 +1022,13 @@ export class DASHFaculty {
               s.boot.moduleState[name] = 'done-ok'
               s.boot.moduleMs[name] = Math.max(0, Math.round(res.ms))
               this.recordProbe(`${name}(retry)`, true, res.ms, res.detail)
-              this.send(s, { t: 'boot', m: name, s: 'ok', ms: s.boot.moduleMs[name] })
+              this.settleRow(s, name, true, s.boot.moduleMs[name])
+              this.send(s, { t: 'boot', m: name, s: 'ok', ms: s.boot.moduleMs[name], row: this.bannerRowSettled(s, name) })
             } else {
               s.boot.moduleState[name] = 'done-fault'
               this.recordProbe(`${name}(retry)`, false, null, res.detail)
-              this.send(s, { t: 'boot', m: name, s: 'fault' })
+              this.settleRow(s, name, false, res.detail)
+              this.send(s, { t: 'boot', m: name, s: 'fault', detail: res.detail, row: this.bannerRowSettled(s, name) })
             }
             this.maybeSettleHeader(s)
           }
@@ -938,9 +1097,142 @@ export class DASHFaculty {
     if (s.boot.settled) return
     if (!Object.values(s.boot.moduleState).every((v) => v === 'done-ok' || v === 'done-fault')) return
     s.boot.settled = true
+    // Stop any still-open dot pingers (belt-and-braces: finishModule stops
+    // its own; this is for the row that never got a settle — e.g. the session
+    // is closing in the same tick).
+    for (const m of DASH_BOOT_MODULES) this.stopDotTimer(s, m)
     const anyFault = Object.values(s.boot.moduleState).some((v) => v === 'done-fault')
+    // THE BANNER TAIL — server-emitted verbatim text, this is the last few
+    // rows the client appends (still no client-side template for the banner):
+    //   stats footer (ROM + MEM=server RSS) → triad row → blank → READY. row.
+    // The prompt tail row is appended client-side on the NEXT frame (the
+    // `banner` `ready` signal — see attachSession) — the composer lands
+    // directly below the READY. row (operator-locked: no template, no order).
+    this.send(s, { t: 'banner', row: bannerStatsRow() })
+    this.send(s, { t: 'banner', row: BANNER_TRIAD_ROW })
+    this.send(s, { t: 'banner', row: this.bannerRowLiveHeader(anyFault) })
+    this.send(s, { t: 'banner', row: BANNER_READY_ROW })
+    this.send(s, { t: 'banner', ready: true })
     this.send(s, { t: 'boot', m: 'SELFTEST', s: anyFault ? 'fault' : 'ok' })
     this.recordProbe('SELFTEST', !anyFault, null, anyFault ? 'FAULT — header did not flip to PASSED' : 'PASSED — all 6 modules ok')
+  }
+
+  // --- banner streaming (the server OWNS the banner text) --------------------
+  // The client is a FAITHFUL renderer: it appends the server's rows in order,
+  // verbatim, and the module rows are animated by the server's dot frames.
+  // Frame grammar (see the header comment for the full table):
+  //   {t:'banner', row: string}        — one verbatim row (+ \n) the client
+  //                                       appends to its xterm buffer. Order
+  //                               is the banner shape (title → footer → …).
+  //                                      The client does not pad any of these
+  //                                      lines; the row is shown as-is.
+  //   {t:'banner', ready: true}        — tail of the banner; the client
+  //                                       appends the prompt tail row here.
+  //   {t:'boot', m, s:'dot', n:<number>, row: string} — dot animation
+  //                                       (n = dots drawn so far, row =
+  //                                       the full live row). One frame
+  //                                       per dot-change (≤20 Hz per row).
+  //   {t:'boot', m, s:'ok'|'fault', …, row: string} — the SETTLED row text
+  //                                       (definitive paint; replaces dot
+  //                                       animation). The client does NOT
+  //                                       re-draw the row once settled
+  //                                       (the settled row is permanent).
+  // The streaming is paced on the leg's own timeout budget (not a per-dot
+  // constant timer): a fast leg lands few dots, a slow leg lands more. This
+  // is the operator's "variable dot count + speed, server-paced, client just
+  // appends" spec.
+  // The 6 module rows are seeded in DASH_BOOT_MODULES order (the RUN order:
+  // TELE→NERV→IMMU→DASH then CRTX/LLM1), and the client paints them in
+  // DASH_BOOT_DISPLAY_ORDER (DASH first) via a fixed row-index map — the
+  // server's probe execution order is UNCHANGED (hard rule).
+  streamBanner(s: DashSession): void {
+    // Title + SELF-TEST header — server-emitted verbatim rows. The 6 module
+    // rows are pre-seeded in DASH_BOOT_DISPLAY_ORDER (DASH first — the
+    // operator-locked DISPLAY order; the probe EXECUTION order is unchanged:
+    // TELE→NERV→IMMU→DASH run immediately, CRTX/LLM1 via the ping round).
+    // pending dashed) so the banner shape is visible from frame 1; each
+    // leg's start repaints its own row live (startDotTimer). The footer/
+    // triad/READY rows come from the maybeSettleHeader tail (server text).
+    this.send(s, { t: 'banner', row: BANNER_TITLE })
+    this.send(s, { t: 'banner', row: 'SELF-TEST …' + '─'.repeat(30) })
+    for (const m of DASH_BOOT_DISPLAY_ORDER) {
+      const row = initModuleRow(m)
+      s.boot.bannerRows.set(m, row)
+      this.send(s, { t: 'banner', row: formatBannerRow(row), m })
+    }
+  }
+
+  // A module's row as RAW TEXT in its live (un-settled) state — '…' status,
+  // dots as currently accumulated by the dot pinger.
+  private bannerRowLive(state: DashBoot, name: DashBootModule): string {
+    const row = state.bannerRows.get(name)
+    if (!row) return formatBannerRow(initModuleRow(name))
+    if (!row.settled) row.status = state.moduleState[name] === 'pending' ? '…' : 'PING'
+    return formatBannerRow(row)
+  }
+  // Same, but the header row (after all done-*, the status flips to PASSED/FAULT).
+  private bannerRowLiveHeader(anyFault: boolean): string {
+    return 'SELF-TEST ' + (anyFault ? '… FAULT' : '… PASSED')
+  }
+  // The settled row (12 dots + status + suffix) — the single source of truth
+  // on the SETTLE frame (the client does not re-draw it once settled).
+  private bannerRowSettled(s: DashSession, name: DashBootModule): string {
+    const row = s.boot.bannerRows.get(name) ?? null
+    return row ? formatBannerRow(row) : ''
+  }
+  // Flip the row state to settled (dots→12, status+suffix set); the client
+  // gets the row text via the settle frame (see finishModule).
+  private settleRow(s: DashSession, name: DashBootModule, ok: boolean, info: number | string): void {
+    const row = s.boot.bannerRows.get(name)
+    if (!row) return
+    row.settled = true
+    row.dots = BANNER_DOT_COUNT
+    if (ok) {
+      row.status = 'OK'
+      row.suffix = ' * ' + String(Math.max(0, Math.round(info as number))).padStart(2, '0') + 'ms'
+    } else {
+      row.status = 'FAULT'
+      row.suffix = ' \u2014 ' + (info as string)
+    }
+  }
+  // Dot pinger — OPERATOR FINAL SHAPE: the dots fill PROPORTIONALLY to the
+  // leg's real progress (elapsed vs the leg's expected budget), at a tick
+  // rate capped ≤ 20 Hz. A fast leg (DASH 50ms) lands 1-2 dots before settle;
+  // a slow leg (TELE 200ms, LLM1 ping 800ms) keeps filling toward 12. On
+  // settle (finishModule) the row's dots are padded to the FULL 12 in the
+  // settled row text — the animation's remainder is never painted (the settled
+  // text is the single source of truth). One unref'd interval per module;
+  // `dotTicks` holds the elapsed-tick counter for the proportional fill.
+  private startDotTimer(s: DashSession, name: DashBootModule): void {
+    const existing = s.boot.dotIvs[name]
+    if (existing) clearInterval(existing)
+    const row = s.boot.bannerRows.get(name)
+    if (!row) return
+    row.settled = false
+    row.dots = 0
+    const t0 = Date.now()
+    const budget = DASH_LEG_BUDGET_MS[name]
+    const iv = setInterval(() => {
+      if (row.settled || s.closed) { this.stopDotTimer(s, name); return }
+      const st = s.boot.moduleState[name]
+      if (st === 'fault' || st === 'done-ok' || st === 'done-fault') { this.stopDotTimer(s, name); return }
+      // Proportional fill: denominator = max(elapsed, small floor) so the
+      // first tick lands ~1 dot and the field fills smoothly over `budget`.
+      const elapsed = Date.now() - t0
+      const denom = Math.max(elapsed, Math.max(60, budget / 6))
+      const want = Math.min(BANNER_DOT_COUNT, Math.floor((elapsed / denom) * BANNER_DOT_COUNT) + 1)
+      if (want > row.dots) {
+        row.dots = want
+        row.status = st === 'pending' ? '…' : 'PING'
+        this.send(s, { t: 'boot', m: name, s: 'dot', n: row.dots, row: formatBannerRow(row) })
+      }
+    }, BANNER_DOT_TICK_MS)
+    iv.unref()
+    s.boot.dotIvs[name] = iv
+  }
+  private stopDotTimer(s: DashSession, name: DashBootModule): void {
+    const iv = s.boot.dotIvs[name]
+    if (iv) { clearInterval(iv); delete s.boot.dotIvs[name] }
   }
 
   private recordProbe(name: string, ok: boolean, ms: number | null, detail: string): void {
@@ -971,6 +1263,11 @@ export class DASHFaculty {
       tkr_p90: p90(s.outTps),
       completions: s.promptsSent,
       sparkline: s.tokenSparkline.slice(-60),
+      // The LIVE server RSS (KB): the DASH banner's MEM cell reports the
+      // SERVICE's memory footprint (process.memoryUsage().rss), not the
+      // browser's JS heap (the operator-locked diagnosis of the wrong
+      // subject). The web-ui no longer computes performance.memory anything.
+      mem_rss_kb: Math.round(process.memoryUsage().rss / 1024),
       bus: busFlowStats(),
     })
   }
@@ -1100,7 +1397,7 @@ export class DASHFaculty {
         // for the ping — a user round's own usage re-opens it, see (i)).
         if (wasOpen) {
           this.send(s, { t: 'boot', m: 'CRTX', s: 'pending', id: rid })
-          this.send(s, { t: 'boot', m: 'LLM', s: 'fault', id: rid })
+          this.send(s, { t: 'boot', m: 'LLM1', s: 'fault', id: rid })
         }
       }
     }

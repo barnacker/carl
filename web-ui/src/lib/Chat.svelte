@@ -6,32 +6,35 @@
   import './fonts.css';
   import type { Spinner } from './spinners';
   import { spinners, spinnerById, DEFAULT_SPINNER_ID } from './spinners';
-  import { ROM_BYTES, ROM_KIB, XTERM_VERSION, GATE_DISPLAY, LINK_DISPLAY, DISPLAY_VERSION } from './boot-consts';
+  import { ROM_KIB, XTERM_VERSION } from './boot-consts';
 
   // ── DASH — the single surface ─────────────────────────────────────────────
-  // One SSE stream carries: boot self-test lines, user/thinking/reasoning/
-  // content/done frames, continuous stats + flow (telemetry 1Hz), and a 1Hz
-  // vram cell. The SPA is one stream consumer; xterm.js is the transcript
-  // and boot banner in the same surface. The 3-cell HUD strip below renders
-  // stats/flow/vram independently of chat activity — "listening to the engine."
+  // One SSE stream carries: boot banner rows (the DASH faculty streams the
+  // whole banner — title, stats footer, triad, READY — as verbatim 'banner'
+  // frames + per-module row frames with server-paced dot frames), user/
+  // thinking/reasoning/content/done frames, continuous stats + flow, and the
+  // 1Hz vram cell. The SPA is a FAITHFUL RENDERER of the stream: it appends
+  // what the server sends, verbatim — the client has no banner template, no
+  // client-side dot timer, no client-side ROM/MEM calculation. xterm.js is
+  // the transcript + the stream-rendered boot surface in ONE surface.
   const DASH_ENDPOINT = '/dash';
   const SPINNER_KEY = 'carl.spinner';
 
   // The BODY face (baked JetBrains Mono — self-hosted, OFL; see fonts.css).
   // The xterm instance is PURE mono for ALL terminal content (transcript +
-  // boot banner + frame box/title — font-native box-drawing), 16px + 0.3px
-  // letter-spacing locked. Orbitron is chrome-only (the SPCPECTRA shell).
+  // stream-rendered banner), 16px + 0.3px letter-spacing locked. Orbitron is
+  // chrome-only (the SPCPECTRA shell); baked per fonts.css (this font string
+  // is the operator-heirloom call — the stream-rewrite does not touch it).
   const FONT_STACK =
     "'Glass', 'JetBrains Mono', 'DepartureMono', 'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace";
-  // TERMINAL GRID SPEC FINAL (operator lock): fontSize 16 + letterSpacing '0'
+  // TERMINAL GRID SPEC FINAL (operator lock): fontSize 16 + letterSpacing 0
   // (a pixel face on a fractional split breaks the monospace lattice — 0 is
-  // structurally correct) + lineHeight pending the operator's pitch-judge
-  // call on the 4-panel frame shot (D=1.0 connected; A=1.1 / B=1.2 / C=1.3
-  // gapped — the Glass face's │ is a JetBrains-supplied glyph; the panels
-  // are the pick input). Bake placeholder 1.2 until the call lands.
+  // structurally correct) + LINE_HEIGHT 1.0 (the operator's pitch-judge call:
+  // D connected; A/B/C gapped — the Glass face's │ is a JetBrains-supplied
+  // glyph; the panels are the pick input).
   const FONT_SIZE = 16;
-  const LETTER_SPACING = '0';
-  const LINE_HEIGHT = 1.2;
+  const LETTER_SPACING = 0; // xterm requires number; 0 is the operator lock
+  const LINE_HEIGHT = 1.0;
 
   const CLEAR_LINE = '\x1b[2K';
 
@@ -45,71 +48,6 @@
     reqId: string | null;
     error: string | null;
   };
-
-  // ── self-test state ────────────────────────────────────────────────────────
-  const MODULES = ['TELE', 'NERV', 'IMMU', 'CRTX', 'LLM', 'DASH'] as const;
-  type ModuleState = 'pending' | 'ping' | 'testing' | 'ok' | 'fault';
-  let modDots = $state<number[]>([0, 0, 0, 0, 0, 0]);
-  let modState = $state<ModuleState[]>(MODULES.map(() => 'pending'));
-  let modMs: (number | null)[] = $state<(number | null)[]>([null, null, null, null, null, null]);
-  let modRetry = $state<boolean[]>([false, false, false, false, false, false]);
-  // The ONE live line: the module currently streaming its dots (or -1 when
-  // none — a settled line is frozen, the next line then starts; the dots
-  // grow on the live line ONLY, one live line at a time).
-  let dotStream = $state<boolean[]>([true, true, true, true, true, true]);
-  const modDotsTimer: NodeJS.Timeout[] = [null, null, null, null, null, null] as unknown as NodeJS.Timeout[];
-  let selftestHeader = $state<'testing' | 'passed' | 'fault'>('testing');
-  const DOTS_FULL = 12;
-  const DOT_STEP_MS = 100;
-  // Natural-flow boot: the whole banner (frame + title + ROM/MEM + SELF-TEST
-  // header + 6 module lines + triad + READY. + frame bottom) is a set of
-  // literal ROWS appended top-to-bottom in order. The composer is the TAIL
-  // line by definition — each keystroke re-renders only the current tail line
-  // (CUP to its row, col 1). No minimum-rows calc, no whitespace seeding, no
-  // absolute positioning: if the viewport can't hold the block, the TOP scrolls
-  // off and the bottom rows + prompt stay visible (the natural-clip contract).
-  type BootState = 'booting' | 'ready' | 'fault';
-  let bootState = $state<BootState>('booting');
-  const frameW = 66; // the frame box inner width (single-width chars only)
-
-  function idx(m: string): number {
-    return (MODULES as readonly string[]).indexOf(m);
-  }
-  function settleModule(m: string, ok: boolean, ms: number | null): void {
-    const i = idx(m);
-    if (i < 0) return;
-    if (modState[i] === 'ok' || modState[i] === 'fault') return; // settle once
-    modDots[i] = DOTS_FULL;
-    dotStream[i] = false; // settled → the line is FROZEN as last painted
-    modMs[i] = ok ? (ms ?? 0) : (ms ?? 0);
-    modState[i] = ok ? 'ok' : 'fault';
-    // The settle IS the last paint (the timer's final tick at 12 dots wrote
-    // the row already) — no extra repaint; a settled line is PERMANENT
-    // (never re-cursor'd except a FAULT retry, which re-animates its row).
-    if (!ok && !modRetry[i]) {
-      // First FAULT: the server fires ONE auto-retry; the retry re-animates
-      // only its own row (re-notified via a fresh 'boot testing' frame).
-      modRetry[i] = true;
-      return;
-    }
-    // Every module has now settled → emit the tail of the boot block (the
-    // SELF-TEST header flips, then the triad + READY. + frame bottom).
-    const allSettled = modState.every((st) => st === 'ok' || st === 'fault');
-    if (allSettled && bootState === 'booting') {
-      const anyFault = modState.some((st) => st === 'fault');
-      selftestHeader = anyFault ? 'fault' : 'passed';
-      bootState = anyFault ? 'fault' : 'ready';
-      // Repaint the header at the tail of the module block (still on-screen
-      // unless the viewport is tiny), then append the closing rows.
-      if (selftestHeaderY > 0 && term) {
-        const bufBase = term.buffer.active.baseY;
-        const rel = selftestHeaderY - bufBase + 1;
-        if (rel >= 1 && rel <= term.rows)
-          term.write('\x1b[' + rel + ';1H' + CLEAR_LINE + selftestHeaderLine(selftestHeader));
-      }
-      appendBootTail();
-    }
-  }
 
   // ── spinner pickbox ────────────────────────────────────────────────────────
   const PREVIEW_SLOW = 2;
@@ -166,48 +104,90 @@
   let dashAttached = $state(false);
   let dashOk = false;
 
-  const USER_MARKER = '❮';
-  const ASSISTANT_MARKER = '❯';
+  // ── TRANSCRIPT + GUIILLEMET MARKERS ────────────────────────────────────────
+  // The user prompt line marker is the LEFT guillemet (U+00AB), the assistant
+  // reply line marker is the RIGHT guillemet (U+00BB). Both ride the FALLBACK
+  // chain (Glass lacks 00AB/00BB — the font survey shows JetBrains +
+  // DepartureMono both HAVE them; the fallback renders per-glyph). Do NOT
+  // change these; the operator-locked guillemets are the wire contract (the
+  // server's {t:'user'} frame text is what we paint — this is just how the
+  // CLIENT renders the user's own send before the echo arrives).
+  const USER_MARKER = '\u00AB';
+  const ASSISTANT_MARKER = '\u00BB';
   const PROMPT_PREFIX = '❯';
 
   // ── COMPOSER (the type-drift fix) ──────────────────────────────────────────
-  // THE PROMPT ROW is at a FIXED ABSOLUTE buffer Y. Every render addresses it
-  // with CUP (\x1b[row;1H → col 1) — so the row NEVER drifts: per-keystroke
-  // drift happened because the old code wrote at the CURRENT cursor column
-  // (which advances with each write) instead of rewinding to col 1.
+  // THE PROMPT ROW is at a FIXED ABSOLUTE buffer Y (the row where the banner
+  // settled). Every render addresses it with CUP (col 1) so it never drifts:
+  // per-keystroke drift happened because the old code wrote at the CURRENT
+  // cursor column (which advances with each write) instead of rewinding.
   //
-  // The composer state is (fixed prefix '❯' + typedText).
-  // On entry the prefix+typedText is written to the row; xterm's native
-  // cursor sits at the end of the rendered text (caret blinks there).
-  // On every key: re-emit the WHOLE prompt row from col 1 using CUP.
-  //
-  // Enter commits the row into scrollback (the existing final-line contract)
-  // and clears the composer. Backspace pops and re-renders. Arrows are
-  // no-op (single-line composer, documented).
+  // The banner settles when the {t:'banner', ready:true} frame lands (after
+  // the READY. row); on that frame we commit the prompt row to the buffer
+  // (one newline to end the READY. line, then '❯ ' + typedText) and render.
+  // The composer is FREE-FLOW (the row stays where the banner ended) — no
+  // minimum-rows calc, no seedPad, no absolute position, no bottom-hug.
   let typedText = $state('');
-  // ── COMPOSER (the CURRENT row, col 1) — the typed-drift fix ────────────────
-  // The composer lives on the row where xterm's own append flow currently IS.
-  // Every render rewrites that whole row from COLUMNS 1 (CUP row;1H — the row
-  // where writing position always lands: the 0-based buffer row a byte just
-  // scrolled to appears at 1-based `baseY + rows`). So typing rewrites from
-  // col 1 per key — the row NEVER moves: the prompt row is the last appended
-  // row, typing adds width within it (no newline), Enter commits it high with
-  // a scroll and the composer lands on the NEW current row. xterm's own
-  // follow-near-tail default is the only follow logic: no tail math, no
-  // bottom-hug, no pad seeding, no clamp — the stream is pure append.
+  // 0-based buffer row the prompt is currently anchored on.
+  let promptRowAbs = -1;
   function renderComposer(): void {
+    if (!term || promptRowAbs < 0) return;
+    const buf = term.buffer.active;
+    const rel = promptRowAbs - buf.baseY + 1;
+    if (rel < 1 || rel > term.rows) return;
+    const text = PROMPT_PREFIX + ' ' + typedText;
+    term.write('\x1b[' + rel + ';1H' + CLEAR_LINE + text);
+  }
+  function commitPromptRow(): void {
+    // Called exactly once per banner settle (t:'banner' ready:true). The
+    // banner's last row (READY.) left the cursor at col 1 of the row right
+    // after it; we paint the prompt tail in-place at the cursor (prompts
+    // land DIRECTLY BELOW the READY. row — the operator lock). We record the
+    // 0-based buffer row so subsequent keystrokes / Enter commits render to
+    // the same absolute row (no drift).
     if (!term) return;
     const buf = term.buffer.active;
-    const row1 = buf.baseY + buf.length; // 1-based current (just-scrolled) row
-    if (row1 < buf.baseY + 1) return; // nothing appended yet
-    const width = term.cols;
-    const text = PROMPT_PREFIX + ' ' + typedText;
-    const truncated = text.length > width ? text.slice(0, width) : text;
-    term.write('\x1b[' + row1 + ';1H' + CLEAR_LINE + truncated);
+    const abs = (buf.viewportY - buf.baseY) + buf.baseY - 1; // 0-based cursor
+    promptRowAbs = abs;
+    term.write(CLEAR_LINE + PROMPT_PREFIX + ' ');
   }
   function renderCurrentComposer(): void {
     renderComposer();
   }
+
+  // ── BANNER (the stream is the transcript; the server OWNS the text) ───────
+  // The client holds per-module state ONLY for (a) CSS class / spin target
+  // if the round goes fault, and (b) the one in-place repaint the dot frame
+  // needs (CUP to that row, col 1, the row text). We do NOT paint a box, no
+  // client-side dot timer, no client-side ROM/MEM compute.
+  // The 6 module rows are the "row slots" for the in-place repaint — the
+  // server streams them in DASH_BOOT_MODULES order, but the DISPLAY ORDER is
+  // DASH-first (the client's row-index map). The row-slot lookup is a fixed
+  // name→row map (no re-ordering of the wire).
+  type ModuleState = 'pending' | 'testing' | 'ok' | 'fault' | 'retry';
+  const MODULES: readonly string[] = ['DASH', 'TELE', 'NERV', 'IMMU', 'CRTX', 'LLM1'];
+  let modState = $state<Record<string, ModuleState>>({});
+  const modRowAbs: Record<string, number> = {}; // module → 0-based buffer row
+  let bannerSettled = false;
+  let promptCommitted = false;
+  function bannerAppendRow(text: string): void {
+    if (!term) return;
+    term.write(text + '\r\n');
+  }
+  function paintModuleRow(name: string, text: string): void {
+    const abs = modRowAbs[name];
+    if (abs === undefined || !term) return;
+    const buf = term.buffer.active;
+    const rel = abs - buf.baseY + 1;
+    if (rel < 1 || rel > term.rows) return;
+    term.write('\x1b[' + rel + ';1H' + CLEAR_LINE + text);
+  }
+  // Map a wire module name to the canonical key used in our row-slot map.
+  // 'LLM1' is the project module name the server tags the row with; the
+  // display label is also 'LLM1' (the rename is owned by the server's
+  // DASH_BOOT_DISPLAY map, not the client). 'LLM' maps to 'LLM1' too in
+  // case any legacy frames (or a mid-rollout server) still carry the old.
+  const MODULE_KEY = (m: string): string => (m === 'LLM' ? 'LLM1' : m);
 
   // ── request stream (DASH) ──────────────────────────────────────────────────
   let history = $state<Entry[]>([]);
@@ -220,7 +200,8 @@
   // The session-correlation tag handed out on the SSE handshake ({t:'sseinit',
   // tag}). Every POST /dash echoes it (header X-Dash-Session) so the server
   // resolves the separate POST connection back onto the session that owns the
-  // stream. the frame order at attach: sseinit → ready → boot*6.
+  // stream. The frame order at attach: sseinit → ready → banner* (8+ frames)
+  // → boot*6 (live rows) → stats/flow/vram continuous tail.
   let connTag = $state('');
   let streamReady = $state(false);
 
@@ -251,7 +232,9 @@
   const FLOW_MAX = 60;
   function updateHuds(p: Record<string, unknown>) {
     if (typeof p.ttft === 'number') huds.ttft = p.ttft;
+    else if (typeof p.ttft_p90 === 'number') huds.ttft = p.ttft_p90 as number;
     if (typeof p.tokensPerSec === 'number') huds.tspk = p.tokensPerSec;
+    else if (typeof p.tkr_p90 === 'number') huds.tspk = p.tkr_p90 as number;
     if (typeof p.completions === 'number') huds.comp = p.completions;
     const fl = p.flow as number[] | undefined;
     if (Array.isArray(fl) && fl.length) huds.flow = fl.slice(-FLOW_MAX);
@@ -264,6 +247,8 @@
   // ── print primitives ───────────────────────────────────────────────────────
   function printUserLine(text: string): void {
     if (!term) return;
+    // One marker + ONE space — the raw guillemet (U+00AB) rides the
+    // fallback chain (JetBrains/DepartureMono both have it).
     term.write(CLEAR_LINE + USER_MARKER + ' ' + text + '\r\n');
   }
   function printSpinnerFrame(frame: string): void {
@@ -278,9 +263,6 @@
     if (!term) return;
     term.write(tok);
   }
-  // Close out a turn's content: a single newline right after the last token.
-  // xterm's own auto-follow/close behavior plus our tail-rendering handles the
-  // rest — no programmatic scrollToBottom here.
   function printDoneRow(): void {
     if (!term) return;
     term.write('\r\n');
@@ -301,255 +283,12 @@
     }, 0);
   }
 
-  // ── banner (locked form) ───────────────────────────────────────────────────
-  const BANNER_VERSION = 'v0.1.0';
-  function romText(): string {
-    const kb = (ROM_BYTES / 1024);
-    const s = kb >= 1024
-      ? (kb / 1024).toFixed(1) + 'MB'
-      : kb.toFixed(1) + 'KiB';
-    return s;
-  }
-  function memText(): string {
-    const m = (performance as any).memory as { usedJSHeapSize?: number } | undefined;
-    if (!m || typeof m.usedJSHeapSize !== 'number') return 'n/a';
-    const kb = m.usedJSHeapSize / 1024;
-    return kb >= 1024 ? (kb / 1024).toFixed(1) + 'MB' : kb.toFixed(0) + 'KiB';
-  }
-
-  function selftestHeaderLine(h: 'testing' | 'passed' | 'fault'): string {
-    // FLUSH form — the header fills the whole inner width of the frame
-    // (frameW = 46): 'SELF-TEST' + status + exactly enough '─' to reach 46
-    // columns. No leftover ruler at the right edge — the box edge is the edge.
-    const base = 'SELF-TEST ' + (h === 'testing' ? '…' : h === 'passed' ? '… PASSED' : '… FAULT');
-    const pad = Math.max(0, frameW - [...base].length);
-    return base + '─'.repeat(pad);
-  }
-  function selftestRowLine(i: number): string {
-    const label = MODULES[i];
-    const st = modState[i];
-    let dots: string;
-    if (st === 'ok' || st === 'fault') {
-      // settled: full 12 dots
-      dots = '.'.repeat(DOTS_FULL);
-    } else if (st === 'pending') {
-      // the round-rows (CRTX/LLM) pre-exist as the pending placeholder:
-      // dots stay empty (0 grown) until a round actually runs them.
-      dots = ' '.repeat(DOTS_FULL);
-    } else {
-      const d = modDots[i];
-      dots = '.'.repeat(d) + ' '.repeat(DOTS_FULL - d);
-    }
-    let status: string;
-    let suffix = '';
-    if (st === 'ok') { status = 'OK'; if (modMs[i] !== null) suffix = ' * ' + String(modMs[i]).padStart(2, '0') + 'ms'; }
-    else if (st === 'fault') { status = 'FAULT'; }
-    else if (st === 'ping') { status = 'PING'; }
-    else { status = '…'; }
-    // exact row anatomy: '> ' + label(4) + ' ' + dots(12) + ' ' + status (width 5)
-    return '  > ' + label.padEnd(4) + ' ' + dots + ' ' + status.padEnd(5) + suffix;
-  }
-
-  // ── boot block (NATURAL-FLOW: literal rows appended top-to-bottom) ──────────
-  // The WHOLE banner is a set of literal ROWS, each appended once, in order.
-  // The frame box is drawn as literal rows (single-width box-drawing chars),
-  // so it is just MORE rows of the banner. Append order (10 content rows):
-  //   frame top  ( '┌' + '─'×w + '┐' )
-  //   title        ( '│' + '  CARL ── PROVISIONING TERMINAL … v0.1.0' + '│' )
-  //   blank        ( '│' + ' '×w + '│' )
-  //   rom/mem      ( '│' + '  ROM 640.2KiB · MEM 12.3MB' + pad + '│' )
-  //   blank        ( '│' + ' '×w + '│' )
-  //   SELF-TEST h  ( '│' + '  SELF-TEST … ───' + pad + '│' )  (flush form)
-  //   6 module     ( '│' + '  > TELE …' + pad + '│' )
-  //   blank        ( '│' + ' '×w + '│' )
-  //   triad        ( '│' + '  SEQUENCE … OK  GATE … OK  LINK ' + pad + '│' )
-  //   blank        ( '│' + ' '×w + '│' )
-  //   READY.       ( '│' + '  READY.' + pad + '│' )   (READY. exactly once)
-  //   frame bottom ( '└' + '─'×w + '┘' )
-  //   prompt tail  ( the composer — the natural-clip contract: if the viewport
-  //                  can't hold all of it, the TOP scrolls off, the bottom rows
-  //                  + prompt stay visible. NO seedPad, NO absolute position. )
-  // The 6 module lines pre-exist at boot (pending ones as '> CRTX …') so the
-  // full shape is visible from frame 1. A module's line is APPENDED when its
-  // test starts; that single line's dots grow in place (100ms); when it
-  // settles the dots pad to 12 + 'OK * NNms' (or 'FAULT') and the line is
-  // PERMANENT (never re-cursor'd except a FAULT retry re-animates its row).
-  // At READY the whole block is frozen history.
-
-  // Frame-box row helpers (w = frameW, the number of '─' between the corners).
-  const HLINE = '─'.repeat(frameW);
-  function frameTop(): string    { return '┌' + HLINE + '┐'; }
-  function frameRuler(): string  { return '├' + HLINE + '┤'; }
-  function frameBottom(): string { return '└' + HLINE + '┘'; }
-  // A bordered content row: '│' + content padded (single-width) + '│'.
-  function frameRow(content: string): string {
-    const pad = Math.max(0, frameW - [...content].length);
-    return '│' + content + ' '.repeat(pad) + '│';
-  }
-
-  let selftestHeaderY = 0; // absolute buffer row of the SELF-TEST header row
-  // TITLE-FINAL (operator): the version is ADJACENT to the title — plain
-  // text, one space, no right-push/padding calc.
-  const BANNER_TITLE = '  CARL ── PROVISIONING TERMINAL ' + BANNER_VERSION;
-  function bootHeaderLine(h: 'testing' | 'passed' | 'fault'): string {
-    return frameRow(selftestHeaderLine(h).trimStart());
-  }
-  function bootModuleRow(i: number): string {
-    return frameRow(selftestRowLine(i).trimStart());
-  }
-  // The triad is the SEQUENCE/GATE/LINK line only — STATUS … READY was dropped
-  // (READY. appears exactly once, as the final standalone line). The cells are
-  // sized to the frame (frameW = 46, single-width): SEQUENCE … OK/… (13),
-  // GATE … hermes,127.0.0.1 (27), LINK 10.240.232.32:8000 (26 — the gate word
-  // itself is sacred; the link cell is its display-only mirror).
-  function bootTriadRow(): string {
-    const allOk = MODULES.every((_, i) => modState[i] === 'ok');
-    const a = '  SEQUENCE … ' + (allOk ? 'OK' : '…'); // 13 or 14
-    const b = '  GATE … ' + GATE_DISPLAY; // 27
-    const c = ' LINK ' + LINK_DISPLAY; // 25
-    return frameRow(a + b + c);
-  }
-
-  // Append one literal banner row (a single \r\n-terminated write). The cursor
-  // stays at col 0 of the NEXT row (natural flow). Returns the absolute row the
-  // text was written onto (for the one in-place repaint the self-test needs).
-  function appendRow(text: string): number {
-    if (!term) return -1;
-    const bufBase = term.buffer.active.baseY;
-    const rel = term.buffer.active.viewportY - bufBase + 1; // current row (1-based)
-    term.write(CLEAR_LINE + text + '\r\n');
-    return rel + bufBase - 1; // absolute 0-based buffer row of the written line
-  }
-
-  // Append the opening banner rows (frame top → header), recording the header
-  // row AND how many frame rows precede it in the buffer (natural flow: on a
-  // SHORT viewport the top rows have already scrolled off, so the header's
-  // on-screen row ≠ its frame ordinal — we address rows from the buffer, not
-  // the frame). The 6 module rows are pre-appended so the full shape is
-  // visible from frame 1 (their rows are `selftestHeaderY + 1 + i`).
-  function openBoot(): void {
-    if (!term || bootState !== 'booting' || layoutDone) return;
-    let pre = 0; // frame rows appended so far (natural-flow count)
-    const rr = (t: string): number => { const y = appendRow(t); pre += 1; return y; };
-    rr(frameTop());
-    rr(frameRow(BANNER_TITLE));
-    rr(frameRow(''));
-    rr(frameRow('  ROM ' + romText() + ' · MEM ' + memText()));
-    rr(frameRow(''));
-    selftestHeaderY = rr(bootHeaderLine('testing'));
-    headerPrecededRows = pre; // rows in-frame ABOVE the header (for S4-rel mapping)
-    for (let i = 0; i < MODULES.length; i++) {
-      modState[i] = 'pending';
-      modDots[i] = 0;
-      rr(bootModuleRow(i));
-    }
-    layoutDone = true;
-  }
-
-  // The absolute (0-based buffer) row of module row i. The rows are appended
-  // in order right under the header row, so this is stable bookkeeping of lines
-  // we ourselves appended (natural-flow; the buffer only ever scrolls up).
-  function moduleRowAbs(i: number): number {
-    return selftestHeaderY + 1 + i;
-  }
-
-  // Repaint module row i in place — CUP to that row's absolute buffer row
-  // (header + 1 + i), col 1, the bordered content. This is the ONE in-place
-  // repaint the self-test needs (dot growth); the row is still APPEND-ONLY in
-  // the macro sense (it is written at its append position and never moved).
-  function paintModuleRow(i: number): void {
-    if (!term) return;
-    const abs = moduleRowAbs(i); // absolute 0-based buffer row
-    const bufBase = term.buffer.active.baseY;
-    const rel = abs - bufBase + 1;
-    if (rel < 1 || rel > term.rows) return; // off-screen (short viewport) — skip
-    term.write('\x1b[' + rel + ';1H' + CLEAR_LINE + bootModuleRow(i));
-  }
-  let headerPrecededRows = 0;
-
-  // Append the closing tail (frame mid → READY. → frame bottom) once every
-  // module has settled. On a viewport too short to hold the FULL block (the
-  // natural-clip case), the top rows scroll off as we append — so after the
-  // tail we pad the buffer to the bottom, guaranteeing the frame-bottom +
-  // prompt land at the tail (no jump: the TOP simply falls off, bottom stays).
-  function appendBootTail(): void {
-    if (!term || tailAppended) return;
-    tailAppended = true;
-    appendRow(frameRow(''));
-    appendRow(bootTriadRow());
-    appendRow(frameRow(''));
-    appendRow(frameRow('  READY.'));
-    appendRow(frameBottom());
-    renderCurrentComposer();
-    focusInput();
-  }
-  let tailAppended = false;
-  let layoutDone = false;
-
   // ── frame dispatch ──────────────────────────────────────────────────────────
   type DashFrame = { t: string; [key: string]: unknown };
   let dashStreamSeenFrame = false;
 
   function handleFrame(f: DashFrame): void {
     switch (f.t) {
-      case 'boot': {
-        const m = f.m as string;
-        const s = f.s as 'testing' | 'ok' | 'fault' | 'pending';
-        if (s === 'ping') {
-          // The connect-time ping row (CRTX/LLM): very visible — a 'PING' status
-          // plus a 12-dot field. Its dots grow right away (the ping IS the test),
-          // its id rides the frame so we track exactly this round.
-          const i = idx(m);
-          if (i >= 0) {
-            modState[i] = 'ping';
-            modDots[i] = 0;
-            dotStream[i] = true;
-            paintModuleRow(i);
-            clearInterval(modDotsTimer[i]);
-            modDotsTimer[i] = setInterval(() => {
-              if (modState[i] !== 'ping') { clearInterval(modDotsTimer[i]); return; }
-              if (!dotStream[i]) return;
-              modDots[i] = Math.min(DOTS_FULL, modDots[i] + 1);
-              if (modDots[i] === DOTS_FULL) clearInterval(modDotsTimer[i]);
-              paintModuleRow(i);
-            }, DOT_STEP_MS);
-          }
-          break;
-        }
-        if (s === 'pending') {
-          // The pending placeholder. Record the state; the line is already
-          // drawn in the frame.
-          const i = idx(m);
-          if (i >= 0 && modState[i] === 'pending') modState[i] = 'pending';
-          break;
-        }
-        if (s === 'testing') {
-          const i = idx(m);
-          if (i >= 0 && (modState[i] === 'pending' || modState[i] === 'fault')) {
-            // Start (or FAULT-retry re-animate) this module's line. It is the
-            // APPEND-ONLY row: paint the bordered row now, then grow its dots
-            // in PLACE on that ONE row (100ms cadence) while only this row
-            // animates. (A FAULT retry re-animates only its own row.)
-            modState[i] = 'testing';
-            modDots[i] = 0;
-            dotStream[i] = true; // (re)open the live line: dots stream only here
-            paintModuleRow(i);
-            clearInterval(modDotsTimer[i]);
-            modDotsTimer[i] = setInterval(() => {
-              if (modState[i] !== 'testing') { clearInterval(modDotsTimer[i]); return; }
-              if (!dotStream[i]) return; // another line is live (or this one settled)
-              modDots[i] = Math.min(DOTS_FULL, modDots[i] + 1);
-              if (modDots[i] === DOTS_FULL) clearInterval(modDotsTimer[i]);
-              paintModuleRow(i);
-            }, DOT_STEP_MS);
-          }
-        } else if (s === 'ok') {
-          settleModule(m, true, (f.ms as number | null) ?? 0);
-        } else if (s === 'fault') {
-          settleModule(m, false, (f.ms as number | null) ?? 0);
-        }
-        break;
-      }
       case 'sseinit': {
         // Handshake: capture the session-correlation tag for this stream.
         if (typeof f.tag === 'string') connTag = f.tag;
@@ -559,6 +298,75 @@
         ready = true;
         streamReady = true;
         dashAttached = true;
+        break;
+      }
+      case 'banner': {
+        // DASH-faculty banner frame kind (the server OWNS the banner text):
+        //   {t:'banner', row: string}            — one verbatim row, appended
+        //   {t:'banner', row: string, m: string} — a module-seeded row (the
+        //                                          6 module rows, in DASH-first
+        //                                          order). We record each row's
+        //                                          0-based buffer row BEFORE
+        //                                          writing (so the live dot/
+        //                                          settle frames CUP back to
+        //                                          the exact same row in-place,
+        //                                          without re-appending).
+        //   {t:'banner', ready: true}            — the banner is settled;
+        //                                          commit the prompt tail
+        // The client renders the row verbatim (xterm.write). No client
+        // template, no client dot timer, no client ROM/MEM compute.
+        if (f.ready === true) {
+          if (!bannerSettled) {
+            bannerSettled = true;
+            if (!promptCommitted) {
+              promptCommitted = true;
+              commitPromptRow();
+              focusInput();
+            }
+          }
+        }
+        if (typeof f.row === 'string') {
+          const absBefore = term ? (term.buffer.active.viewportY - term.buffer.active.baseY) : -1;
+          bannerAppendRow(f.row);
+          if (typeof f.m === 'string' && absBefore >= 0) {
+            const key = MODULE_KEY(f.m);
+            modState[key] = modState[key] ?? 'pending';
+            modRowAbs[key] = absBefore; // 0-based — the row we just appended
+          }
+        }
+        break;
+      }
+      case 'boot': {
+        // The boot frame's `m` is the project module name; the module-seed
+        // banner frame (t:'banner', row, m) pre-seeds the 6 rows in DASH-first
+        // display order and records each row's absolute buffer row. This case
+        // handles the LIVE phases (testing/dot/ping/pending retry) with a
+        // single in-place repaint per module row (the server sends the row
+        // text — the client does NOT pretend a timer, it just paints what the
+        // stream tells it). The settle frame (s in ok|fault) is the final
+        // paint; the row is then PERMANENT (never re-cursor'd except via a
+        // retry which re-animates its own row with fresh dots).
+        const m = typeof f.m === 'string' ? MODULE_KEY(f.m) : '';
+        const s = f.s as 'testing' | 'dot' | 'ok' | 'fault' | 'pending' | 'ping' | 'retry' | undefined;
+        if (!m) break;
+        modState[m] = modState[m] ?? 'pending';
+        const row = typeof f.row === 'string' ? (f.row as string) : null;
+        if (row) {
+          if (s === 'dot' || s === 'testing' || s === 'ping' || s === 'pending' || s === 'retry') {
+            // Live frame: CUP back to the row's recorded absolute buffer row,
+            // paint the row's text verbatim. The dots grow server-paced (the
+            // frame is the ONLY update source — no client dot timer).
+            paintModuleRow(m, row);
+            if (s === 'pending') modState[m] = 'pending';
+            else if (s === 'ping') modState[m] = 'testing';
+            else modState[m] = 'testing';
+          } else if (s === 'ok' || s === 'fault') {
+            // Settle: CUP back to the row, paint the final text (dots padded
+            // to 12 by the server + status + ' * NNms' or ' — detail').
+            paintModuleRow(m, row);
+            modState[m] = s;
+          }
+        }
         break;
       }
       case 'user': {
@@ -689,7 +497,10 @@
       letterSpacing: LETTER_SPACING,
       // Natural flow — xterm behaves normal: append-at-current + its own
       // follow-near-tail default is the ONLY follow logic (no tail math, no
-      // pad seeding, no clamp). Deterministic 1000-line scrollback.
+      // pad seeding, no bottom-hug, no clamp). The prompt tail row lands
+      // directly BELOW the READY. row when the banner settles (on the
+      // {t:'banner',ready:true} frame), and the composer rides it (commit
+      // prompt on the first keypress, Enter commits to transcript).
       scrollback: 1000,
       theme: {
         background: '#000',
@@ -706,7 +517,11 @@
     if (termHost) fit.fit();
 
     void (async () => {
-      openBoot(); // natural-flow: append frame → header → 6 module rows
+      // The banner rows stream in from the server (order: title → header →
+      // 6 module rows → footer → triad → blank → READY. → tail). We do NOT
+      // prime anything here; the stream draws the whole shape. Once the
+      // tail frame ({t:'banner',ready:true}) lands, we append the prompt
+      // row (single '\n' + '❯ ') directly below the READY. row.
       dashAttached = true;
       booted = true;
       void openDashStream();
@@ -918,7 +733,7 @@
     </p>
     <p class="wire-line">
       <span class="param-label">build</span>
-      ROM {romText()} · MEM {memText()} · xterm {XTERM_VERSION}
+      ROM {ROM_KIB} · xterm {XTERM_VERSION}
     </p>
   </div>
 </div>
@@ -1093,7 +908,7 @@
   .spinner-pick-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     padding: 4px 8px;
     cursor: pointer;
     color: #e6edf3;
