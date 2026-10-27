@@ -18,8 +18,16 @@
      — visually close but distinct glyphs). Leading with a named family
      that the OS is actually holding (Cascadia on Win11) sits every glyph
      in the same font. */
-  --mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
+  /* The body face is the baked JetBrains Mono (self-hosted, OFL — see
+     src/lib/fonts.css). It leads the terminal + all chrome monospace so every
+     glyph (including the markers « » and the box-drawing frame) sits in the
+     same font on the locked 16px grid. The fallback chain covers offline. */
+  --mono: 'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* The SPCPECTRA UI-SHELL face — baked self-hosted Orbitron for the HUD
+     titles + card/tab labels (path (b): xterm stays pure mono; Orbitron is
+     chrome-only, never terminal content). */
+  --chrome: 'Orbitron', 'JetBrains Mono', 'Cascadia Mono', monospace;
 }
 
 * {

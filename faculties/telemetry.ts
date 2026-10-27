@@ -36,12 +36,18 @@
 //   GET /telemetry/snapshot   → JSON: the whole engine state in one object:
 //                               { llm: {current, byId}, ns, stats, flow, profiles }
 //
+// The telemetry lane is where the LLM self-accounting + NS flow frames LAND;
+// this faculty is the bus monitor (SPEC 5.1) — flow counts, ns.bus stats, and
+// its own self-test subject. It is the READ-ONLY consumer: a faculty publishes
+// its OWN telemetry lane (the README pattern: llm.telemetry, ns.telemetry,
+// dash.telemetry); the telemetry faculty consumes them all, never publishes.
+//
 // NO writes. Read-only by construction: it never publishes, it only listens.
 // This is the data path for the dashboard arc (R2 renders the live HUD from it).
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Synapse } from '../synapse/index.js'
 import type { LlmTelemetryEvent, NsTelemetryEvent, LlmRequestEvent, LlmDoneEvent } from '../nervous-system.js'
-import { isAllowedHost } from './chat.js'
+import { isAllowedHost } from './dash.js'
 
 const PROFILE_RING_CAP = 200 // last 200 requests (bounded)
 const STATS_INTERVAL_MS = 1_000 // 1 Hz 'telemetry.stats' tick

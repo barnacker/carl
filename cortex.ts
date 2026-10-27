@@ -67,18 +67,11 @@ export class recreateCortex {
         'llm.request',
       )
     })
-    synapse.subscribe('llm.content.token', async (event: unknown) => {
-      await this.forward('chat.response', event as LlmContentTokenEvent)
-    }, 'cortex')
-    synapse.subscribe('llm.done', async (event: unknown) => {
-      await this.forward('chat.response', event as LlmDoneEvent)
-    }, 'cortex')
-    synapse.subscribe('llm.error', async (event: unknown) => {
-      await this.forward('chat.response', event as LlmErrorEvent)
-    }, 'cortex')
-  }
-
-  private async forward(channel: 'chat.response', event: LlmContentTokenEvent | LlmDoneEvent | LlmErrorEvent): Promise<void> {
-    await this.synapse.publish(event, channel)
+  // Post-DASH: the LLM faculty publishes directly to bus lanes
+  // (llm.content.token, llm.done, llm.error) that the DASH faculty consumes
+  // at its granted bus positions. The old cortex→chat.response relay is
+  // dead (the chat faculty is retired); cortex remains ONLY as the
+  // #IDENTITY prepend on the request path.
+  // The #IDENTITY anchor above is byte-identical (do not reslice).
   }
 }

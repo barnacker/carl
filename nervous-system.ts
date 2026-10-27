@@ -48,6 +48,19 @@ export interface LlmDoneEvent {
   readonly id: string
 }
 
+// The LLM faculty's OWN terminal abort frame (a faculty publishes its own
+// telemetry — the README's own pattern). A killed round must still publish
+// a terminal llm.telemetry{status:'aborted'} (reviewer leak #1: aborts
+// were silent). It lands on the telemetry lane (the dark-lane discipline:
+// the raw reasoning text has exactly one address — the telemetry lane).
+export interface LlmAbortFrameEvent {
+  readonly type: 'abort.frame'
+  readonly id: string
+  readonly status: 'aborted'
+  readonly partial_content_tokens?: number
+  readonly partial_reasoning_tokens?: number
+}
+
 export interface LlmErrorEvent {
   readonly type: 'error'
   readonly id: string
@@ -79,49 +92,54 @@ export interface CortexRequestEvent {
   readonly max_tokens?: number
 }
 
-export interface ChatResponseEvent {
-  readonly type: 'token' | 'done' | 'error'
-  readonly id: string
-  readonly lane?: 'content' | 'reasoning'
-  readonly text?: string
-  readonly message?: string
-}
-
 export type AnyBusEvent =
   | LlmContentTokenEvent
   | LlmTelemetryEvent
   | NsTelemetryEvent
   | LlmDoneEvent
+  | LlmAbortFrameEvent
   | LlmErrorEvent
   | LlmAbortEvent
   | LlmRequestEvent
   | CortexRequestEvent
-  | ChatResponseEvent
 
 // --- Telemetry lane topology (OPERATOR-LOCKED) --------------------------------
 // Every bus message carries a lane. The lane is a structural constraint on
 // WHO MAY SUBSCRIBE, enforced at subscribe time (Law 11 — the mechanism ships
-// its own constraint). As of this round:
+// its own constraint). As of the DASH faculty round:
 //   bright    — any faculty may subscribe (the existing traffic; default lane)
-//   telemetry — the telemetry faculty ONLY may subscribe
+//   telemetry — the telemetry faculty + ns + DASH may subscribe. The DASH
+//               faculty's granted bus positions are its consumption surface:
+//               llm.telemetry (the LLM faculty publishing its OWN telemetry
+//               lane — reasoning frames + counts + ms + TTFT; announce-
+//               discipline from dstructs stands) and ns.telemetry (the bus
+//               monitor's own 10 Hz flow; DASH relays it to the client as
+//               the 'flow' stat — the ns.bus monitor). 'dark' and 'dash.*'
+//               self-telemetry is DASH's own lane, no other faculty may
+//               subscribe there.
 //   dark      — NOBODY may subscribe (the lane + its validation exist and are
 //               empty as of now; a subscribe to it is rejected + logged)
 // Reasoning text has exactly one address: the telemetry lane, inside
 // llm.telemetry. No llm.reasoning.token type exists or may be created.
+// The dashboard (DASH faculty) receives llm.telemetry and its render
+// decisions are view-layer only: the DASH SSE carries a per-frame COUNT for
+// reasoning, never the text — the dark text stays dark structurally.
 export type BusLane = 'bright' | 'telemetry' | 'dark'
 
 const SUBSCRIBER_PERMISSION_MAP: Record<BusLane, string[]> = {
   bright: [], // [] = no restriction: any faculty may subscribe on 'bright'
   // 'ns' (the Nervous System itself) is granted on the telemetry lane ONLY as
   // the publisher+observer of its own flow metrics ('ns.telemetry' @ 10 Hz —
-  // read-only of itself; the dashboard consumes via the telemetry faculty,
-  // not as a direct subscriber). Nothing else may subscribe here.
-  telemetry: ['telemetry', 'ns'],
+  // read-only of itself). 'telemetry' is the bus monitor. 'dash' is the DASH
+  // faculty's granted consumption positions on the telemetry lane (its
+  // "consuming what it is permitted" surface). Nothing else may subscribe here.
+  telemetry: ['telemetry', 'ns', 'dash'],
   dark: [], // rejected: nobody may subscribe (validation exists, lane is empty)
 }
 
 // Rejects subscribe to 'dark' ALWAYS (the list is []); rejects subscribe to
-// 'telemetry' for any faculty other than 'telemetry'; allows 'bright' for all.
+// 'telemetry' for any faculty other than the granted positions; allows
+// 'bright' for all.
 function subscribeLaneAllowed(lane: BusLane, faculty: string): boolean {
   const allowed = SUBSCRIBER_PERMISSION_MAP[lane]
   if (lane === 'dark') return false
@@ -133,14 +151,13 @@ function subscribeLaneAllowed(lane: BusLane, faculty: string): boolean {
 // envelope on publish. llm.telemetry + any *.telemetry => 'telemetry'; the
 // rest default to 'bright'.
 function laneForChannel(channel: string): BusLane {
-  if (channel === 'llm.telemetry' || /\.[a-z]+\.(telemetry)$/.test(channel) || channel.endsWith('.telemetry')) {
+  if (channel === 'llm.telemetry' || /\.telemetry$/.test(channel) || channel.endsWith('.telemetry')) {
     return 'telemetry'
   }
   return 'bright'
 }
 
 const LANE_VALUES = ['content', 'reasoning'] as const // payload.lane on llm.content.token (structural, not a bus lane)
-const CHAT_RESPONSE_TYPES = ['token', 'done', 'error'] as const
 
 // --- Bus logging (brief "Logging (MANDATORY)") ---------------------------------
 // The log is an OBSERVER of the bus, never a gate: relay happens regardless of
@@ -152,14 +169,14 @@ const LOG_MAX_BYTES = 5 * 1024 * 1024
 const LOG_ROTATIONS = 3
 
 const CHANNEL_FROM: Record<string, string> = {
-  'cortex.request': 'ChatFaculty',
+  'cortex.request': 'DASHFaculty',
   'llm.request': 'Cortex',
   'llm.content.token': 'LLMFACULTY',
   'llm.telemetry': 'LLMFACULTY',
   'llm.done': 'LLMFACULTY',
+  'llm.abort.frame': 'LLMFACULTY',
   'llm.error': 'LLMFACULTY',
-  'llm.abort': 'ChatFaculty',
-  'chat.response': 'Cortex',
+  'llm.abort': 'DASHFaculty',
   'ns.telemetry': 'NervousSystem',
 }
 const CHANNEL_TO: Record<string, string> = {
@@ -167,16 +184,16 @@ const CHANNEL_TO: Record<string, string> = {
   'llm.request': 'LLMFACULTY',
   'llm.content.token': 'Cortex',
   'llm.telemetry': 'TelemetryFaculty',
+  'llm.abort.frame': 'TelemetryFaculty',
   'llm.done': 'Cortex',
   'llm.error': 'Cortex',
   'llm.abort': 'LLMFACULTY',
-  'chat.response': 'ChatFaculty',
   'ns.telemetry': 'TelemetryFaculty',
 }
 
 function quoteText(value: unknown): string {
   const s = typeof value === 'string' ? value : ''
-  return `"${s.length > 50 ? s.slice(0, 50) : s}"`
+  return `\"${s.length > 50 ? s.slice(0, 50) : s}\"`
 }
 
 // Bus FLOW COUNTERS (R1) — the bus counts ITS OWN deliveries at the publish
@@ -285,13 +302,6 @@ function buildLogLine(channel: string, p: Record<string, unknown>, lane: string)
     if (typeof p.total === 'number') parts.push(`total=${p.total}`)
   }
   if (channel === 'llm.error' && typeof p.message === 'string') parts.push(`message=${quoteText(p.message)}`)
-  if (channel === 'chat.response' && p.type === 'token' && typeof p.lane === 'string') {
-    parts.push(`lane=${p.lane}`)
-    parts.push(`text=${quoteText(p.text)}`)
-  }
-  if (channel === 'chat.response' && p.type === 'error' && typeof p.message === 'string') {
-    parts.push(`message=${quoteText(p.message)}`)
-  }
   const from = CHANNEL_FROM[channel] ?? 'unknown'
   const to = CHANNEL_TO[channel] ?? 'unknown'
   return `${new Date().toISOString()} ${channel} ${from} to=${to}${parts.length ? ' ' + parts.join(' ') : ''}`
@@ -443,12 +453,9 @@ const VALIDATORS: Readonly<Record<string, (payload: unknown) => boolean>> = {
         (e) => isRecord(e) && isRecord(e.lanes) && isFiniteNumber(e.lanes.bright) && isFiniteNumber(e.lanes.telemetry) && isFiniteNumber(e.lanes.dark),
       )),
   'llm.done': (p) => isRecord(p) && p.type === 'done' && typeof p.id === 'string',
+  'llm.abort.frame': (p) => isRecord(p) && p.type === 'abort.frame' && typeof p.id === 'string',
   'llm.error': (p) => isRecord(p) && p.type === 'error' && typeof p.id === 'string' && typeof p.message === 'string',
   'llm.abort': (p) => isRecord(p) && p.type === 'abort' && typeof p.id === 'string',
-  'chat.response': (p) =>
-    isRecord(p) &&
-    (typeof p.type === 'string' && (CHAT_RESPONSE_TYPES as readonly string[]).includes(p.type)) &&
-    typeof p.id === 'string',
 }
 
 export class Bus {
@@ -467,11 +474,27 @@ export class Bus {
   }
 }
 
-export function createSynapse(bus: Bus): Synapse {
+// The raw bus (EventEmitter-backed) — a single instance for the process.
+// The DASH self-test uses it DIRECTLY to prove the piping (subscribe →
+// emit → verify → unsubscribe) at the mechanism level; the synapse facade
+// is the permissioned publish/subscribe surface.
+const rawBus = new Bus()
+
+export function createBus(): {
+  on: (event: string, listener: (payload: unknown) => void) => void
+  off: (event: string, listener: (payload: unknown) => void) => void
+  emit: (event: string, payload: unknown) => void
+} {
+  return rawBus
+}
+
+export function createSynapse(bus: Bus = rawBus): Synapse {
   // Subscribe-time lane enforcement. The permission map is Structural — it
   // lives on the bus, not in any one faculty, so the constraint can't be
   // bypassed by a subtype. 'dark' is ALWAYS rejected (the lane exists, its
-  // check exists, it is empty); 'telemetry' admits only the telemetry faculty.
+  // check exists, it is empty); 'telemetry' admits only the granted
+  // positions (telemetry faculty, ns, and the dash faculty — the DASH's
+  // consuming surface for llm.telemetry + ns.telemetry).
   // Returns the lane for an allowed channel, or null for a rejected channel.
   const resolveRelayLane = (channel: string): BusLane | null => laneForChannel(channel)
   const resolveSubscribeLane = (channel: string, faculty: string): BusLane | null => {
@@ -524,6 +547,14 @@ export function createSynapse(bus: Bus): Synapse {
           /* silent drop — Spec §4: emit with no matching listener is a no-op */
         })
       })
+    },
+    unsub(eventType: string): void {
+      // Remove all listeners for this channel (the DASH self-test's lifecycle
+      // leg needs a clean off; the raw bus has no per-faculty listener scoping).
+      bus.off(eventType, () => {
+        /* the off target */
+      })
+      ;(bus as unknown as { removeAllListeners: (e: string) => unknown }).removeAllListeners(eventType)
     },
     nsTelemetry(intervalMs: number): void {
       // NS FLOW PUBLISH — the Nervous System observes its own flow: every

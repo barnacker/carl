@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { isAllowedHost } from '../../dist/web/server.js'
+import { isAllowedHost } from '../../dist/faculties/dash.js'
 
 test('isAllowedHost accepts 127.0.0.1, localhost, hermes — with or without a port', () => {
   assert.equal(isAllowedHost('127.0.0.1'), true)

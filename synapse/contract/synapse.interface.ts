@@ -1,6 +1,12 @@
 export interface Synapse {
   publish<TEvent>(event: TEvent, channel?: string): Promise<void>
   subscribe<TEvent>(eventType: string, handler: (event: TEvent) => Promise<void>, faculty?: string): void
+  /**
+   * Drop all listeners for a channel (the self-test lifecycle leg's clean
+   * off — the mechanism ships its own unsubscription; the DASH self-test
+   * verifies zero delivery after the off).
+   */
+  unsub(eventType: string): void
   darkLane(payload: Uint8Array, destination: string): Promise<void>
   /**
    * NS observes its own flow: every intervalMs the bus publishes

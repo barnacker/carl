@@ -75,15 +75,42 @@ export class LLMFACULTY {
     }, 'llm')
   }
 
+  // The LLM faculty publishes its OWN terminal abort frame (a faculty
+  // publishes its own telemetry — the README's own pattern). A killed round
+  // must still publish a terminal llm.telemetry{status:'aborted'} (reviewer
+  // leak #1: aborts were silent). It lands on the telemetry lane.
+  private async publishAbortFrame(id: string): Promise<void> {
+    const t = this.telemetry.get(id)
+    await this.synapse.publish(
+      {
+        type: 'abort.frame',
+        id,
+        status: 'aborted',
+        partial_content_tokens: t?.content_tokens,
+        partial_reasoning_tokens: t?.reasoning_tokens,
+      },
+      'llm.abort.frame',
+    )
+  }
+
   private async handleRequest(req: LlmRequestEvent): Promise<void> {
     const { id } = req
     const controller = new AbortController()
     this.controllers.set(id, controller)
+    // flag whether the abort-frame has been published (only once per request)
+    let abortFramePublished = false
     try {
       await this.stream(req, controller)
     } catch (err) {
       const e = err as Error
-      if (e.name !== 'AbortError') {
+      if (e.name === 'AbortError') {
+        // Reviewer leak #1: a killed round must still publish a terminal
+        // llm.telemetry{status:'aborted'} (the LLM faculty publishing its
+        // OWN terminal telemetry frame; aborts were silent). The frame is
+        // captured BEFORE the telemetry state is deleted below.
+        abortFramePublished = true
+        await this.publishAbortFrame(id)
+      } else {
         void this.synapse.publish(
           {
             type: 'error',
@@ -97,6 +124,7 @@ export class LLMFACULTY {
       this.controllers.delete(id)
       this.telemetry.delete(id)
     }
+    void abortFramePublished
   }
 
   private async stream(req: LlmRequestEvent, controller: AbortController): Promise<void> {
