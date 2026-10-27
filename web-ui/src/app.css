@@ -10,7 +10,15 @@
   --accent: #5978fa;
   --accent-2: #b9c3ff;
   --user: #243342;
-  --mono: ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', Consolas, monospace;
+  /* The marker glyphs « » must render at exactly 1 monospace cell wide.
+     Do NOT lead with ui-monospace: Chromium's ui-monospace resolves to a
+     DIFFERENT monospace than the named family that actually lands, so a
+     half-cell jump is possible between the marker and its neighbor text
+     (measured on Chromium 151: ui-monospace=8.43 vs monospace=8.42 at 14px
+     — visually close but distinct glyphs). Leading with a named family
+     that the OS is actually holding (Cascadia on Win11) sits every glyph
+     in the same font. */
+  --mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 

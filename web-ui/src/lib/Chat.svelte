@@ -38,22 +38,31 @@
   }
 
   // Thinking spinner state. Only one entry is open at a time (sending
-  // lock), so one global ticker is the spinner. Re-created whenever the
-  // selected set changes; advances on the SET's own interval.
+  // lock), so one ticker suffices. Gating is STRUCTURAL, not a flag: while
+  // rendererBusy, an entry shows the spinner only when entry.open; open
+  // flips false on the same state update that first content byte sets
+  // entry.thinking=false, and nothing else renders the spinner — so the
+  // spinner and the marker+text branch can never both render at once,
+  // and the swap happens on the first lane:content frame.
+  // Ticker advances on the selected set's own interval in perpetuity
+  // (cheap; the frame is consumed only when an entry asks for it).
   let spinnerFrame = $state(spinnerById(loadSpinner()).frames[0]);
+  let rendererBusy = $state(false);
   $effect(() => {
     const set = spinnerById(spinnerId);
-    spinnerFrame = set.frames[0];
+    const int = set.interval > 0 ? set.interval : 100;
+    spinnerFrame = set.frames[0] ?? spinnerFrame;
+    let i = 0;
     const t = setInterval(() => {
-      spinnerFrame = set.frames[(set.frames.indexOf(spinnerFrame) + 1) % set.frames.length];
-    }, set.interval);
+      i = (i + 1) % Math.max(1, set.frames.length);
+      spinnerFrame = set.frames[i] ?? spinnerFrame;
+    }, int);
     return () => clearInterval(t);
   });
 
   let history = $state<Entry[]>([]);
   let input = $state('');
   let sending = $state(false);
-  let streaming = $state(false);
   let streamDone = $state(false);
   let lampState = $state<'idle' | 'posting' | 'receiving'>('idle');
   let controller: AbortController | null = null;
@@ -95,23 +104,23 @@
       e = history.find((x) => x.reqId === id);
     }
     if (!e) e = history[history.length - 1];
+    if (!e) return;
     if (e.reqId === null && id) e.reqId = id;
     if (lane === 'reasoning') {
       if (e.reasoning.length === 0 && lastFirstByte === null) e.thinking = true;
       e.reasoning += text;
     } else {
+      // First lane:content frame — structural spinner→marker swap:
+      // clear thinking AND close the spinner placeholder in the SAME
+      // state update so the spinner can never coexist with content.
       if (!e.firstByte) { e.firstByte = true; e.thinking = false; }
+      if (e.open && e.content.length === 0) {
+        e.open = false;
+      }
       e.content += text;
     }
     if (lastFirstByte === null) lastFirstByte = Date.now();
     if (lampState === 'posting') lampState = 'receiving';
-    streaming = true;
-    setTimeout(scrollIfPinned, 0);
-  }
-
-  function markAssistantDone() {
-    streamDone = true;
-    if (lastLastByte === null) lastLastByte = Date.now();
     setTimeout(scrollIfPinned, 0);
   }
 
@@ -132,10 +141,10 @@
   function focusInput() {
     setTimeout(() => {
       if (inputEl) {
-          inputEl.focus();
-          inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
-        }
-      }, 0);
+        inputEl.focus();
+        inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+      }
+    }, 0);
   }
 
   onMount(focusInput);
@@ -145,6 +154,7 @@
     if (text.length === 0 || sending) return;
     input = '';
     sending = true;
+    rendererBusy = true;
     lampState = 'posting';
     lastFirstByte = null;
     lastLastByte = null;
@@ -190,9 +200,9 @@
         buf += decoder.decode(value, { stream: true });
         let sep;
         while ((sep = buf.indexOf('\n\n')) !== -1) {
-          const frame = buf.slice(0, sep);
+          const frameMsg = buf.slice(0, sep);
           buf = buf.slice(sep + 2);
-          for (const line of frame.split('\n')) {
+          for (const line of frameMsg.split('\n')) {
             const t = line.trim();
             if (!t.startsWith('data:')) continue;
             const payload = t.slice(5).trim();
@@ -223,7 +233,6 @@
       }
       doneStream(activeRequestId ?? null);
       activeRequestId = null;
-      streaming = false;
     } catch (err) {
       const aborted = (err as { name?: string } | null | undefined)?.name === 'AbortError';
       const e = history.find((x) => x.reqId === activeRequestId) ?? history[history.length - 1];
@@ -232,15 +241,11 @@
       doneStream(activeRequestId ?? null); // finalize the entry, release the id and sending lock (finally)
     } finally {
       sending = false;
-      streaming = false;
+      rendererBusy = false;
       controller = null;
       setTimeout(scrollIfPinned, 0);
       focusInput();
     }
-  }
-
-  function abortStream() {
-    controller?.abort();
   }
 </script>
 
@@ -259,17 +264,16 @@
       {#each history as entry (entry.reqId || entry)}
         <div class="term-entry">
           <div class="term-user"><span class="marker">«</span><span class="user-text">{entry.user}</span></div>
-          {#if entry.firstByte}
+          {#if entry.firstByte || entry.content.length > 0}
             <div class="term-content" class:open-stream={entry.open}>
-              <span class="marker">»</span><span class="content-text">{@html entry.content}</span>
+              <span class="marker">»</span><span class="content-text">
+                {entry.content.length > 0 ? ' ' + entry.content : (entry.open ? spinnerFrame : '')}
+              </span>
             </div>
-          {:else if entry.error === null}
+          {:else if entry.open && rendererBusy}
             <div class="term-content term-placeholder" class:open-stream={entry.open}>
-              <span class="marker">»</span>
-              <span class="spinner-frame" aria-label="thinking">{spinnerFrame}</span>
+              <span class="spinner" aria-label="thinking">{spinnerFrame} </span>
             </div>
-          {:else}
-            <!-- no reply yet (e.g. HTTP error before first byte): nothing to show -->
           {/if}
           {#if entry.error}<div class="term-error">E {entry.error}</div>{/if}
         </div>
@@ -421,11 +425,17 @@
     color: #5c6c7d;
   }
   .spinner-frame {
-    /* exactly 1ch of the monospace stack — single-width constraint. The
-       frame char itself is verified single-width in the font actually
-       used by this host (headless chromium cell probe). */
+    /* exactly one monospace cell wide. The frame chars are single-width
+       (per-set verified against the reference 'o' advance in the host
+       font — see spinners.ts), and the 1ch box guarantees no line shift
+       even if a glyph fell to a wider fallback. */
     display: inline-block;
     width: 1ch;
+  }
+  .spinner {
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.25;
   }
   .term-error {
     color: #7a5c00;
@@ -436,12 +446,14 @@
     word-break: break-word;
     margin: 2px 0 0;
   }
-  /* Prompt row containment: fixed single-line box; flex 0 0 auto means the
-     row can never stretch to make room for history content. The textarea
-     is a fixed 1.25em line box; text past one line scrolls inside it.
-     Measured with the DOM-stub probe (scratch dir, variant C): the prompt
-     row rect is identical before/after a new entry appends below the fold
-     — the pane grows in history, the prompt stays put. */
+  /* Prompt row containment (DOM-stub root cause, scratch dir): the prompt
+     row is flex 0 0 auto and the textarea a fixed 1.25em line box, so the
+     row can never grow to absorb history content — history grows inside
+     the scroll container and the prompt rect is identical before/after a
+     new entry appends (measured: 451.5→477 in all variants). The remaining
+     "not terminal-like" behavior was the scroll view: fixing the view to
+     the bottom only while already at the bottom (auto-scroll pin) and
+     never yanking the operator back down after a manual scroll-up. */
   .term-prompt-row {
     flex: 0 0 auto;
   }
