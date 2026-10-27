@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path'
 
-import { createWebServer } from '../dist/web/server.js'
+import { bootstrap } from '../dist/main.js'
 
 function usage() {
   process.stderr.write('usage: carl-web [--port <port>] [--static <dir>]\n')

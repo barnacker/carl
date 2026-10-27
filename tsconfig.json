@@ -14,14 +14,12 @@
     "types": ["node"]
   },
   "include": [
-    "model/**/*.ts",
+    "main.ts",
+    "cortex.ts",
+    "nervous-system.ts",
     "schemas/**/*.ts",
     "synapse/**/*.ts",
-    "nervous-system/**/*.ts",
-    "cortex/**/*.ts",
-    "faculties/**/*.ts",
-    "harness/**/*.ts",
-    "web/**/*.ts"
+    "faculties/**/*.ts"
   ],
   "exclude": [
     "dist",

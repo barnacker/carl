@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createVllmModel, resolveModelConfig } from '../dist/model/vllm.js'
+import { bootstrap } from '../dist/main.js'
 
 function usage() {
   process.stderr.write('usage: carl --ask "<question>"\n')
