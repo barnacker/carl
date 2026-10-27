@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { spinners, spinnerById, DEFAULT_SPINNER_ID } from './spinners';
+  import { Spinner, spinners, spinnerById, DEFAULT_SPINNER_ID } from './spinners';
 
   const CHAT_ENDPOINT = '/chat';
+  const TELEMETRY_ENDPOINT = '/telemetry';
   const DEFAULT_MODEL = 'Qwen/Qwen3.8-27B-FP8';
   const SPINNER_KEY = 'carl.spinner';
 
@@ -35,6 +36,47 @@
     } catch {
       /* non-fatal */
     }
+  }
+
+  // --- spinner pickbox (live-preview dropdown) --------------------------
+  // Every open option row shows the set name beside a live animating
+  // frame. One shared rAF loop drives all rows at each set's own interval
+  // scaled 2x slower (operator rule: 100+ live options must not jank the
+  // params panel); a single shared $state counter invalidates the list
+  // once per tick batch, so the per-frame cost is O(visible rows).
+  const PREVIEW_SLOW = 2;
+  let previewTicks = $state(0);
+  let spinOpen = $state(false);
+  let spinPickBox: HTMLDivElement;
+  let previewState = $state(spinners.map((s) => {
+    const int = Math.max(100, Math.round(s.interval * PREVIEW_SLOW));
+    return { next: int, int, i: 0 };
+  }));
+  $effect(() => {
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      const dt = Math.min(now - last, 250); // clamp: tab-wake / time jumps
+      last = now;
+      for (let r = 0; r < previewState.length; r++) {
+        const st = previewState[r];
+        st.next -= dt;
+        if (st.next <= 0) {
+          st.i = (st.i + 1) % spinners[r].frames.length;
+          st.next += st.int;
+          previewTicks++; // one shared invalidation per flip batch
+        }
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  });
+  // Template reads previewState (a $state array) through previewFrame();
+  // a mutation of a row's .i re-renders exactly that row's text.
+  function previewFrame(s: Spinner): string {
+    const st = previewState[spinners.indexOf(s)];
+    return s.frames[st.i] ?? s.frames[0] ?? '';
   }
 
   // Thinking spinner state. Only one entry is open at a time (sending
@@ -92,7 +134,7 @@
     const c = new AbortController();
     telemetryController = c;
     try {
-      const res = await fetch('/telemetry', { signal: c.signal });
+      const res = await fetch(TELEMETRY_ENDPOINT, { signal: c.signal });
       if (!res.ok || !res.body) return;
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf8');
@@ -136,27 +178,78 @@
     }
   }
 
+  // Reopen the telemetry stream on mount so it's live for the first send.
+
   // Visible, editable request parameters (everything sent to vLLM).
   let model = $state(DEFAULT_MODEL);
   let temperature = $state('1.0');
   let top_p = $state('1.0');
   let max_tokens = $state('');
 
-  function scrollTerminal() {
-    if (terminalEl) terminalEl.scrollTop = terminalEl.scrollHeight;
+  // Parametric terminal markers — operator-chosen glyphs rendered in
+  // front of every entry line (a user line, an assistant line), persisted
+  // to localStorage like the other params. Rendered as a plain text node
+  // in the template, so multi-char values are legal (up to 8) and user
+  // input can never be injected as HTML.
+  const USER_MARKER_KEY = 'carl.userMarker';
+  const ASSISTANT_MARKER_KEY = 'carl.assistantMarker';
+  function loadMarker(key: string, fallback: string): string {
+    try {
+      const v = localStorage.getItem(key);
+      if (v !== null && v !== '') return v.slice(0, 8);
+    } catch {
+      /* non-fatal */
+    }
+    return fallback;
+  }
+  let userMarker = $state(loadMarker(USER_MARKER_KEY, '❮'));
+  let assistantMarker = $state(loadMarker(ASSISTANT_MARKER_KEY, '❯'));
+  function setUserMarker(v: string) {
+    userMarker = v.slice(0, 8);
+    try { localStorage.setItem(USER_MARKER_KEY, userMarker); } catch { /* non-fatal */ }
+  }
+  function setAssistantMarker(v: string) {
+    assistantMarker = v.slice(0, 8);
+    try { localStorage.setItem(ASSISTANT_MARKER_KEY, assistantMarker); } catch { /* non-fatal */ }
   }
 
-  // Auto-scroll pin: follow while the operator is at the bottom of the
-  // pane; back off when they scroll up (never yank them back down).
+  function scrollTerminal() {
+    if (terminalEl) terminalEl.scrollTop = terminalEl.scrollHeight; // instant — terminal-like
+  }
+
+  // Auto-scroll pin (classic terminal flow: newest line at the bottom
+  // edge, history scrolls UP out of view as lines arrive):
+  //   - already at the bottom (within 40px)? → follow: every new entry /
+  //     token lands the viewport at the bottom (instant).
+  //   - user has scrolled UP? → follow off; their reading position is
+  //     respected (no force-scroll). The flag stays latched: the next
+  //     time they return to the bottom (scroll event within 40px) it
+  //     re-engages automatically.
   let followBottom = $state(true);
   function onHistScroll() {
     if (terminalEl) {
-      followBottom = terminalEl.scrollHeight - terminalEl.scrollTop - terminalEl.clientHeight < 24;
+      followBottom = terminalEl.scrollHeight - terminalEl.scrollTop - terminalEl.clientHeight < 40;
       if (followBottom) scrollTerminal();
     }
   }
   function scrollIfPinned() {
     if (followBottom) scrollTerminal();
+  }
+
+  // Terminal-region click-to-focus (operator spec): a click on ANY part of
+  // the terminal area — history pane, entry rows, markers, empty space,
+  // the prompt row — refocuses the prompt input. The input's own click is
+  // skipped (native caret placement runs instead); interactive widgets
+  // (buttons, links, the spinner pickbox) are skipped too. Wired on the
+  // outer .terminal container so the single handler covers the lamp,
+  // history pane, and prompt row; the params panel is a grid sibling of
+  // .terminal and is never reachable from this handler.
+  function onTerminalClick(e: MouseEvent) {
+    const t = e.target as HTMLElement | null;
+    if (!t) return;
+    if (t === inputEl) return;
+    if (t.closest('button, a, select, textarea, .spinner-pick')) return;
+    inputEl?.focus();
   }
 
   function applyToken(lane: 'reasoning' | 'content', text: string, id: string | null) {
@@ -214,6 +307,12 @@
   onMount(() => {
     focusInput();
     void openTelemetryStream(); // perpetual /telemetry SSE — the thinking source
+    // Close the spinner pickbox when the click lands outside it.
+    const onDocClick = (e: MouseEvent) => {
+      if (spinOpen && spinPickBox && !spinPickBox.contains(e.target as Node)) spinOpen = false;
+    };
+    document.addEventListener('click', onDocClick, true);
+    return () => document.removeEventListener('click', onDocClick, true);
   });
 
   async function send() {
@@ -317,7 +416,7 @@
 </script>
 
 <div class="page">
-  <div class="terminal">
+  <div class="terminal" onclick={onTerminalClick}>
     <span
       class="lamp lamp-{lampState}"
       role="button"
@@ -330,10 +429,10 @@
     <div class="term-history" bind:this={terminalEl} aria-live="polite" onscroll={onHistScroll}>
       {#each history as entry (entry.reqId || entry)}
         <div class="term-entry">
-          <div class="term-user"><span class="marker">«</span><span class="user-text">{entry.user}</span></div>
+          <div class="term-user"><span class="marker">{userMarker}</span><span class="user-text">{entry.user}</span></div>
           {#if entry.firstByte || entry.content.length > 0}
             <div class="term-content" class:open-stream={entry.open}>
-              <span class="marker">»</span><span class="content-text">
+              <span class="marker">{assistantMarker}</span><span class="content-text">
                 {entry.content.length > 0 ? ' ' + entry.content : (entry.open ? spinnerFrame : '')}
               </span>
             </div>
@@ -391,13 +490,45 @@
       <input class="param-input" bind:value={max_tokens} type="number" placeholder="(empty → omit)" />
     </label>
     <label class="param-row">
-      <span class="param-label">spinner</span>
-      <select class="param-input" value={spinnerId} onchange={(e) => setSpinner((e.target as HTMLSelectElement).value)}>
-        {#each spinners as s (s.id)}
-          <option value={s.id}>{s.label} ({s.id})</option>
-        {/each}
-      </select>
+      <span class="param-label">user marker</span>
+      <input class="param-input" bind:value={userMarker} type="text" maxlength="8" autocomplete="off" oninput={() => setUserMarker(userMarker)} />
     </label>
+    <label class="param-row">
+      <span class="param-label">assistant marker</span>
+      <input class="param-input" bind:value={assistantMarker} type="text" maxlength="8" autocomplete="off" oninput={() => setAssistantMarker(assistantMarker)} />
+    </label>
+    <div class="param-row">
+      <span class="param-label">spinner</span>
+      <div class="spinner-pick" bind:this={spinPickBox}>
+        <button
+          class="spinner-pick-head"
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={spinOpen}
+          onclick={() => (spinOpen = !spinOpen)}
+        >
+          <span class="spinner-pick-name">{spinnerById(spinnerId).label}</span>
+          <span class="spinner-pick-chev">{spinOpen ? '▾' : '▸'}</span>
+        </button>
+        {#if spinOpen}
+          <ul class="spinner-pick-list" role="listbox">
+            {#each spinners as s (s.id)}
+              <li
+                class="spinner-pick-row"
+                class:selected={s.id === spinnerId}
+                role="option"
+                aria-selected={s.id === spinnerId}
+                onclick={() => { setSpinner(s.id); spinOpen = false; inputEl?.focus(); }}
+              >
+                <span class="spinner-pick-name">{s.label}</span>
+                <span class="spinner-pick-prev mono-font">{previewFrame(s)}</span>
+                <span class="spinner-pick-int">{s.interval}ms</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    </div>
     <p class="wire-line">
       <span class="param-label">wire</span>
       POST /chat · content-type: application/json · accept: text/event-stream · auth: none
@@ -448,6 +579,9 @@
     color: #0f3d1a;
   }
   .term-history {
+    /* scrollable entry list, oldest → newest top → bottom (document
+       order; never reversed). flex 1 1 0 inside the .terminal column =
+       it takes all remaining height ABOVE the bottom-pinned prompt row. */
     flex: 1 1 0;
     min-height: 0;
     overflow-y: auto;
@@ -491,18 +625,15 @@
     min-height: 1.25em;
     color: #5c6c7d;
   }
-  .spinner-frame {
-    /* exactly one monospace cell wide. The frame chars are single-width
-       (per-set verified against the reference 'o' advance in the host
-       font — see spinners.ts), and the 1ch box guarantees no line shift
-       even if a glyph fell to a wider fallback. */
-    display: inline-block;
-    width: 1ch;
-  }
+  /* Thinking-indicator frame: sets may span 1-10 cells (braille = 1,
+     dna/cascade 2-4, pong 10) — per-set width is fixed and verified in
+     spinners.ts, so no per-cell box is needed; white-space:pre keeps the
+     frame's own spacing intact. */
   .spinner {
     font-family: var(--mono);
     font-size: 14px;
     line-height: 1.25;
+    white-space: pre;
   }
   .term-error {
     color: #7a5c00;
@@ -513,14 +644,12 @@
     word-break: break-word;
     margin: 2px 0 0;
   }
-  /* Prompt row containment (DOM-stub root cause, scratch dir): the prompt
-     row is flex 0 0 auto and the textarea a fixed 1.25em line box, so the
-     row can never grow to absorb history content — history grows inside
-     the scroll container and the prompt rect is identical before/after a
-     new entry appends (measured: 451.5→477 in all variants). The remaining
-     "not terminal-like" behavior was the scroll view: fixing the view to
-     the bottom only while already at the bottom (auto-scroll pin) and
-     never yanking the operator back down after a manual scroll-up. */
+  /* Prompt row: the BOTTOM-MOST element of the .terminal flex column
+     (after .term-history) — classic terminal position, pinned to the
+     pane's bottom edge. flex 0 0 auto + fixed 1.25em line box = it
+     never grows to absorb history content (prompt rect measured
+     stable before/after new entry appends: 451.5→477 in the earlier
+     audit). Empty state = prompt alone in the column = bottom */
   .term-prompt-row {
     flex: 0 0 auto;
   }
@@ -580,6 +709,89 @@
   }
   .param-input:focus {
     border-color: var(--accent);
+  }
+  .spinner-pick {
+    flex: 1;
+    position: relative;
+  }
+  .spinner-pick-head {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .spinner-pick-head:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .spinner-pick-chev {
+    color: var(--ink-3);
+    font-size: 10px;
+  }
+  .spinner-pick-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 280px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    z-index: 20;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  }
+  .spinner-pick-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .spinner-pick-row:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .spinner-pick-row.selected {
+    background: rgba(63, 185, 80, 0.14);
+    box-shadow: inset 2px 0 0 #3fb950;
+  }
+  .spinner-pick-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .spinner-pick-prev {
+    min-width: 11ch;
+    display: inline-block;
+    text-align: left;
+    color: #00ff41;
+    white-space: pre;
+  }
+  .mono-font {
+    font-family: var(--mono);
+  }
+  .spinner-pick-int {
+    flex: 0 0 5ch;
+    text-align: right;
+    color: var(--ink-3);
+    font-size: 10px;
   }
   .wire-line {
     margin: 6px 0 0;
