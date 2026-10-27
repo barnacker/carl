@@ -10,9 +10,21 @@ interface SseEventPayload {
   delta?: string
   item?: { type?: string }
   error?: { message?: string }
+  response?: { usage?: SseUsage }
 }
 
-const TELEMETRY_THROTTLE_MS = 500
+// vLLM /v1/responses `response.completed` usage — REAL field names observed
+// live on the server (probe 2026-10-27, model Qwen3.8-27B-FP8):
+//   usage.input_tokens            (prompt tokens)
+//   usage.output_tokens           (completion tokens total)
+//   usage.output_tokens_details.reasoning_tokens  (reasoning completion tokens)
+//   usage.total_tokens
+interface SseUsage {
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  output_tokens_details?: { reasoning_tokens?: number }
+}
 
 // Per-request telemetry self-accounting (the LLM faculty counts its own
 // frames; nothing downstream counts for it). State machine:
@@ -21,16 +33,22 @@ const TELEMETRY_THROTTLE_MS = 500
 //   'done'      when the stream closes
 // Requests with thinking disabled skip straight to 'content' (zero-reasoning
 // is a valid path), then 'done'.
+// R1 (data round): telemetry is PUBLISHED ON EVERY TOKEN FRAME — no throttle.
 interface RequestTelemetry {
   id: string
   state: 'reasoning' | 'content'
   reasoning_tokens: number
   content_tokens: number
   reasoning_frame: string | null // LATEST single reasoning token text (not an accumulation)
+  content_frame: string | null // LATEST single content token text (not an accumulation)
+  usage: { total_input_tokens: number; total_output_tokens: number; reasoning_tokens: number } | null
   started_at: string
+  started_at_epoch_ms: number
+  first_content_frame_at: number | null
   last_tick: number
   first_content_at: number | null
   last_tps: number | null
+  done_issued: boolean
 }
 
 function tpsRound(v: number): number {
@@ -83,6 +101,7 @@ export class LLMFACULTY {
   private async stream(req: LlmRequestEvent, controller: AbortController): Promise<void> {
     const { id, messages } = req
     let gotContent = false
+    const now0 = Date.now()
     let tg = this.telemetry.get(id)
     if (tg === undefined) {
       tg = {
@@ -91,10 +110,15 @@ export class LLMFACULTY {
         reasoning_tokens: 0,
         content_tokens: 0,
         reasoning_frame: null,
-        started_at: new Date().toISOString(),
-        last_tick: Date.now(),
+        content_frame: null,
+        usage: null,
+        started_at: new Date(now0).toISOString(),
+        started_at_epoch_ms: now0,
+        first_content_frame_at: null,
+        last_tick: now0,
         first_content_at: null,
         last_tps: null,
+        done_issued: false,
       }
       this.telemetry.set(id, tg)
     }
@@ -139,36 +163,52 @@ export class LLMFACULTY {
     let buffer = ''
     let sawCompleted = false
 
-    const publishTelemetry = (state?: 'reasoning' | 'content' | 'done', force?: boolean): void => {
+    const telemetryPayload = (
+      t: RequestTelemetry,
+      now: number,
+      state: 'reasoning' | 'content' | 'done',
+      tps: number | null,
+    ): Record<string, unknown> => ({
+      type: 'telemetry',
+      id: t.id,
+      state,
+      reasoning_tokens: t.reasoning_tokens,
+      content_tokens: t.content_tokens,
+      reasoning_frame: t.reasoning_frame,
+      content_frame: t.content_frame,
+      // vLLM response.completed usage (real server field names, see SseUsage)
+      // — present on the done frame (and any frame after completion is seen).
+      ...(t.usage !== null
+        ? {
+            usage: {
+              total_input_tokens: t.usage.total_input_tokens,
+              total_output_tokens: t.usage.total_output_tokens,
+              reasoning_tokens: t.usage.reasoning_tokens,
+            },
+          }
+        : {}),
+      content_tps: tps,
+      started_at: t.started_at,
+      last_tick_ms: now - (state === 'done' ? (t.first_content_at ?? now) : t.last_tick),
+    })
+
+    // R1: publish one llm.telemetry frame PER token frame (no throttle).
+    // 'force' is no longer relevant except for done (guarded by done_issued).
+    const publishTelemetry = (state?: 'reasoning' | 'content' | 'done'): void => {
       const t = this.telemetry.get(id)
       if (t === undefined) return
       const now = Date.now()
       const effState: 'reasoning' | 'content' | 'done' = state ?? t.state
       if (effState === 'done') {
+        if (t.done_issued) return
+        t.done_issued = true
         // Final: include content_tps (content tokens / elapsed since first content frame).
         const elapsed = t.first_content_at !== null ? now - t.first_content_at : 0
         const tps = t.content_tokens > 0 && elapsed > 0 ? tpsRound(t.content_tokens / (elapsed / 1000)) : null
         t.last_tps = tps
-        void this.synapse.publish(
-          {
-            type: 'telemetry',
-            id,
-            state: 'done',
-            reasoning_tokens: t.reasoning_tokens,
-            content_tokens: t.content_tokens,
-            reasoning_frame: t.reasoning_frame,
-            content_tps: tps,
-            started_at: t.started_at,
-            last_tick_ms: now - t.last_tick,
-          },
-          'llm.telemetry',
-        )
+        void this.synapse.publish(telemetryPayload(t, now, 'done', tps), 'llm.telemetry')
         return
       }
-      // Live tick: first frame for a state, or a tick >= 500ms since the last.
-      const isStateEntry = state !== undefined && t.state !== effState
-      const elapsed = now - t.last_tick
-      if (!force && !isStateEntry && elapsed < TELEMETRY_THROTTLE_MS) return
       t.state = effState
       t.last_tick = now
       // Content tps while streaming (null before first content frame).
@@ -178,20 +218,7 @@ export class LLMFACULTY {
         tps = ce > 0 ? tpsRound(t.content_tokens / (ce / 1000)) : null
         t.last_tps = tps
       }
-      void this.synapse.publish(
-        {
-          type: 'telemetry',
-          id,
-          state: effState,
-          reasoning_tokens: t.reasoning_tokens,
-          content_tokens: t.content_tokens,
-          reasoning_frame: t.reasoning_frame,
-          content_tps: tps,
-          started_at: t.started_at,
-          last_tick_ms: now - t.last_tick,
-        },
-        'llm.telemetry',
-      )
+      void this.synapse.publish(telemetryPayload(t, now, effState, tps), 'llm.telemetry')
     }
 
     const processFrame = (frame: string): void => {
@@ -202,7 +229,7 @@ export class LLMFACULTY {
         if (payload === '[DONE]') {
           if (!sawCompleted) {
             sawCompleted = true
-            publishTelemetry('done', true)
+            publishTelemetry('done')
             void this.synapse.publish({ type: 'done', id }, 'llm.done')
           }
           continue
@@ -222,25 +249,36 @@ export class LLMFACULTY {
             // address: the telemetry lane, inside llm.telemetry.reasoning_frame.
             t.reasoning_tokens += 1
             t.reasoning_frame = parsed.delta
-            publishTelemetry('reasoning', true) // publish on the first reasoning frame (state entry)
+            publishTelemetry('reasoning') // per-frame (R1): one telemetry frame per reasoning tick
           }
-          // publishTelemetry throttles subsequent reasoning frames to ~500ms.
         } else if (type === 'response.output_text.delta' && typeof parsed.delta === 'string' && parsed.delta.length > 0) {
           gotContent = true
           if (t !== undefined) {
             t.content_tokens += 1
             if (t.first_content_at === null) t.first_content_at = Date.now()
+            if (t.first_content_frame_at === null) t.first_content_frame_at = Date.now()
+            t.content_frame = parsed.delta
             if (t.state === 'reasoning') {
               // zero-reasoning requests also land 'content' (state entry); reasoning stays 0.
-              publishTelemetry('content', true) // state change reasoning -> content
+              publishTelemetry('content') // state change reasoning -> content (per-frame from here)
             } else {
-              publishTelemetry('content') // throttled content tick (~500ms)
+              publishTelemetry('content') // per-frame (R1): one telemetry frame per content tick
             }
           }
           void this.synapse.publish({ type: 'token', id, lane: 'content', text: parsed.delta }, 'llm.content.token')
         } else if (type === 'response.completed') {
+          // Capture vLLM usage (real field names — see SseUsage above) so the
+          // done frame carries {usage: {total_input_tokens, total_output_tokens,
+          // reasoning_tokens}}; the telemetry faculty profiles it per request.
+          const usage = parsed.response?.usage
+          if (t !== undefined && usage !== undefined) {
+            const inTok = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0
+            const outTok = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0
+            const rTok = typeof usage.output_tokens_details?.reasoning_tokens === 'number' ? usage.output_tokens_details.reasoning_tokens : 0
+            t.usage = { total_input_tokens: inTok, total_output_tokens: outTok, reasoning_tokens: rTok }
+          }
           sawCompleted = true
-          publishTelemetry('done', true)
+          publishTelemetry('done')
           void this.synapse.publish({ type: 'done', id }, 'llm.done')
         } else if (type !== undefined && type.startsWith('error')) {
           const msg = parsed.error?.message ?? 'stream error'
@@ -269,7 +307,7 @@ export class LLMFACULTY {
 
     if (!sawCompleted) {
       if (gotContent) {
-        publishTelemetry('done', true)
+        publishTelemetry('done')
         void this.synapse.publish({ type: 'done', id }, 'llm.done')
       } else {
         void this.synapse.publish({ type: 'error', id, message: 'NO_CONTENT' }, 'llm.error')

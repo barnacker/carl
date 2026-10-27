@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { extname, join, resolve as pathResolve, sep } from 'node:path'
 import { createServer, type Server } from 'node:http'
 
-import { Bus, createSynapse } from './nervous-system.js'
+import { Bus, createSynapse, busFlowStats } from './nervous-system.js'
 import { LLMFACULTY } from './faculties/llm.js'
 import { recreateCortex } from './cortex.js'
 import { recreateChatFacade } from './faculties/chat.js'
@@ -84,8 +84,15 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
   // 4. Chat Faculty — subscribes in constructor
   const chat = new recreateChatFacade(synapse)
 
-  // 4b. Telemetry Faculty — subscribes in constructor (telemetry lane + llm.done)
-  const telemetry = new TelemetryFaculty(synapse)
+  // 4b. Telemetry Faculty — subscribes in constructor (telemetry lane + llm.*)
+  //     and reads the bus's own flow counters (busFlowStats, delivery-at-publish).
+  const telemetry = new TelemetryFaculty(synapse, busFlowStats)
+
+  // 4c' The Nervous System observes ITS OWN flow: ns.telemetry @ 10 Hz on the
+  //     telemetry lane (the permission map grants 'ns' on that lane for
+  //     exactly this — read-only of itself; the dashboard consumes via the
+  //     telemetry faculty, not as a direct subscriber).
+  synapse.nsTelemetry(100)
 
   // 5. HTTP server on port 3000
   const staticDir = pathResolve(process.cwd(), 'web-ui', 'build')
