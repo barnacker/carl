@@ -48,6 +48,7 @@ interface RequestTelemetry {
   last_tick: number
   first_content_at: number | null
   last_tps: number | null
+  firstContentScrubbed: boolean // terminal contract: scrub leading whitespace off the FIRST content frame of a request (once)
   done_issued: boolean
 }
 
@@ -118,6 +119,7 @@ export class LLMFACULTY {
         last_tick: now0,
         first_content_at: null,
         last_tps: null,
+        firstContentScrubbed: false,
         done_issued: false,
       }
       this.telemetry.set(id, tg)
@@ -253,11 +255,25 @@ export class LLMFACULTY {
           }
         } else if (type === 'response.output_text.delta' && typeof parsed.delta === 'string' && parsed.delta.length > 0) {
           gotContent = true
+          // Terminal contract (locked 2026-10-27, xterm rebuild): the FIRST
+          // content frame of a request must not lead with whitespace — the
+          // model commonly emits "\n\nHello", and in a TERMINAL (not a chat
+          // UI) a leading newline blanks the prompt line before the marker.
+          // Scrub leading whitespace once per request; later frames touch the
+          // model's real newlines verbatim (mid-/end-of-content \n stay).
+          const tt = this.telemetry.get(id)
+          let text = parsed.delta
+          if (tt !== undefined && !tt.firstContentScrubbed) {
+            tt.firstContentScrubbed = true
+            const scrubbed = text.replace(/^[\s\u00a0]+/u, '')
+            if (scrubbed.length === 0) continue // first frame was *only* whitespace: drop
+            text = scrubbed
+          }
           if (t !== undefined) {
             t.content_tokens += 1
             if (t.first_content_at === null) t.first_content_at = Date.now()
             if (t.first_content_frame_at === null) t.first_content_frame_at = Date.now()
-            t.content_frame = parsed.delta
+            t.content_frame = text
             if (t.state === 'reasoning') {
               // zero-reasoning requests also land 'content' (state entry); reasoning stays 0.
               publishTelemetry('content') // state change reasoning -> content (per-frame from here)
@@ -265,7 +281,7 @@ export class LLMFACULTY {
               publishTelemetry('content') // per-frame (R1): one telemetry frame per content tick
             }
           }
-          void this.synapse.publish({ type: 'token', id, lane: 'content', text: parsed.delta }, 'llm.content.token')
+          void this.synapse.publish({ type: 'token', id, lane: 'content', text }, 'llm.content.token')
         } else if (type === 'response.completed') {
           // Capture vLLM usage (real field names — see SseUsage above) so the
           // done frame carries {usage: {total_input_tokens, total_output_tokens,

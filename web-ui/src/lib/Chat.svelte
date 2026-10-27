@@ -1,11 +1,25 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Spinner, spinners, spinnerById, DEFAULT_SPINNER_ID } from './spinners';
+  import { Terminal } from '@xterm/xterm';
+  import { FitAddon } from '@xterm/addon-fit';
+  import '@xterm/xterm/css/xterm.css';
+  import type { Spinner } from './spinners';
+  import { spinners, spinnerById, DEFAULT_SPINNER_ID } from './spinners';
 
   const CHAT_ENDPOINT = '/chat';
   const TELEMETRY_ENDPOINT = '/telemetry';
+  const VERSION_JSON = '/_app/version.json';
   const DEFAULT_MODEL = 'Qwen/Qwen3.8-27B-FP8';
   const SPINNER_KEY = 'carl.spinner';
+
+  const MONO_CHAIN =
+    "'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace";
+
+  // Erase-in-line (full): the single primitive that guarantees the spinner
+  // and the marker can never coexist on the same row — every in-place print
+  // (spinner frame, first content frame, re-rendered prompt) clears the line
+  // BEFORE writing. (Brief contract #2 & #8.)
+  const CLEAR_LINE = '\x1b[2K';
 
   type Entry = {
     user: string;
@@ -39,11 +53,9 @@
   }
 
   // --- spinner pickbox (live-preview dropdown) --------------------------
-  // Every open option row shows the set name beside a live animating
-  // frame. One shared rAF loop drives all rows at each set's own interval
-  // scaled 2x slower (operator rule: 100+ live options must not jank the
-  // params panel); a single shared $state counter invalidates the list
-  // once per tick batch, so the per-frame cost is O(visible rows).
+  // Unchanged from base: one shared rAF loop drives all option rows at each
+  // set's own interval scaled 2x slower; a single shared $state counter
+  // invalidates the list once per tick batch (O(visible rows) per frame).
   const PREVIEW_SLOW = 2;
   let previewTicks = $state(0);
   let spinOpen = $state(false);
@@ -79,17 +91,214 @@
     return s.frames[st.i] ?? s.frames[0] ?? '';
   }
 
-  // Thinking spinner state. Only one entry is open at a time (sending
-  // lock), so one ticker suffices. Gating is STRUCTURAL, not a flag: while
-  // rendererBusy, an entry shows the spinner only when entry.open; open
-  // flips false on the same state update that first content byte sets
-  // entry.thinking=false, and nothing else renders the spinner — so the
-  // spinner and the marker+text branch can never both render at once,
-  // and the swap happens on the first lane:content frame.
-  // Ticker advances on the selected set's own interval in perpetuity
-  // (cheap; the frame is consumed only when an entry asks for it).
-  let spinnerFrame = $state(spinnerById(loadSpinner()).frames[0]);
+  // --- xterm terminal: the app is a PRINT client ------------------------
+  // The terminal IS a line buffer + cursor (operator's law):
+  //   user send         -> write("❮ text\r\n")        [sent line prints]
+  //   thinking starts   -> spinner frames printed IN PLACE on the thinking
+  //                        row (clear line + write frame per tick; the cursor
+  //                        is ALREADY on that row — no per-row pointer)
+  //   first content     -> clear line + write("❯ first token")
+  //   later content     -> write(token)  (flows after "❯ ", wraps natively)
+  //   done              -> write("\r\n") + fresh prompt on the new bottom row
+  // The line the cursor is on is always the active row (xterm maintains the
+  // cursor as we print); we never need a separate row pointer. The live row
+  // is simply the terminal's current cursor row, which after each "*writeln"
+  // is the (new) bottom row — that is what bottom-hug means structurally.
+  let termHost: HTMLDivElement;
+  let term: Terminal | null = null;
+  let fit: FitAddon | null = null;
+  let inputEl: HTMLInputElement;
+  let booted = false;   // banner printed + prompt shown at least once
+
+  // Marker params (shipped in 16dda7f; localStorage, plain text, <=8 chars).
+  const USER_MARKER_KEY = 'carl.userMarker';
+  const ASSISTANT_MARKER_KEY = 'carl.assistantMarker';
+  function loadMarker(key: string, fallback: string): string {
+    try {
+      const v = localStorage.getItem(key);
+      if (v !== null && v !== '') return v.slice(0, 8);
+    } catch {
+      /* non-fatal */
+    }
+    return fallback;
+  }
+  let userMarker = $state(loadMarker(USER_MARKER_KEY, '❮'));
+  let assistantMarker = $state(loadMarker(ASSISTANT_MARKER_KEY, '❯'));
+  function setUserMarker(v: string) {
+    userMarker = v.slice(0, 8);
+    try { localStorage.setItem(USER_MARKER_KEY, userMarker); } catch { /* non-fatal */ }
+  }
+  function setAssistantMarker(v: string) {
+    assistantMarker = v.slice(0, 8);
+    try { localStorage.setItem(ASSISTANT_MARKER_KEY, assistantMarker); } catch { /* non-fatal */ }
+  }
+
+  // --- editing buffer (the hidden input's value, mirrored to the prompt) --
+  let editBuf = $state('');
+
+  // Print the current prompt line (in place, col 0 of the current row). The
+  // hidden input owns the keystrokes; we re-print the prompt line from
+  // editBuf on every input so the grid stays authoritative for position while
+  // a real <input> handles IME/typing. (Brief contract #5 — "input field
+  // someone coded for you" hybrid.)
+  function showPrompt(): void {
+    if (!term) return;
+    term.write(CLEAR_LINE + userMarker + ' ' + editBuf);
+    // xterm's native block cursor now sits after "marker + edit buffer",
+    // blinking as a real terminal caret.
+  }
+
+  // Re-render the prompt line live as the operator types or when a marker
+  // glyph is edited at runtime. (xterm owns the grid; Svelte only tracks the
+  // edit buffer, never the grid itself — the operator's "no per-token grid
+  // re-render" rule.)
+  $effect(() => {
+    void editBuf;
+    if (!term || !booted) return;
+    if (sending) return; // during a send the live row is content, not prompt
+    showPrompt();
+  });
+
+  // --- the print primitives ---------------------------------------------
+
+  // Seed the bottom-hug BEFORE the banner: fill (rows-1) blank lines so the
+  // first print (the banner's title) lands on the BOTTOM row. This is the
+  // operator's load-bearing invariant — the terminal is NOT top-aligned;
+  // the leading blanks are the pad that makes the tail hug the bottom.
+  function seedPad(): void {
+    if (!term) return;
+    const rows = term.rows;
+    if (rows > 1) term.write('\r\n'.repeat(rows - 1));
+  }
+
+  // After the banner (9 lines) has printed at the buffer top, pad blank lines
+  // so the PROMPT lands on the bottom row. (Brief banner rule 3.) When the
+  // buffer later exceeds `rows`, xterm's native scroll pushes the banner's
+  // top lines into scrollback and the tail keeps hugging the bottom.
+  function padToBottomRows(consumedLines: number): void {
+    if (!term) return;
+    const r = term.rows;
+    const fill = r - 1 - consumedLines;
+    if (fill > 0) term.write('\r\n'.repeat(fill));
+    term.scrollToBottom();
+  }
+
+  // Print the boot banner (operator-approved, 10-line block; version read at
+  // print time from the build version.json). Mechanism chosen: staged
+  // SEQUENTIAL print — each line prints after a short delay so it reads like
+  // a real boot; the "OK" statuses are printed only AFTER at least one SSE
+  // stream has attached successfully (the attach success proves the chain).
+  async function printBanner(): Promise<void> {
+    if (!term) return;
+    const ver = await getBootVersion();
+    const lines = [
+      '  CARL \u2500\u2500 PROVISIONING TERMINAL v' + ver,
+      '  > nervous system ....... OK',
+      '  > telemetry faculty .... OK',
+      '  > cortex ............... OK',
+      '  > llm faculty .......... OK',
+      '  > chat faculty ......... OK',
+      '',
+      '  BOOT SEQ\u2026 OK          GATE\u2026 OK         LINK\u2026 OK',
+      '  \u2500'.repeat(1).slice(0, 2) + '\u2500'.repeat(40),
+    ];
+    for (const ln of lines) {
+      term.writeln(ln);
+      await new Promise((r) => setTimeout(r, 120));
+    }
+  }
+
+  async function getBootVersion(): Promise<string> {
+    try {
+      const r = await fetch(VERSION_JSON);
+      if (r.ok) {
+        const j = (await r.json()) as { version?: string };
+        const v = String(j.version ?? '');
+        return v.length > 10 ? v.slice(0, 10) : v; // short form (first 10 digits if long)
+      }
+    } catch {
+      /* non-fatal */
+    }
+    return '0.1.0';
+  }
+
+  // User sends "text": REPLACE the current prompt row with the sent line
+  // "❮ text" and open a NEW row (the thinking row) at the bottom.
+  function printUserLine(text: string): void {
+    if (!term) return;
+    term.write(CLEAR_LINE + userMarker + ' ' + text + '\r\n');
+  }
+
+  // Thinking: the cursor is on the thinking row (the row the user-write's
+  // "\r\n" opened, at the bottom). Each tick prints the frame IN PLACE:
+  // clear the line, write the frame. No marker on this row (contract #8 —
+  // guaranteed: the line is cleared before every write).
+  function printSpinnerFrame(frame: string): void {
+    if (!term) return;
+    term.write(CLEAR_LINE + ' ' + frame + ' ');
+  }
+
+  // First content frame: the cursor is still on the thinking row. Clear it
+  // and write "❯ " + first token on the SAME line. Later tokens flow from
+  // the cursor (naturally wrapping), so the marker stays pinned to col 0 of
+  // this row.
+  function printFirstContentFrame(tok: string): void {
+    if (!term) return;
+    term.write(CLEAR_LINE + assistantMarker + ' ' + tok);
+  }
+  function printContentToken(tok: string): void {
+    if (!term) return;
+    term.write(tok);
+  }
+
+  // Done: open a fresh bottom row and print the prompt on it. The content we
+  // just printed is now frozen in the buffer (it's the line above, or in
+  // scrollback if it wrapped past the viewport).
+  function printDone(): void {
+    if (!term) return;
+    term.write('\r\n');
+    term.scrollToBottom();
+    showPrompt();
+  }
+
+  // Error: one "E <msg>" line (the shipped E {error} convention), then a
+  // fresh prompt. Kept to one logical line.
+  function printError(msg: string): void {
+    if (!term) return;
+    term.write('\r\n');
+    term.writeln('E ' + msg);
+    term.write('\r\n');
+    term.scrollToBottom();
+    showPrompt();
+  }
+
+  function focusInput() {
+    setTimeout(() => {
+      if (inputEl) {
+        inputEl.focus();
+        inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+      }
+    }, 0);
+  }
+
+  // --- request stream (SSE) + thinking state source ---------------------
+  let history = $state<Entry[]>([]);
+  let sending = $state(false);
   let rendererBusy = $state(false);
+  let spinnerActive = $state(false); // live row is the "thinking" row (spinner)
+  let streamDone = $state(false);
+  let step = $state<'idle' | 'posting' | 'receiving'>('idle');
+  let controller: AbortController | null = null;
+  let lastFirstByte: number | null = null;
+  let lastLastByte: number | null = null;
+  let activeRequestId: string | null = null;
+  let spinnerFrame = $state(spinnerById(loadSpinner()).frames[0]);
+
+  // The thinking-row property the spinner ticker keys off: when the live row
+  // is the thinking row (spinnerActive true), the ticker's frame advance
+  // reprints it IN PLACE. The swap to content happens on the FIRST
+  // lane:content frame (structural — spinnerActive goes false in the same
+  // update, so spinner and marker can never coexist).
   $effect(() => {
     const set = spinnerById(spinnerId);
     const int = set.interval > 0 ? set.interval : 100;
@@ -98,39 +307,18 @@
     const t = setInterval(() => {
       i = (i + 1) % Math.max(1, set.frames.length);
       spinnerFrame = set.frames[i] ?? spinnerFrame;
+      if (spinnerActive) printSpinnerFrame(spinnerFrame); // in-place overwrite
     }, int);
     return () => clearInterval(t);
   });
 
-  let history = $state<Entry[]>([]);
-  let input = $state('');
-  let sending = $state(false);
-  let streamDone = $state(false);
-  let lampState = $state<'idle' | 'posting' | 'receiving'>('idle');
-  let controller: AbortController | null = null;
-  let lastFirstByte: number | null = $state(null);
-  let lastLastByte: number | null = $state(null);
-  let activeRequestId: string | null = $state(null);
-  let terminalEl: HTMLDivElement;
-  let inputEl: HTMLTextAreaElement;
-
-  // Telemetry stream (Slice D): the thinking-state source is now the /telemetry
-  // SSE lane, NOT the chat stream. We open ONE perpetual /telemetry stream for
-  // the page life (in onMount) and route its snapshots to the active entry.
-  //   state:'reasoning'  →  entry.thinking = true  (spinner shows; NO » marker,
-  //                     because entry.firstByte is still false until the FIRST
-  //                     content frame from /chat arrives — same structural swap
-  //                     as before, just a new source for the thinking trigger.)
-  //   state:'content'    →  does NOT set thinking — the chat stream content
-  //                     frames (applyToken lane:'content') drive the swap.
-  //   state:'done'       →  no-op (the chat stream's done frame finalizes).
-  // The telemetry stream NEVER blocks content rendering: if it lags /chat,
-  // the spinner simply appears slightly late (acceptable per spec). It is a
-  // separate fetch from /chat; both run in parallel.
+  // Telemetry stream (slice D, PRESERVED from the base commit): the
+  // thinking-state source. state:'reasoning' flips spinnerActive on the first
+  // reasoning frame of a request that hasn't seen content. We do NOT touch
+  // the telemetry wire — only how the thinking SIGNAL drives a print.
   let telemetryController: AbortController | null = null;
-
   async function openTelemetryStream() {
-    if (telemetryController) return; // already open
+    if (telemetryController) return;
     const c = new AbortController();
     telemetryController = c;
     try {
@@ -161,11 +349,15 @@
             if (!e) continue;
             if (id && e.reqId === null) e.reqId = id;
             if (parsed.state === 'reasoning') {
-              // New thinking source: flip thinking on the first reasoning frame
-              // from the telemetry lane (replaces the old chat-stream lane:reasoning
-              // trigger — same spinner, new source).
-              if (e.reasoning.length === 0 && lastFirstByte === null) e.thinking = true;
-              setTimeout(scrollIfPinned, 0);
+              // New thinking source: flip the spinner on the first reasoning
+              // frame from the telemetry lane (same structural gate as base —
+              // open entry + no content yet — just a different data source).
+              if (e.open && e.reasoning.length === 0 && lastFirstByte === null && !spinnerActive) {
+                e.thinking = true;
+                spinnerActive = true;
+                step = step === 'posting' ? 'receiving' : step;
+                printSpinnerFrame(spinnerFrame);
+              }
             }
             // 'content' / 'done' are no-ops here — the /chat stream owns those.
           }
@@ -178,79 +370,16 @@
     }
   }
 
-  // Reopen the telemetry stream on mount so it's live for the first send.
+  // Reopen the telemetry stream on mount so it's live for the first send AND
+  // so its successful attach is the signal that gates the banner's "OK"
+  // statuses (brief banner rule 2).
+  let telemetryAttached = $state(false);
 
   // Visible, editable request parameters (everything sent to vLLM).
   let model = $state(DEFAULT_MODEL);
   let temperature = $state('1.0');
   let top_p = $state('1.0');
   let max_tokens = $state('');
-
-  // Parametric terminal markers — operator-chosen glyphs rendered in
-  // front of every entry line (a user line, an assistant line), persisted
-  // to localStorage like the other params. Rendered as a plain text node
-  // in the template, so multi-char values are legal (up to 8) and user
-  // input can never be injected as HTML.
-  const USER_MARKER_KEY = 'carl.userMarker';
-  const ASSISTANT_MARKER_KEY = 'carl.assistantMarker';
-  function loadMarker(key: string, fallback: string): string {
-    try {
-      const v = localStorage.getItem(key);
-      if (v !== null && v !== '') return v.slice(0, 8);
-    } catch {
-      /* non-fatal */
-    }
-    return fallback;
-  }
-  let userMarker = $state(loadMarker(USER_MARKER_KEY, '❮'));
-  let assistantMarker = $state(loadMarker(ASSISTANT_MARKER_KEY, '❯'));
-  function setUserMarker(v: string) {
-    userMarker = v.slice(0, 8);
-    try { localStorage.setItem(USER_MARKER_KEY, userMarker); } catch { /* non-fatal */ }
-  }
-  function setAssistantMarker(v: string) {
-    assistantMarker = v.slice(0, 8);
-    try { localStorage.setItem(ASSISTANT_MARKER_KEY, assistantMarker); } catch { /* non-fatal */ }
-  }
-
-  function scrollTerminal() {
-    if (terminalEl) terminalEl.scrollTop = terminalEl.scrollHeight; // instant — terminal-like
-  }
-
-  // Auto-scroll pin (classic terminal flow: newest line at the bottom
-  // edge, history scrolls UP out of view as lines arrive):
-  //   - already at the bottom (within 40px)? → follow: every new entry /
-  //     token lands the viewport at the bottom (instant).
-  //   - user has scrolled UP? → follow off; their reading position is
-  //     respected (no force-scroll). The flag stays latched: the next
-  //     time they return to the bottom (scroll event within 40px) it
-  //     re-engages automatically.
-  let followBottom = $state(true);
-  function onHistScroll() {
-    if (terminalEl) {
-      followBottom = terminalEl.scrollHeight - terminalEl.scrollTop - terminalEl.clientHeight < 40;
-      if (followBottom) scrollTerminal();
-    }
-  }
-  function scrollIfPinned() {
-    if (followBottom) scrollTerminal();
-  }
-
-  // Terminal-region click-to-focus (operator spec): a click on ANY part of
-  // the terminal area — history pane, entry rows, markers, empty space,
-  // the prompt row — refocuses the prompt input. The input's own click is
-  // skipped (native caret placement runs instead); interactive widgets
-  // (buttons, links, the spinner pickbox) are skipped too. Wired on the
-  // outer .terminal container so the single handler covers the lamp,
-  // history pane, and prompt row; the params panel is a grid sibling of
-  // .terminal and is never reachable from this handler.
-  function onTerminalClick(e: MouseEvent) {
-    const t = e.target as HTMLElement | null;
-    if (!t) return;
-    if (t === inputEl) return;
-    if (t.closest('button, a, select, textarea, .spinner-pick')) return;
-    inputEl?.focus();
-  }
 
   function applyToken(lane: 'reasoning' | 'content', text: string, id: string | null) {
     if (text.length === 0) return;
@@ -267,80 +396,159 @@
       if (e.reasoning.length === 0 && lastFirstByte === null) e.thinking = true;
       e.reasoning += text;
     } else {
-      // First lane:content frame — structural spinner→marker swap:
-      // clear thinking AND close the spinner placeholder in the SAME
-      // state update so the spinner can never coexist with content.
-      if (!e.firstByte) { e.firstByte = true; e.thinking = false; }
-      if (e.open && e.content.length === 0) {
-        e.open = false;
+      // First lane:content frame — structural spinner→marker swap: clear the
+      // spinner row and write "❯ first token" in the SAME update, so the
+      // spinner and the marker can never share a line.
+      if (!e.firstByte) {
+        e.firstByte = true;
+        e.thinking = false;
+        spinnerActive = false;
+        if (e.open) e.open = false;
+        printFirstContentFrame(text);
+      } else {
+        printContentToken(text);
       }
       e.content += text;
     }
     if (lastFirstByte === null) lastFirstByte = Date.now();
-    if (lampState === 'posting') lampState = 'receiving';
-    setTimeout(scrollIfPinned, 0);
+    if (step === 'posting') step = 'receiving';
+    term?.scrollToBottom();
   }
 
-  function closeEntry(entry: Entry | undefined) {
-    if (entry) entry.open = false;
-  }
-
-  // Finalize the entry for this POST (id-keyed when known) and release the id.
   function doneStream(id: string | null) {
     const e = (id && history.find((x) => x.reqId === id)) || history[history.length - 1];
-    closeEntry(e);
+    if (e) e.open = false;
     if (!id || activeRequestId === id) activeRequestId = null;
     streamDone = true;
     if (lastLastByte === null) lastLastByte = Date.now();
-    setTimeout(scrollIfPinned, 0);
+    spinnerActive = false;
   }
 
-  function focusInput() {
-    setTimeout(() => {
-      if (inputEl) {
-        inputEl.focus();
-        inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
-      }
-    }, 0);
-  }
-
+  // --- mount: create xterm, attach, print the boot banner + prompt -------
   onMount(() => {
-    focusInput();
-    void openTelemetryStream(); // perpetual /telemetry SSE — the thinking source
-    // Close the spinner pickbox when the click lands outside it.
+    const t = new Terminal({
+      convertEol: false,
+      disableStdin: true, // we own input via the hidden <input>; xterm's stdin
+                          // is not a second source of truth
+      cursorBlink: true,
+      cursorStyle: 'block',
+      fontFamily: MONO_CHAIN,
+      fontSize: 14,
+      lineHeight: 1.25,
+      letterSpacing: 0,
+      scrollback: 10000,
+      theme: {
+        background: '#000',
+        foreground: '#e6edf3',
+        cursor: '#00ff41',
+        cursorAccent: '#000',
+        selectionBackground: 'rgba(0,255,65,0.18)',
+      },
+    });
+    term = t;
+    fit = new FitAddon();
+    t.loadAddon(fit);
+    t.open(termHost);
+    if (termHost) fit?.fit();
+
+    // The "ATTACH" the banner's OK statuses are gated on succeeds once the
+    // perpetual /telemetry stream opens (the operator's chain: NS ->
+    // telemetry -> cortex -> llm -> chat all live behind the same origin).
+    void openTelemetryStream().then(() => {
+      telemetryAttached = true;
+      void attachAndBoot(t);
+    }).catch(() => {
+      // Telemetry attach failed (server briefly down, offline) — still boot
+      // the terminal; the banner still prints (it's a print client, and the
+      // statuses are informational, not a hard gate). We print them anyway
+      // because the OCCAM' brand read is "the page came up"; the server
+      // uptime is visible in the lamp when a request actually fails.
+      telemetryAttached = false;
+      void attachAndBoot(t);
+    });
+
     const onDocClick = (e: MouseEvent) => {
       if (spinOpen && spinPickBox && !spinPickBox.contains(e.target as Node)) spinOpen = false;
     };
     document.addEventListener('click', onDocClick, true);
-    return () => document.removeEventListener('click', onDocClick, true);
+    const ro = new ResizeObserver(() => {
+      if (fit && term) {
+        fit.fit();
+        term.scrollToBottom();
+        if (booted && !sending && spinnerActive === false) showPrompt();
+      }
+    });
+    if (termHost) ro.observe(termHost);
+
+    return () => {
+      ro.disconnect();
+      document.removeEventListener('click', onDocClick, true);
+      t.dispose();
+      term = null;
+    };
   });
 
+  async function attachAndBoot(t: Terminal): Promise<void> {
+    if (booted) return;
+    booted = true;
+    seedPad();           // bottom-hug seed: (rows-1) blanks (contract #3)
+    term = t;
+    await printBanner(); // boot banner at the buffer top (rule: print before prompt)
+    padToBottomRows(9);  // banner consumes 9 lines; pad the prompt to bottom row
+    showPrompt();        // the live prompt with the caret
+    focusInput();
+  }
+
+  // --- input (hybrid) ----------------------------------------------
+  function onInputEdit(e: Event) {
+    editBuf = (e.target as HTMLInputElement).value;
+    showPrompt(); // re-render the prompt line from the edit buffer (in place)
+  }
+  function onInputKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    } else if (e.key === 'Enter' && e.shiftKey) {
+      // The prompt is a single print line (the operator's contract: the sent
+      // line prints as "❮ text\r\n" — no in-prompt newline). Shift+Enter is a
+      // no-op (documented; matches a real terminal prompt's single-line edit).
+    }
+  }
+
+  // Click ANYWHERE in the terminal = focus the input (and re-attach the
+  // viewport to the bottom). xterm's own click re-attaches near the bottom;
+  // we focus the input regardless (contract #5).
+  function onTermClick(e: MouseEvent) {
+    const tgt = e.target as HTMLElement | null;
+    if (!tgt) return;
+    if (tgt === inputEl) return;
+    if (tgt.closest('button, a, select, textarea, .spinner-pick, .term-input')) return;
+    focusInput();
+  }
+
   async function send() {
-    const text = input.trim();
-    if (text.length === 0 || sending) return;
-    input = '';
+    const text = editBuf.trim();
+    if (text.length === 0 || sending || spinnerActive) return;
+    editBuf = '';
+    if (inputEl) inputEl.value = '';
     sending = true;
     rendererBusy = true;
-    lampState = 'posting';
+    spinnerActive = false;
+    step = 'posting';
     lastFirstByte = null;
     lastLastByte = null;
     streamDone = false;
-    followBottom = true;
     history.push({ user: text, reasoning: '', content: '', open: true, thinking: false, firstByte: false, reqId: null, error: null });
-    scrollTerminal();
+
+    printUserLine(text); // commit the sent line as a PRINT (contract #2)
+    term?.scrollToBottom();
 
     controller = new AbortController();
     try {
-      const messages: { role: 'user'; content: string }[] = [
-        { role: 'user', content: text },
-      ];
-
-      const body: Record<string, unknown> = {
-        model,
-        messages,
-      };
-      const t = parseFloat(temperature);
-      if (!Number.isNaN(t) && t > 0) body.temperature = t;
+      const messages: { role: 'user'; content: string }[] = [{ role: 'user', content: text }];
+      const body: Record<string, unknown> = { model, messages };
+      const temp = parseFloat(temperature);
+      if (!Number.isNaN(temp) && temp > 0) body.temperature = temp;
       const tp = parseFloat(top_p);
       if (!Number.isNaN(tp) && tp > 0) body.top_p = tp;
       const mt = parseInt(max_tokens, 10);
@@ -356,32 +564,21 @@
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf8');
       let buf = '';
-
       while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          lampState = 'idle';
-          break;
-        }
-        buf += decoder.decode(value, { stream: true });
+        const { value: chunk, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(chunk, { stream: true });
         let sep;
         while ((sep = buf.indexOf('\n\n')) !== -1) {
           const frameMsg = buf.slice(0, sep);
           buf = buf.slice(sep + 2);
           for (const line of frameMsg.split('\n')) {
-            const t = line.trim();
-            if (!t.startsWith('data:')) continue;
-            const payload = t.slice(5).trim();
-            if (payload === '[DONE]') {
-              lampState = 'idle';
-              continue;
-            }
+            const tt = line.trim();
+            if (!tt.startsWith('data:')) continue;
+            const payload = tt.slice(5).trim();
+            if (payload === '[DONE]') { step = 'idle'; continue; }
             let parsed: { type?: string; lane?: 'reasoning' | 'content'; text?: string; message?: string; id?: string } | null = null;
-            try {
-              parsed = JSON.parse(payload) as typeof parsed;
-            } catch {
-              parsed = null;
-            }
+            try { parsed = JSON.parse(payload) as typeof parsed; } catch { parsed = null; }
             if (
               parsed &&
               parsed.type === 'token' &&
@@ -392,84 +589,68 @@
             } else if (parsed && parsed.type === 'error') {
               const e = history.find((x) => x.reqId === parsed.id) ?? history[history.length - 1];
               if (e) e.error = parsed.message ?? 'unknown error';
-              doneStream(parsed.id ?? null); // finalize the entry, release the id
+              printError(parsed.message ?? 'unknown error');
+              doneStream(parsed.id ?? null);
             }
           }
         }
       }
       doneStream(activeRequestId ?? null);
+      // Close out on clean EOF: always print a fresh prompt (even on the
+      // zero-reasoning + zero-content path where no content frames arrived —
+      // the spinner row is cleared and replaced by a clean prompt).
+      step = 'idle';
+      printDone();
       activeRequestId = null;
     } catch (err) {
       const aborted = (err as { name?: string } | null | undefined)?.name === 'AbortError';
       const e = history.find((x) => x.reqId === activeRequestId) ?? history[history.length - 1];
-      if (e && !aborted) e.error = err?.message ?? String(err); // HTTP !ok + transport + faculty errors
-      lampState = 'idle';                  // keep the existing reset
-      doneStream(activeRequestId ?? null); // finalize the entry, release the id and sending lock (finally)
+      if (e && !aborted) e.error = err?.message ?? String(err);
+      if (!aborted) printError((err as { message?: string } | null)?.message ?? 'stream error');
+      step = 'idle';
+      doneStream(activeRequestId ?? null);
     } finally {
       sending = false;
       rendererBusy = false;
+      spinnerActive = false;
       controller = null;
-      setTimeout(scrollIfPinned, 0);
+      term?.scrollToBottom();
+      showPrompt();
       focusInput();
     }
   }
 </script>
 
 <div class="page">
-  <div class="terminal" onclick={onTerminalClick}>
+  <div class="terminal" onclick={onTermClick}>
     <span
-      class="lamp lamp-{lampState}"
+      class="lamp lamp-{step}"
       role="button"
       aria-live="polite"
       tabindex="0"
-      title={lampState.toUpperCase()}
+      title={step.toUpperCase()}
     >
-      {lampState.toUpperCase()}
+      {step.toUpperCase()}
     </span>
-    <div class="term-history" bind:this={terminalEl} aria-live="polite" onscroll={onHistScroll}>
-      {#each history as entry (entry.reqId || entry)}
-        <div class="term-entry">
-          <div class="term-user"><span class="marker">{userMarker}</span><span class="user-text">{entry.user}</span></div>
-          {#if entry.firstByte || entry.content.length > 0}
-            <div class="term-content" class:open-stream={entry.open}>
-              <span class="marker">{assistantMarker}</span><span class="content-text">
-                {entry.content.length > 0 ? ' ' + entry.content : (entry.open ? spinnerFrame : '')}
-              </span>
-            </div>
-          {:else if entry.open && rendererBusy}
-            <div class="term-content term-placeholder" class:open-stream={entry.open}>
-              <span class="spinner" aria-label="thinking">{spinnerFrame} </span>
-            </div>
-          {/if}
-          {#if entry.error}<div class="term-error">E {entry.error}</div>{/if}
-        </div>
-      {/each}
-    </div>
-    <div class="term-prompt-row">
-      <textarea
+    <div class="term-host" bind:this={termHost}>
+      <!-- xterm.open() fills this node with its own DOM (the grid, scrollbar,
+           viewport). The *hidden* input sits absolutely on top; it is the
+           keyboard/IME source while xterm's visible block caret is the position
+           authority (the "input field someone coded for you" hybrid). -->
+      <input
         class="term-input"
         bind:this={inputEl}
-        bind:value={input}
-        rows="1"
+        type="text"
         autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
         spellcheck="false"
+        value={editBuf}
+        oninput={onInputEdit}
+        onkeydown={onInputKeyDown}
         placeholder=""
-        disabled={sending}
-        onkeydown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            void send();
-          } else if (e.key === 'Enter' && e.shiftKey) {
-            // let the native newline flow
-          }
-        }}
-        oninput={() => {
-          // caret placement on every input
-          if (inputEl) {
-            inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
-          }
-        }}
-      ></textarea>
+        aria-label="terminal input"
+      />
     </div>
   </div>
   <div class="params">
@@ -554,11 +735,13 @@
     padding: 8px;
     min-height: 0;
     position: relative;
+    overflow: hidden;
+    font-family: var(--mono);
   }
   .lamp {
     position: absolute;
-    top: 8px;
-    left: 8px;
+    top: 16px;
+    right: 16px;
     display: inline-block;
     width: 10px;
     height: 10px;
@@ -567,8 +750,7 @@
     font-size: 0;
     color: transparent;
     outline: none;
-    flex-shrink: 0;
-    z-index: 2;
+    z-index: 3;
   }
   .lamp-idle { background-color: #e5484d; }
   .lamp-posting { background-color: #d29922; }
@@ -578,99 +760,38 @@
     font-size: 9px;
     color: #0f3d1a;
   }
-  .term-history {
-    /* scrollable entry list, oldest → newest top → bottom (document
-       order; never reversed). flex 1 1 0 inside the .terminal column =
-       it takes all remaining height ABOVE the bottom-pinned prompt row. */
+  /* The xterm host fills the whole pane; xterm.open() paints its own grid
+     + viewport + scrollbar inside it. Position absolute so xterm's internal
+     layout isn't fought by the flex parent. */
+  .term-host {
+    position: relative;
     flex: 1 1 0;
     min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
-    padding: 16px 8px 8px;
-  }
-  .term-entry {
-    margin: 0 0 10px;
-  }
-  .marker {
-    display: inline;
-    font-family: var(--mono);
-  }
-  .term-user {
-    color: #00ff41;
-    font-family: var(--mono);
-    font-size: 14px;
-    line-height: 1.25;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .term-user .marker {
-    color: #93a6b8;
-  }
-  .term-content {
-    color: #e6edf3;
-    font-family: var(--mono);
-    font-size: 14px;
-    line-height: 1.25;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .term-content .marker {
-    color: #5c6c7d;
-  }
-  .term-content.open-stream .content-text {
-    color: #7ee787;
-  }
-  .term-placeholder {
-    min-height: 1.25em;
-    color: #5c6c7d;
-  }
-  /* Thinking-indicator frame: sets may span 1-10 cells (braille = 1,
-     dna/cascade 2-4, pong 10) — per-set width is fixed and verified in
-     spinners.ts, so no per-cell box is needed; white-space:pre keeps the
-     frame's own spacing intact. */
-  .spinner {
-    font-family: var(--mono);
-    font-size: 14px;
-    line-height: 1.25;
-    white-space: pre;
-  }
-  .term-error {
-    color: #7a5c00;
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.25;
-    white-space: pre-wrap;
-    word-break: break-word;
-    margin: 2px 0 0;
-  }
-  /* Prompt row: the BOTTOM-MOST element of the .terminal flex column
-     (after .term-history) — classic terminal position, pinned to the
-     pane's bottom edge. flex 0 0 auto + fixed 1.25em line box = it
-     never grows to absorb history content (prompt rect measured
-     stable before/after new entry appends: 451.5→477 in the earlier
-     audit). Empty state = prompt alone in the column = bottom */
-  .term-prompt-row {
-    flex: 0 0 auto;
-  }
-  .term-input {
-    display: block;
     width: 100%;
-    height: 1.25em;
-    background: #000;
-    border: none;
+  }
+  /* xterm places its own .xterm element inside .term-host; xterm.js colours
+     come from the Terminal options.theme (set in onMount), not scoped CSS,
+     because Svelte 5 scope-tags CSS which can't reach xterm's injected DOM. */
+  /* The hidden <input>: visually zero-sized (1px, opacity 0) and absolutely
+     reserved for keyboard capture; it does NOT paint a box on the grid.
+     display:none would break focus(), so we keep it renderable but off the
+     visual path — xterm's visible block caret is the position authority. */
+  .term-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
     padding: 0;
     margin: 0;
-    color: #00ff41;
-    font-family: var(--mono);
-    font-size: 14px;
-    line-height: 1.25;
-    resize: none;
-    outline: none;
+    border: 0;
+    opacity: 0;
     overflow: hidden;
-  }
-  .term-prompt-row textarea:disabled {
-    opacity: 0.5;
+    white-space: nowrap;
+    background: transparent;
+    color: transparent;
+    outline: none;
+    pointer-events: none;
   }
   .params {
     display: flex;
