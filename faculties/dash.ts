@@ -1111,9 +1111,13 @@ export class DASHFaculty {
       s.boot.moduleMs[name] = Math.max(0, Math.round(ms))
       const zoneOn = this.rowZoneOnTape(s)
       if (zoneOn) {
-        // state starts 1 col after the 12-char field (col 19); \b×13
-        // returns to col 19 (14 zone-cols typed, 13 rolled back).
-        this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
+        // the field-zone (colon 7..19: 12 dot field + 2 boundary spaces)
+        // is on tape. Overwrite the ENTIRE zone with (12 dots + 2 spaces +
+        // state), hard-coded to the locked shape so width == skeleton.
+        this.type(s,
+          T_BS.repeat(BANNER_DOT_COUNT + 2) +
+          T_DOT.repeat(BANNER_DOT_COUNT) + '  ' +
+          T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
       } else {
         // probe settled before the zone frame: type the full row directly.
         this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
@@ -1128,7 +1132,7 @@ export class DASHFaculty {
       s.boot.moduleState[name] = 'done-fault'
       const zoneOn2 = this.rowZoneOnTape(s)
       if (zoneOn2) {
-        this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_FAULT + T_NL)
+        this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_FAULT + T_NL)
       } else {
         this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_FAULT + T_NL)
       }
@@ -1184,7 +1188,7 @@ export class DASHFaculty {
           else this.finishModule(s, 'CRTX', rr.firstContentAt !== null, Date.now() - (s.boot.roundT0 ?? rr.t0), 'retry: round state')
         } else {
           s.boot.moduleState[name] = 'done-fault'
-          this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_FAULT + T_NL)
+          this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_FAULT + T_NL)
           s.boot.pendingRetry.delete(name)
           this.advanceRowMachine(s)
           s.boot.activeModule = null
@@ -1204,7 +1208,7 @@ export class DASHFaculty {
           this.recordProbe(`${name}(retry)`, true, res.ms, res.detail)
           const zoneOn2 = this.rowZoneOnTape(s)
           if (zoneOn2) {
-            this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
+            this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
           } else {
             this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
           }
@@ -1216,7 +1220,7 @@ export class DASHFaculty {
           this.recordProbe(`${name}(retry)`, false, null, res.detail)
           const zoneOn3 = this.rowZoneOnTape(s)
           if (zoneOn3) {
-            this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_FAULT + T_NL)
+            this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_FAULT + T_NL)
           } else {
             this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_FAULT + T_NL)
           }
