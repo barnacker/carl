@@ -104,7 +104,7 @@ export const BANNER_VERSION = 'v0.1.1'
 export const BANNER_TITLE = 'CARL ── PROVISIONING TERMINAL ' + BANNER_VERSION
 export const BANNER_GATE_DISPLAY = 'hermes,127.0.0.1'
 export const BANNER_LINK_DISPLAY = '10.240.232.32:8000'
-export const BANNER_READY_ROW = '  READY.'
+export const BANNER_READY_ROW = 'READY.'
 
 // The ROM value was a build-time baked constant (web-ui measure-rom.mjs). The
 // server-side banner footer carries ROM from the same build artifact when it
@@ -130,9 +130,9 @@ function bannerMemText(): string {
 // MEM is the live server RSS — 'process.memoryUsage().rss' is the server's
 // resident set, not the browser's JS heap).
 export function bannerStatsRow(): string {
-  return '  ROM ' + BANNER_ROM_TEXT + ' · MEM ' + bannerMemText()
+  return 'ROM ' + BANNER_ROM_TEXT + ' · MEM ' + bannerMemText()
 }
-export const BANNER_TRIAD_ROW = '  GATE hermes,127.0.0.1 · LINK 10.240.232.32:8000'
+export const BANNER_TRIAD_ROW = 'GATE hermes,127.0.0.1 · LINK 10.240.232.32:8000'
 
 // --- band text (typed by the server; docs/char-band-wire.md) --------------------
 const T_NL = "\r\n"
@@ -140,8 +140,8 @@ const T_BS = "\b"
 const T_SPIN_HEAD = ' »  ⋯ '
 const T_RETRY = ' · retry ·  '
 const T_DOT = '·'
-const T_OK = '  OK * '
-const T_FAULT = '  FAULT — '
+const T_OK = 'OK * '
+const T_FAULT = 'FAULT — '
 const T_PROMPT = '❯ '
 
 // GATE: the client gate's own name — the host list appears in the GATE cell
@@ -253,13 +253,13 @@ function initModuleRow(module: DashBootModule): BannerRowState {
   return { label: DASH_BOOT_DISPLAY[module], dots: 0, status: '…', suffix: '', settled: false }
 }
 // One module row as RAW TEXT (the stream is the transcript, not a template):
-//   '  > ' + label(4) + ' ' + dots(12) + ' ' + status.padEnd(5) + suffix
+//   '> ' + label(4) + ' ' + dots(12) + ' ' + status.padEnd(5) + suffix
 // Settled rows carry the full 12-dot field and ' * NNms' or ' — <detail>'.
 // The client `write()`s this verbatim into its xterm buffer (no column
 // math, no padding to screen width — single-width only in the row text).
 function formatBannerRow(r: BannerRowState): string {
   const dots = '.'.repeat(r.dots) + ' '.repeat(BANNER_DOT_COUNT - r.dots)
-  return '  > ' + r.label.padEnd(4) + ' ' + dots + ' ' + r.status.padEnd(5) + r.suffix
+  return '> ' + r.label.padEnd(4) + ' ' + dots + ' ' + r.status.padEnd(5) + r.suffix
 }
 
 interface DashBoot {
@@ -701,9 +701,9 @@ export class DASHFaculty {
         this.type(s, T_BS.repeat(s.spinnerLen))
         s.spinnerLen = 0
       }
-      this.type(s, '  · ' + ms + 'ms | IN ' + r.inflame + ' / OUT ' + r.outtoken + T_NL + T_PROMPT)
+      this.type(s, '· ' + ms + 'ms | IN ' + r.inflame + ' / OUT ' + r.outtoken + T_NL + T_PROMPT)
     } else {
-      this.type(s, '  ERR ' + status + T_NL + T_PROMPT)
+      this.type(s, 'ERR ' + status + T_NL + T_PROMPT)
     }
     if (s.boot.onRoundSettled !== null) {
       const cb = s.boot.onRoundSettled
@@ -1218,7 +1218,7 @@ export class DASHFaculty {
     s.boot.activeModule = name
     const label = DASH_BOOT_DISPLAY[name]
     const st = s.boot.moduleState[name]
-    this.type(s, '  > ' + label.padEnd(4, ' '))
+    this.type(s, '> ' + label.padEnd(4, ' '))
     if (st === 'done-ok') {
       this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + T_OK + String(s.boot.moduleMs[name] ?? 0).padStart(2, '0') + 'ms' + T_NL)
       s.boot.activeModule = null
@@ -1251,7 +1251,7 @@ export class DASHFaculty {
     const anyFault = Object.values(s.boot.moduleState).some((v) => v === 'done-fault')
     this.type(s, bannerStatsRow() + T_NL)
     this.type(s, BANNER_TRIAD_ROW + T_NL)
-    this.type(s, (anyFault ? '  SELF-TEST … FAULT' : '  SELF-TEST … PASSED') + T_NL)
+    this.type(s, (anyFault ? 'SELF-TEST … FAULT' : 'SELF-TEST … PASSED') + T_NL)
     this.type(s, BANNER_READY_ROW + T_NL)
     this.type(s, T_PROMPT)
     this.recordProbe('SELFTEST', !anyFault, null, anyFault ? 'FAULT — header did not flip to PASSED' : 'PASSED — all 6 modules ok')
