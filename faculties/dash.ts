@@ -1108,10 +1108,12 @@ export class DASHFaculty {
     // The prompt tail row is appended client-side on the NEXT frame (the
     // `banner` `ready` signal — see attachSession) — the composer lands
     // directly below the READY. row (operator-locked: no template, no order).
-    this.send(s, { t: 'banner', row: bannerStatsRow() })
-    this.send(s, { t: 'banner', row: BANNER_TRIAD_ROW })
-    this.send(s, { t: 'banner', row: this.bannerRowLiveHeader(anyFault) })
-    this.send(s, { t: 'banner', row: BANNER_READY_ROW })
+    // Footers/triads/READY tail circuits: each line streams character-by-character
+    // (same as the title); the partials repaint the cursor line in-place, the final frame is the linefeed.
+    this.streamRowChars(s, bannerStatsRow())
+    this.streamRowChars(s, BANNER_TRIAD_ROW)
+    this.streamRowChars(s, this.bannerRowLiveHeader(anyFault))
+    this.streamRowChars(s, BANNER_READY_ROW)
     this.send(s, { t: 'banner', ready: true })
     this.send(s, { t: 'boot', m: 'SELFTEST', s: anyFault ? 'fault' : 'ok' })
     this.recordProbe('SELFTEST', !anyFault, null, anyFault ? 'FAULT — header did not flip to PASSED' : 'PASSED — all 6 modules ok')
@@ -1146,20 +1148,43 @@ export class DASHFaculty {
   // DASH_BOOT_DISPLAY_ORDER (DASH first) via a fixed row-index map — the
   // server's probe execution order is UNCHANGED (hard rule).
   streamBanner(s: DashSession): void {
-    // Title + SELF-TEST header — server-emitted verbatim rows. The 6 module
-    // rows are pre-seeded in DASH_BOOT_DISPLAY_ORDER (DASH first — the
-    // operator-locked DISPLAY order; the probe EXECUTION order is unchanged:
-    // TELE→NERV→IMMU→DASH run immediately, CRTX/LLM1 via the ping round).
-    // pending dashed) so the banner shape is visible from frame 1; each
-    // leg's start repaints its own row live (startDotTimer). The footer/
-    // triad/READY rows come from the maybeSettleHeader tail (server text).
-    this.send(s, { t: 'banner', row: BANNER_TITLE })
-    this.send(s, { t: 'banner', row: 'SELF-TEST …' + '─'.repeat(30) })
+    // Title + SELF-TEST header — server-emitted verbatim rows, streamed
+    // CHARACTER-BY-CHARACTER (operator lock): each row is sent as growing
+    // partial frames (one frame every ~30ms, ≤ 25Hz) — the client writes each
+    // partial verbatim at its recorded cursor row (in-place, no re-append),
+    // and the FINAL frame (partial:false) carries the full row + the
+    // linefeed. Module seed rows are the exception: they are sent as ONE
+    // full-row frame (m-tagged) so the client's CUP-repaint map (abs-y of the
+    // seed append) is exactly what the dot/settle frames address.
+    // The probe EXECUTION order is unchanged (TELE→NERV→IMMU→DASH immedi-
+    // ate, CRTX/LLM1 via the ping round) — only the DISPLAY is DASH-first.
+    this.streamRowChars(s, BANNER_TITLE)
+    this.streamRowChars(s, 'SELF-TEST …' + '─'.repeat(30))
     for (const m of DASH_BOOT_DISPLAY_ORDER) {
       const row = initModuleRow(m)
       s.boot.bannerRows.set(m, row)
       this.send(s, { t: 'banner', row: formatBannerRow(row), m })
     }
+  }
+  // Character-by-character row streaming (the banner's title + SELF-TEST
+  // header + tail rows). Cadence: ~30ms between partial frames (≤ ~33Hz,
+  // well under the SSE burst ceiling); a row of N chars lands in
+  // ceil(N*30/20) partials — the title (~38 chars) ≈ 1.1s, SELF-TEST (~40)
+  // ≈ 1.1s, the tail rows ~0.4s each. The writes queue on the same SSE
+  // socket (sync loop) — the CADENCE is the client's render pace (xterm
+  // redraws per frame); if the socket lags, frames coalesce and the row
+  // simply completes faster (never drops: each frame is the growing prefix
+  // of the FINAL frame, which is the truth).
+  private streamRowChars(s: DashSession, text: string): void {
+    const delayMs = 30
+    const frames: number[] = []
+    for (let i = 1; i < text.length; i++) frames.push(i)
+    for (const i of frames) {
+      this.send(s, { t: 'banner', row: text.slice(0, i), partial: true })
+      const t = Date.now()
+      while (Date.now() - t < delayMs) { /* busy wait — bounded by row length */ }
+    }
+    this.send(s, { t: 'banner', row: text, partial: false })
   }
 
   // A module's row as RAW TEXT in its live (un-settled) state — '…' status,

@@ -326,12 +326,29 @@
           }
         }
         if (typeof f.row === 'string') {
-          const absBefore = term ? (term.buffer.active.viewportY - term.buffer.active.baseY) : -1;
-          bannerAppendRow(f.row);
-          if (typeof f.m === 'string' && absBefore >= 0) {
-            const key = MODULE_KEY(f.m);
-            modState[key] = modState[key] ?? 'pending';
-            modRowAbs[key] = absBefore; // 0-based — the row we just appended
+          if (f.partial === true) {
+            // Character-stream partial (title/header/tail rows): repaint the
+            // current cursor row IN-PLACE with the growing text (CUP +
+            // CLEAR_LINE). Never appended — the row is fixed at the cursor
+            // row for the stream's duration (no re-append, no drift).
+            if (term) {
+              const buf = term.buffer.active;
+              const rel = buf.viewportY - buf.baseY + 1;
+              if (rel >= 1 && rel <= term.rows) {
+                term.write('\x1b[' + rel + ';1H' + CLEAR_LINE + f.row);
+              }
+            }
+          } else {
+            // Full row (partial:false or a legacy/seed frame): append once;
+            // the m-tagged seed rows record their absolute row for the
+            // CUP-repaint map (dot/settle frames address them later).
+            const absBefore = term ? (term.buffer.active.viewportY - term.buffer.active.baseY) : -1;
+            bannerAppendRow(f.row);
+            if (typeof f.m === 'string' && absBefore >= 0) {
+              const key = MODULE_KEY(f.m);
+              modState[key] = modState[key] ?? 'pending';
+              modRowAbs[key] = absBefore; // 0-based — the row we just appended
+            }
           }
         }
         break;
