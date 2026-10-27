@@ -3,7 +3,14 @@
 
   const DEFAULT_MODEL = 'Qwen/Qwen3.8-27B-FP8';
 
-  type Entry = { user: string; reasoning: string; content: string };
+  type Entry = {
+    user: string;
+    reasoning: string;
+    content: string;
+    open: boolean;
+    reqId: string | null;
+    error: string | null;
+  };
 
   let history = $state<Entry[]>([]);
   let input = $state('');
@@ -14,6 +21,7 @@
   let controller: AbortController | null = null;
   let lastFirstByte: number | null = $state(null);
   let lastLastByte: number | null = $state(null);
+  let activeRequestId: string | null = $state(null);
   let terminalEl: HTMLDivElement;
   let inputEl: HTMLTextAreaElement;
 
@@ -27,21 +35,48 @@
     if (terminalEl) terminalEl.scrollTop = terminalEl.scrollHeight;
   }
 
-  function pushAssistantToken(lane: 'reasoning' | 'content', text: string) {
-    if (lastFirstByte === null) lastFirstByte = Date.now();
-    if (lampState === 'posting' && text.length > 0) lampState = 'receiving';
-    streaming = true;
+  function pushAssistantToken(lane: 'reasoning' | 'content', text: string, id: string | null) {
     if (text.length === 0) return;
-    const last = history[history.length - 1];
-    if (lane === 'reasoning') {
-      last.reasoning += text;
+    if (id) {
+      if (activeRequestId === null) activeRequestId = id;
+      if (id !== activeRequestId) return; // stale/late frame from another request
+      const e = history.find((x) => x.reqId === activeRequestId);
+      if (e) {
+        if (e.reqId === null) e.reqId = id; // attribute id to the active entry
+        if (lane === 'reasoning') e.reasoning += text;
+        else e.content += text;
+      } else {
+        // Pre-first-frame: no entry carries the id yet → last entry (safe: sending lock)
+        const last = history[history.length - 1];
+        if (lane === 'reasoning') last.reasoning += text;
+        else last.content += text;
+      }
     } else {
-      last.content += text;
+      const last = history[history.length - 1];
+      if (lane === 'reasoning') last.reasoning += text;
+      else last.content += text;
     }
+    if (lastFirstByte === null) lastFirstByte = Date.now();
+    if (lampState === 'posting') lampState = 'receiving';
+    streaming = true;
     setTimeout(scrollTerminal, 0);
   }
 
   function markAssistantDone() {
+    streamDone = true;
+    if (lastLastByte === null) lastLastByte = Date.now();
+    setTimeout(scrollTerminal, 0);
+  }
+
+  function closeEntry(entry: Entry | undefined) {
+    if (entry) entry.open = false;
+  }
+
+  // Finalize the entry for this POST (id-keyed when known) and release the id.
+  function doneStream(id: string | null) {
+    const e = (id && history.find((x) => x.reqId === id)) || history[history.length - 1];
+    closeEntry(e);
+    if (!id || activeRequestId === id) activeRequestId = null;
     streamDone = true;
     if (lastLastByte === null) lastLastByte = Date.now();
     setTimeout(scrollTerminal, 0);
@@ -67,7 +102,7 @@
     lastFirstByte = null;
     lastLastByte = null;
     streamDone = false;
-    history.push({ user: text, reasoning: '', content: '' });
+    history.push({ user: text, reasoning: '', content: '', open: true, reqId: null, error: null });
     scrollTerminal();
 
     controller = new AbortController();
@@ -117,7 +152,7 @@
               lampState = 'idle';
               continue;
             }
-            let parsed: { type?: string; lane?: 'reasoning' | 'content'; text?: string; message?: string } | null = null;
+            let parsed: { type?: string; lane?: 'reasoning' | 'content'; text?: string; message?: string; id?: string } | null = null;
             try {
               parsed = JSON.parse(payload) as typeof parsed;
             } catch {
@@ -129,16 +164,24 @@
               (parsed.lane === 'reasoning' || parsed.lane === 'content') &&
               typeof parsed.text === 'string'
             ) {
-              pushAssistantToken(parsed.lane, parsed.text);
+              pushAssistantToken(parsed.lane, parsed.text, parsed.id ?? null);
+            } else if (parsed && parsed.type === 'error') {
+              const e = history.find((x) => x.reqId === parsed.id) ?? history[history.length - 1];
+              if (e) e.error = parsed.message ?? 'unknown error';
+              doneStream(parsed.id ?? null); // finalize the entry, release the id
             }
           }
         }
       }
-      markAssistantDone();
+      doneStream(activeRequestId ?? null);
+      activeRequestId = null;
       streaming = false;
     } catch (err) {
-      lampState = 'idle';
-      markAssistantDone();
+      const aborted = (err as { name?: string } | null | undefined)?.name === 'AbortError';
+      const e = history.find((x) => x.reqId === activeRequestId) ?? history[history.length - 1];
+      if (e && !aborted) e.error = err?.message ?? String(err); // HTTP !ok + transport + faculty errors
+      lampState = 'idle';                  // keep the existing reset
+      doneStream(activeRequestId ?? null); // finalize the entry, release the id and sending lock (finally)
     } finally {
       sending = false;
       streaming = false;
@@ -164,7 +207,17 @@
     >
       {lampState.toUpperCase()}
     </span>
-    <div class="term-history" bind:this={terminalEl} aria-live="polite"></div>
+    <div class="term-history" bind:this={terminalEl} aria-live="polite">
+      {#each history as entry (entry.reqId || entry)}
+        <div class="term-entry">
+          <div class="term-user">{entry.user}</div>
+          <div class="term-content" class:open-stream={entry.open}>
+            {@html entry.content || (entry.open ? '…' : '')}
+          </div>
+          {#if entry.error}<div class="term-error">E {entry.error}</div>{/if}
+        </div>
+      {/each}
+    </div>
     <div class="term-prompt-row">
       <textarea
         bind:this={inputEl}
@@ -261,6 +314,40 @@
     overflow-y: auto;
     min-height: 0;
     padding: 16px 8px 8px;
+  }
+  .term-entry {
+    margin-bottom: 10px;
+  }
+  .term-user {
+    color: #00ff41;
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.25;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .term-content {
+    color: #e6edf3;
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.25;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .term-content:empty {
+    display: none;
+  }
+  .term-content.open-stream {
+    color: #7ee787;
+  }
+  .term-error {
+    color: #7a5c00; /* dimmer than content, on its own line */
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-top: 2px;
   }
   .term-prompt-row {
     flex-shrink: 0;
