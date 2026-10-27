@@ -47,14 +47,6 @@ function attach(bootFrames = 6) {
     ;(async () => {
       let r
       try {
-        // Independent dispatch per attach: each SSE GET is a fresh connection
-        // (the operator's currency — one physical link per client). A shared
-        // keep-alive pool (node's default fetch Agent) recycles sockets across
-        // attaches and across a killed attach, which wedges re-attach after a
-        // mid-stream kill (server res state belongs to the pooled socket).
-        const { Agent, setGlobalDispatcher } = await import('undici')
-        const agent = new Agent({ keepAliveTimeout: 1, keepAliveMaxTimeout: 1 })
-        setGlobalDispatcher(agent)
         r = await fetch(BASE + '/dash', {
           headers: { 'accept': 'text/event-stream', ...hostHeaders() },
           signal: c.signal,
@@ -122,7 +114,14 @@ function attach(bootFrames = 6) {
             .map((f) => f.m)
           const distinctModules = new Set(seenModules).size
           const bootSettled = distinctModules >= bootFrames
-          if (handshakeSettled && bootSettled) {
+          // Ready-fence: the surface is SENDABLE only after the {t:'ready'}
+          // frame (attach → boot rows appear → ready). A post-ready send can
+          // never land before the ping's first flight — it either PIGGYBACKS
+          // the settling ping (zero latency) or CANCELS it mid-flight
+          // (cancel-and-adopt). The pre-ready send path is tested by stub,
+          // not by probe (it requires a sub-flight microsecond race).
+          const readySettled = frames.some((f) => f.t === 'ready')
+          if (handshakeSettled && bootSettled && readySettled) {
             if (!done) {
               done = true
               clearTimeout(timer)

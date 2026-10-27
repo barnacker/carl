@@ -263,6 +263,13 @@ export class DASHFaculty {
               output_tokens: f.usage.total_output_tokens,
               reasoning_tokens: f.usage.reasoning_tokens,
             }
+            // The round's own usage frame RE-OPENS the LLM row when an adopted
+            // ping closed it 'fault' (no usage existed for the ping): a user
+            // round carrying real usage IS the LLM row's actual test — it
+            // re-settles below (trySettleLlmLeg), flipping FAULT → OK.
+            if (s.boot.moduleState.LLM === 'fault' || s.boot.moduleState.LLM === 'testing') {
+              s.boot.moduleState.LLM = 'testing'
+            }
             this.trySettleLlmLeg(s, r)
           }
         }
@@ -747,7 +754,12 @@ export class DASHFaculty {
     // the shipped boot shape: four probes run immediately, two round-rows are
     // 'pending' placeholders that fill once the model proves the chain.
     s.boot.roundT0 = Date.now()
-    const pingId = crypto.randomUUID()
+    // The ping's round id lives in a RESERVED namespace ('boot-ping:<uuid>').
+    // User round ids are bare UUIDs (crypto.randomUUID) — the namespaces are
+    // disjoint by construction, so the frame router can never attribute a user
+    // round's frames to the ping slot (or vice versa): after the adopt/cancel
+    // resolution, the user sees only their own round id's frames.
+    const pingId = 'boot-ping:' + crypto.randomUUID()
     s.rounds.set(pingId, {
       t0: Date.now(),
       inflame: 2,
@@ -767,8 +779,11 @@ export class DASHFaculty {
     // field), NOT the bare 'pending' placeholder. The ping id rides the frame
     // so the client can watch exactly this round on the line. They settle from
     // the round itself (done llm.telemetry + round settle → 'ok'/'fault').
-    s.boot.moduleState.CRTX = 'testing'
-    s.boot.moduleState.LLM = 'testing'
+    // The ping is SETTING-UP for the CRTX/LLM rows, not testing them: the rows
+    // read 'pending' until a round (ping or user) proves them; the 'ping' boot
+    // frame tells the client which id to watch on those rows.
+    s.boot.moduleState.CRTX = 'pending'
+    s.boot.moduleState.LLM = 'pending'
     this.send(s, { t: 'boot', m: 'CRTX', s: 'ping', id: pingId })
     this.send(s, { t: 'boot', m: 'LLM', s: 'ping', id: pingId })
     s.boot.onRoundSettled = (status: 'ok' | 'fail', ms: number, r: DashRound | null) => {
@@ -1057,21 +1072,36 @@ export class DASHFaculty {
       this.send(s, { t: 'err', code: 'EMPTY_MSG', msg: 'no message' })
       return
     }
-    // Whichever event lands first wins — settle only once: if the connect-
-    // time ping is still live when the user sends, the USER round owns the
-    // CRTX/LLM rows and the ping is superseded (aborted; its slot is freed;
-    // no slimes, no sticky state).
-    if (s.boot.roundT0 !== null && s.boot.moduleState.CRTX === 'testing' && s.rounds.size === 1) {
-      const pingId = [...s.rounds.keys()][0]
-      if (pingId !== undefined) {
+    // NATIONAL RULE (one line): the user send is CANCEL-AND-ADOPT — whichever
+    // of (ping settle, user send) lands first wins, and the event that lands
+    // second adopts the first's resolution instead of colliding with it:
+    //   • if the ping is still in flight when the user sends, the USER round
+    //     owns the CRTX/LLM rows: the ping's slot is freed NOW (reserved
+    //     'boot-ping:' id — user ids are bare UUIDs, disjoint namespace) and
+    //     the ping is aborted (no sticky busy, no slot reuse, no frame
+    //     cross-attribution: the user's done frame can only ever carry the
+    //     user's own round id).
+    //   • if the ping already settled, the boot rows are frozen and the user
+    //     round simply runs; its done carries the user id, full stop.
+    // Zero visible latency for the fast sender — the send is NEVER blocked on
+    // boot; it just cancels the ping when that is the race.
+    if (s.boot.roundT0 !== null) {
+      for (const [rid, r] of [...s.rounds.entries()]) {
+        if (!rid.startsWith('boot-ping:')) continue
+        const wasOpen = !r.settled
+        if (wasOpen) r.settled = true
         s.boot.onRoundSettled = null
-        const r = s.rounds.get(pingId)
-        if (r && !r.settled) {
-          r.settled = true
-          s.rounds.delete(pingId)
+        s.rounds.delete(rid)
+        void this.synapse.publish({ type: 'abort', id: rid }, 'llm.abort')
+        this.send(s, { t: 'err', id: rid, code: 'PING_SUPERSEDED', msg: 'connect-time ping superseded by user round' })
+        // The cancel IS the ping's terminal frame: close the boot rows it was
+        // feeding (its settle hook is gone). CRTX → pending (the adopting
+        // user round proves it when it settles); LLM → fault (no usage came
+        // for the ping — a user round's own usage re-opens it, see (i)).
+        if (wasOpen) {
+          this.send(s, { t: 'boot', m: 'CRTX', s: 'pending', id: rid })
+          this.send(s, { t: 'boot', m: 'LLM', s: 'fault', id: rid })
         }
-        void this.synapse.publish({ type: 'abort', id: pingId }, 'llm.abort')
-        this.send(s, { t: 'err', id: pingId, code: 'PING_SUPERSEDED', msg: 'connect-time ping superseded by user round' })
       }
     }
     const id = crypto.randomUUID()
@@ -1089,8 +1119,11 @@ export class DASHFaculty {
     })
     s.busy = true
     if (s.boot.roundT0 === null) s.boot.roundT0 = Date.now()
-    // A user round now owns the CRTX/LLM rows: re-wire the settle hook.
-    if (s.boot.moduleState.CRTX === 'testing' && s.boot.onRoundSettled === null) {
+    // A user round now owns the CRTX/LLM rows (cancel-and-adopt resolution):
+    // re-wire the settle hook if it is not already the ping's (the ping's own
+    // hook settles the rows when the ping is the winner — see the ping round
+    // setup above).
+    if (s.boot.onRoundSettled === null) {
       s.boot.onRoundSettled = (status: 'ok' | 'fail', ms: number, r: DashRound | null) => {
         this.finishModule(s, 'CRTX', status === 'ok', ms, status === 'ok' ? 'user round DASH→cortex→bus→LLM→back' : `round ${status}`)
         this.maybeSettleHeader(s)

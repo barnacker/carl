@@ -20,9 +20,14 @@ interface SseEventPayload {
 //   usage.output_tokens_details.reasoning_tokens  (reasoning completion tokens)
 //   usage.total_tokens
 interface SseUsage {
+  // vLLM emits OpenAI-standard names (prompt_tokens/completion_tokens); the
+  // alternate spellings (input/output_tokens) are kept for other engines.
+  prompt_tokens?: number
+  completion_tokens?: number
   input_tokens?: number
   output_tokens?: number
   total_tokens?: number
+  reasoning_tokens?: number
   output_tokens_details?: { reasoning_tokens?: number }
 }
 
@@ -316,9 +321,18 @@ export class LLMFACULTY {
           // reasoning_tokens}}; the telemetry faculty profiles it per request.
           const usage = parsed.response?.usage
           if (t !== undefined && usage !== undefined) {
-            const inTok = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0
-            const outTok = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0
-            const rTok = typeof usage.output_tokens_details?.reasoning_tokens === 'number' ? usage.output_tokens_details.reasoning_tokens : 0
+            // vLLM streams OpenAI-standard usage field names (proven on the
+            // live engine: {prompt_tokens, total_tokens, completion_tokens});
+            // the bare input_tokens/output_tokens spelling was never populated
+            // by this deployment — every read fell through to 0 and the done
+            // frame's usage went out as {0,0,0}, so the frame-tally
+            // convergence check (DASH) could never see real numbers.
+            const inTok = typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens
+              : typeof usage.input_tokens === 'number' ? usage.input_tokens : 0
+            const outTok = typeof usage.completion_tokens === 'number' ? usage.completion_tokens
+              : typeof usage.output_tokens === 'number' ? usage.output_tokens : 0
+            const rTok = typeof usage.output_tokens_details?.reasoning_tokens === 'number' ? usage.output_tokens_details.reasoning_tokens
+              : typeof usage.reasoning_tokens === 'number' ? usage.reasoning_tokens : 0
             t.usage = { total_input_tokens: inTok, total_output_tokens: outTok, reasoning_tokens: rTok }
           }
           sawCompleted = true
