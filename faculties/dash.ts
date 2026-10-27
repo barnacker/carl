@@ -138,10 +138,24 @@ export const BANNER_TRIAD_ROW = 'GATE hermes,127.0.0.1 · LINK 10.240.232.32:800
 const T_NL = "\r\n"
 const T_BS = "\b"
 const T_SPIN_HEAD = ' »  ⋯ '
-const T_RETRY = ' · retry ·  '
 const T_DOT = '·'
+// FAULT = STATUS WORD ONLY on the char band (operator-locked): no '—', no
+// detail string, no retry text on the row. The detail still lands where the
+// self-test already logs its per-module results (recordProbe → probe ring /
+// dash.telemetry lane), never on the wire. T_RETRY was wire-only — deleted.
+// EXACT ROW SHAPE (operator-locked, supersedes any variant):
+//   '> ' + label.padEnd(4) + '  ' + <12-char dot field> + ' ' + <state>
+// with state = 'OK * NNms' (NN 2-digit-padded) or 'FAULT'. Row width is
+// CONSTANT from label-emit to settle (29 cols, col 2..30): the 12-char dot
+// field and the 15-char verdict slot are PRE-PADDED with spaces in the row
+// skeleton (typed instantly), and the dot pacer + final verdict overwrite
+// them IN PLACE ('\b'×12 + new text — the same mechanism as the reason-lane
+// spinner). The line NEVER GROWS past the skeleton; every module row has
+// the same shape (a preserved done-fault paints the dots in the field and
+// the FAULT word in the slot, same width).
 const T_OK = 'OK * '
-const T_FAULT = 'FAULT — '
+const T_FAULT = 'FAULT'
+const T_TAIL_FAULT = 'FAULT'
 const T_PROMPT = '❯ '
 
 // GATE: the client gate's own name — the host list appears in the GATE cell
@@ -183,6 +197,11 @@ const DASH_RETRY_AFTER_MS = 1_500 // ONE auto-retry after 1.5s on FAULT
 // dots + status (the row's final text is the single source of truth).
 const BANNER_DOT_COUNT = 12
 const BANNER_DOT_TICK_MS = 50 // dot probe cadence ≤ 20 Hz (operator-cap)
+// DOT_ARM_MS: the dot pacer's latch opening — no dot is painted until the
+// active row's probe has been open this long, so the first paint can never
+// land in a skeleton that is not yet on tape (the fast legs DASH/IMMU settle
+// in ~1-15ms and are resolved by the preserved full-field row instead).
+const DOT_ARM_MS = 100
 // Per-module expected leg duration (used to pace dots: a fast DASH/IMMU
 // probe lands fewer dots in 50ms; a slow TELE disk readback lands more).
 // These are approximations of the real leg cost; the dots still adapt to the
@@ -280,6 +299,16 @@ interface DashBoot {
   activeModule: DashBootModule | null
   dotCount: number
   dotIv: NodeJS.Timeout | null
+  // dot zone on-tape latch: true from the moment the active row's field
+  // zone (12 dot field + 2 spaces + 14 state cols) has been EMITTED to the
+  // char queue, cleared when the row advances. The settle path reads this
+  // to decide between an in-place verdict rewrite (\b×12 + state, safe when
+  // the zone is on/near tape) and a FULL-ROW paint (dots + state directly,
+  // for a probe that settled before the zone frame left the queue). The
+  // pacer's slow early ticks (up to ~8 dots in 400ms) plus the zone
+  // emitting before 200ms keep \b-depth within the 28-col zone, so the
+  // width-constancy contract holds in both branches.
+  rowReady: boolean
   pendingRetry: Map<DashBootModule, (() => Promise<{ ok: boolean; ms: number; detail: string }>) | null>
   settled: boolean
   roundT0: number | null
@@ -480,6 +509,7 @@ export class DASHFaculty {
         activeModule: null,
         dotCount: 0,
         dotIv: null,
+        rowReady: false,
         pendingRetry: new Map(),
         settled: false,
         roundT0: null,
@@ -1057,25 +1087,37 @@ export class DASHFaculty {
     const st = s.boot.moduleState[name]
     if (st === 'done-ok' || st === 'done-fault') return
     const active = s.boot.activeModule === name
-    this.stopDotTimer(s)
-    this.recordProbe(name, ok, ok ? ms : null, detail)
+    // Row-switch race: the settle may land the INSTANT the band machine
+    // takes over the active row for a DIFFERENT module (activeModule was
+    // just switched away from this one). In that case this module's row
+    // is being preserved — resolve both latent OK and first-FAULT to the
+    // preserved-state-and-return so the band machine can paint the
+    // preserved row when it reaches it.
     if (!active) {
       if (ok) {
         s.boot.moduleState[name] = 'done-ok'
         s.boot.moduleMs[name] = Math.max(0, Math.round(ms))
-      } else if (st === 'fault') {
-        s.boot.moduleState[name] = 'done-fault'
       } else {
-        s.boot.moduleState[name] = 'fault'
-        s.boot.pendingRetry.set(name, this.legProbeFor(name))
+        s.boot.moduleState[name] = 'done-fault'
       }
+      this.recordProbe(name, ok, ok ? ms : null, detail)
+      s.boot.pendingRetry.delete(name)
       return
     }
+    this.stopDotTimer(s)
+    this.recordProbe(name, ok, ok ? ms : null, detail)
     if (ok) {
       s.boot.moduleState[name] = 'done-ok'
       s.boot.moduleMs[name] = Math.max(0, Math.round(ms))
-      const retried = s.boot.pendingRetry.has(name)
-      this.type(s, (retried ? T_RETRY : '') + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
+      const zoneOn = this.rowZoneOnTape(s)
+      if (zoneOn) {
+        // state starts 1 col after the 12-char field (col 19); \b×13
+        // returns to col 19 (14 zone-cols typed, 13 rolled back).
+        this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
+      } else {
+        // probe settled before the zone frame: type the full row directly.
+        this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
+      }
       s.boot.pendingRetry.delete(name)
       s.boot.activeModule = null
       this.advanceRowMachine(s)
@@ -1084,65 +1126,106 @@ export class DASHFaculty {
     if (st === 'fault') {
       // a second FAULT settles — the header does NOT flip to PASSED.
       s.boot.moduleState[name] = 'done-fault'
-      this.type(s, T_RETRY + T_FAULT + detail + T_NL)
+      const zoneOn2 = this.rowZoneOnTape(s)
+      if (zoneOn2) {
+        this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_FAULT + T_NL)
+      } else {
+        this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_FAULT + T_NL)
+      }
       s.boot.pendingRetry.delete(name)
       s.boot.activeModule = null
       this.advanceRowMachine(s)
       return
     }
-    // first FAULT: type FAULT on the SAME line (NO T_NL), then ONE auto-
-    // retry after 1.5s continues the row with ' · retry · <verdict>' + T_NL.
+    // first FAULT: the verdict slot holds the STATUS WORD ONLY (no detail,
+    // no ' · retry · ' on the row — the operator-locked band shows only the
+    // status word). The retry is INVISIBLE: the dot pacer keeps pacing until
+    // the final verdict. The next row is NOT typed yet (activeModule is held
+    // until the FINAL verdict), so the retry's fresh dots land in the same
+    // field; the final verdict overwrites it in place (\b×12 + padded).
+    // Queue-wait: the \b×12 must NOT reach the tape before the dot field
+    // does — when the probe lands before the char queue has drained the
+    // row skeleton, the settle timers wait (100ms polls) for the queue to
+    // drain (the ≤32-char frames are seconds of tape; drains in ≤~1s).
     s.boot.moduleState[name] = 'fault'
-    this.type(s, T_FAULT + detail)
     const retry = this.legProbeFor(name)
     s.boot.pendingRetry.set(name, retry)
-    const iv = setTimeout(() => {
+    const zoneOn = s.boot.rowReady
+    void (async () => {
+      if (zoneOn) {
+        // field zone on tape: segue = back to the 13th col (the open space
+        // INSTANTLY after the 12-char field) and type the status word.
+        if (s.closed || s.boot.moduleState[name] !== 'fault') return
+        this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_FAULT)
+      } else {
+        // probe landed before the zone frame: paint the full row directly.
+        if (s.closed || s.boot.moduleState[name] !== 'fault') return
+        this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_FAULT)
+      }
+      this.advanceRowMachine(s)
+      s.boot.activeModule = null
+      await sleep(DASH_RETRY_AFTER_MS)
       if (s.closed || s.boot.moduleState[name] !== 'fault') return
       s.boot.moduleState[name] = 'testing'
-      // The retry continues on the SAME line: fresh dots, then the verdict.
+      // The retry re-paces the SAME 12-char field (dots continue in place).
       s.boot.dotCount = 0
       this.startDotTimer(s)
-      void (async () => {
-        if (!retry) {
-          // CRTX/LLM1: the retry re-settles from the round's own frames (a
-          // real retry — same event that settles them, when it lands).
-          const rr = [...s.rounds.values()].find((x) => !x.settled) ?? null
-          if (rr) {
-            if (name === 'LLM1') this.finishLlmLeg(s, rr)
-            else this.finishModule(s, 'CRTX', rr.firstContentAt !== null, Date.now() - (s.boot.roundT0 ?? rr.t0), 'retry: round state')
-          } else {
-            s.boot.moduleState[name] = 'done-fault'
-            this.type(s, T_RETRY + T_FAULT + 'retry: no round state' + T_NL)
-            s.boot.activeModule = null
-            s.boot.pendingRetry.delete(name)
-            this.advanceRowMachine(s)
-          }
+      if (zoneOn) {
+        // seamless: the row is on tape; the retry's settle goes through the
+        // normal closeRow path (finishLlmLeg / leg → finishModule) with the
+        // row still held (activeModule). The pacer doesn't stop mid-retry.
+      }
+      if (!retry) {
+        // CRTX/LLM1: settle from the next round frames; the machine keeps
+        // the row active so their \b settle is on-tape.
+        const rr = [...s.rounds.values()].find((x) => !x.settled) ?? null
+        if (rr) {
+          if (name === 'LLM1') this.finishLlmLeg(s, rr)
+          else this.finishModule(s, 'CRTX', rr.firstContentAt !== null, Date.now() - (s.boot.roundT0 ?? rr.t0), 'retry: round state')
         } else {
-          const t0 = Date.now()
-          let res: { ok: boolean; ms: number; detail: string }
-          try {
-            res = await withTimeout(retry(), DASH_LEG_TIMEOUT_MS, { ok: false, ms: DASH_LEG_TIMEOUT_MS, detail: 'retry-timeout' })
-          } catch (e) {
-            res = { ok: false, ms: Date.now() - t0, detail: (e as Error).message }
-          }
-          if (res.ok) {
-            s.boot.moduleState[name] = 'done-ok'
-            s.boot.moduleMs[name] = Math.max(0, Math.round(res.ms))
-            this.recordProbe(`${name}(retry)`, true, res.ms, res.detail)
-            this.type(s, T_RETRY + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
+          s.boot.moduleState[name] = 'done-fault'
+          this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_FAULT + T_NL)
+          s.boot.pendingRetry.delete(name)
+          this.advanceRowMachine(s)
+          s.boot.activeModule = null
+        }
+      } else {
+        // retriable probe: run it, one result.
+        const t0 = Date.now()
+        let res: { ok: boolean; ms: number; detail: string }
+        try {
+          res = await withTimeout(retry(), DASH_LEG_TIMEOUT_MS, { ok: false, ms: DASH_LEG_TIMEOUT_MS, detail: 'retry-timeout' })
+        } catch (e) {
+          res = { ok: false, ms: Date.now() - t0, detail: (e as Error).message }
+        }
+        if (res.ok) {
+          s.boot.moduleState[name] = 'done-ok'
+          s.boot.moduleMs[name] = Math.max(0, Math.round(res.ms))
+          this.recordProbe(`${name}(retry)`, true, res.ms, res.detail)
+          const zoneOn2 = this.rowZoneOnTape(s)
+          if (zoneOn2) {
+            this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
           } else {
-            s.boot.moduleState[name] = 'done-fault'
-            this.recordProbe(`${name}(retry)`, false, null, res.detail)
-            this.type(s, T_RETRY + T_FAULT + res.detail + T_NL)
+            this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_OK + String(s.boot.moduleMs[name]).padStart(2, '0') + 'ms' + T_NL)
           }
           s.boot.pendingRetry.delete(name)
-          s.boot.activeModule = null
           this.advanceRowMachine(s)
+          s.boot.activeModule = null
+        } else {
+          s.boot.moduleState[name] = 'done-fault'
+          this.recordProbe(`${name}(retry)`, false, null, res.detail)
+          const zoneOn3 = this.rowZoneOnTape(s)
+          if (zoneOn3) {
+            this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_FAULT + T_NL)
+          } else {
+            this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_FAULT + T_NL)
+          }
+          s.boot.pendingRetry.delete(name)
+          this.advanceRowMachine(s)
+          s.boot.activeModule = null
         }
-      })()
-    }, DASH_RETRY_AFTER_MS)
-    iv.unref()
-    s.tickTimers.push(iv)
+      }
+    })()
   }
 
   /** the retryable probe bodies (a real retry, not cosmetic) */
@@ -1218,26 +1301,43 @@ export class DASHFaculty {
     s.boot.activeModule = name
     const label = DASH_BOOT_DISPLAY[name]
     const st = s.boot.moduleState[name]
-    this.type(s, '> ' + label.padEnd(4, ' ') + '  ')
+    // The label prefix is typed FIRST (col 0..7: '> ' + 4-char label + TWO
+    // spaces), then the fixed-width state zone (12 dot field + TWO spaces +
+    // state = 28 cols 8..35) is painted by dots/verdict overwrites; the
+    // pacer rewinds the DOT FIELD only (\b×12) so the state always lands at
+    // the locked column (col 22).
+    this.type(s, '> ' + label.padEnd(4, ' '))
     if (st === 'done-ok') {
-      this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + T_OK + String(s.boot.moduleMs[name] ?? 0).padStart(2, '0') + 'ms' + T_NL)
+      // the settle already typed the state (dots + verdict); this row only
+      // needs its T_NL before the band advances (the settled text is on tape).
+      this.type(s, T_NL)
       s.boot.activeModule = null
       this.advanceRowMachine(s)
       return
     }
     if (st === 'done-fault') {
-      this.type(s, T_DOT + ' ' + T_FAULT + ' (see telemetry)' + T_NL)
+      // the FAULT word is on tape from the settle path (no T_NL yet); this
+      // row only needs its T_NL before the band advances.
+      this.type(s, T_NL)
       s.boot.activeModule = null
       this.advanceRowMachine(s)
       return
     }
     if (st !== 'testing') s.boot.moduleState[name] = 'testing'
-    if (st === 'fault' && s.boot.pendingRetry.has(name)) {
-      // A fault latched on a non-active settle: its 1.5s retry is already
-      // running (finishModule armed it). Type a dot; the retry types the row.
-      this.type(s, T_DOT + ' ')
+    if (s.boot.pendingRetry.has(name)) {
+      // A fault latched on a non-active settle: the 1.5s invisible retry is
+      // already armed (finishModule) — it owns the row's remaining tape.
       return
     }
+    // FULL ROW SKELETON, typed instantly (the operator-locked row machine):
+    // the label prefix is on tape; this types the 13-col state zone — 12
+    // dot-field cols + 1 boundary space — PADDED WITH SPACES UP FRONT
+    // (never appended after the dots). Row width is CONSTANT from
+    // label-emit to settle: the dot pacer and the final verdict overwrite
+    // the zone in place (\b×13 + new text — the same mechanism as the
+    // reason-lane spinner), and no row ever grows past this skeleton.
+    this.type(s, ' '.repeat(BANNER_DOT_COUNT + 1))
+    s.boot.rowReady = true // zone emitted: settle path may \b-rewrite in place
     this.startDotTimer(s)
   }
 
@@ -1262,6 +1362,7 @@ export class DASHFaculty {
   // DISPLAY was gated), or emit the tail when all 6 rows are done.
   private advanceRowMachine(s: DashSession): void {
     if (s.closed) return
+    s.boot.rowReady = false // the row that just settled owns no zone now
     if (Object.values(s.boot.moduleState).every((v) => v === 'done-ok' || v === 'done-fault')) {
       this.typeTail(s)
       return
@@ -1293,35 +1394,47 @@ export class DASHFaculty {
     }
   }
 
-  // Dot pinger (ONE fd per session, the active row only): one dot per leg
-  // progress step at ≤20Hz (50ms ticks), 12 max (the field is 12). The dots
-  // are REAL PROGRESS, not a clock: the pacer caps the draw rate, the leg's
-  // own budget (DASH_LEG_BUDGET_MS) is the fill ceiling. On settle, the
-  // verdict is typed as-is (the row's dot count at settle is the truth —
-  // the verdict text carries no dot field).
+  // Dot pinger (ONE fd per session, the active row only) — the dots ARE the
+  // animation (operator-locked): exactly ONE dot per tick, ≤20Hz, max 12.
+  // Each tick overwrites the pre-padded 12-space dot field IN PLACE
+  // ('\b'×12 + dots-so-far) — the row width never moves; the final verdict
+  // overwrites the field once, at settle. Every module row takes this path
+  // (CRTX/LLM1 included — same row machine). The pacer ARMS LAZILY: the first
+  // probe tick is a latch-only poll (no paint) — the FAST legs (DASH ~1ms,
+  // IMMU ~few ms) settle well before T_NL is on tape, and a dot painted into
+  // the not-yet-typed skeleton would ride into the verdict clear (hidden).
+  // Once the latch arms (probe ≥ DOT_ARM_MS), every subsequent tick paints
+  // ONE dot (≤20Hz, max 12) in place; if the leg settles before the first
+  // paint the row falls back to the preserved full-field verdict (the
+  // settle path paints dots + state directly). DOT-PROGRESSION is therefore
+  // guaranteed visible for every leg that stays open ≥ DOT_ARM_MS
+  // (NERV, IMMU, TELE, CRTX, LLM1), and a minimum dot for the ones that don't
+  // (DASH) is the preserved row's full dot field.
+  private dotLatchAt: number | null = null // epoch ms the active row's probe armed
   private startDotTimer(s: DashSession): void {
     const existing = s.boot.dotIv
     if (existing) clearInterval(existing)
     s.boot.dotCount = 0
-    const t0 = Date.now()
-    const budget = DASH_LEG_BUDGET_MS[s.boot.activeModule ?? 'DASH']
-    const denom = Math.max(60, budget / 6) // the row advances toward 12
+    this.dotLatchAt = Date.now()
     const iv = setInterval(() => {
       if (s.closed || s.boot.activeModule === null) {
         this.stopDotTimer(s)
         return
       }
       const st = s.boot.moduleState[s.boot.activeModule]
-      if (st === 'fault' || st === 'done-ok' || st === 'done-fault') {
+      if (st !== 'testing' && st !== 'fault') {
         this.stopDotTimer(s)
         return
       }
-      const elapsed = Date.now() - t0
-      const want = Math.min(BANNER_DOT_COUNT, Math.floor(elapsed / denom) + 1)
-      if (want > s.boot.dotCount) {
-        s.boot.dotCount = want
-        this.type(s, T_DOT.repeat(want - s.boot.dotCount))
-      }
+      // LATCH: no paint until the probe has been running ≥ DOT_ARM_MS —
+      // a fast leg settling before the latch arms paints zero dots and the
+      // preserved row carries the full 12-dot field + state.
+      if (Date.now() - this.dotLatchAt! < DOT_ARM_MS) return
+      if (s.boot.dotCount >= BANNER_DOT_COUNT) return
+      s.boot.dotCount += 1
+      // The zone skeleton is already 13 SPACE cols pre-padded; overwrite
+      // the 13-col zone in place with 12 dots + 1 space (width-constant).
+      this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_DOT.repeat(s.boot.dotCount) + ' '.repeat(BANNER_DOT_COUNT - s.boot.dotCount + 1))
     }, BANNER_DOT_TICK_MS)
     iv.unref()
     s.boot.dotIv = iv
@@ -1332,6 +1445,18 @@ export class DASHFaculty {
       clearInterval(iv)
       s.boot.dotIv = null
     }
+  }
+
+  // The row's full state zone (13 cols: 12 dot field + 1 open space) is
+  // on tape when the row was typed BY THE BAND MACHINE (nextModuleRow) AND
+  // the settle has not yet consumed it. rowReady is set when the machine
+  // emits the zone skeleton; it is cleared in advanceRowMachine after the
+  // row's T_NL. The settle path reads this to decide: zone-on-tape →
+  // \b×13 + state (overwrites the zone, width-constant); zone-off-tape
+  // (probe landed before the row's skeleton left the type queue) → type
+  // the full row (dots + state) directly.
+  private rowZoneOnTape(s: DashSession): boolean {
+    return s.boot.rowReady === true
   }
 
   // Belt-and-braces: the tail is typed by advanceRowMachine the moment the
