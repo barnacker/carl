@@ -57,7 +57,7 @@ export class recreateChatFacade {
 
   handleRequest(req: IncomingMessage, res: ServerResponse, body: string): void {
     const url = (req.url ?? '').split('?')[0]
-    if (req.method !== 'POST' || url !== '/v1/chat') return
+    if (req.method !== 'POST' || url !== '/') return
     if (!isAllowedHost(req.headers.host)) {
       res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'forbidden host' }))
       return

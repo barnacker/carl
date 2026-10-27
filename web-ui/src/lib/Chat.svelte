@@ -87,7 +87,7 @@
       const mt = parseInt(max_tokens, 10);
       if (!Number.isNaN(mt) && mt > 0) body.max_tokens = mt;
 
-      const res = await fetch('/v1/chat', {
+      const res = await fetch('/', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),

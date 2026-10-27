@@ -89,7 +89,7 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
     void (async () => {
       const url = ((req.url ?? '').split('?')[0]) || '/'
       const hostOkNow = hostOk(req.headers.host)
-      if (req.method === 'POST' && url === '/v1/chat') {
+      if (req.method === 'POST' && url === '/') {
         if (!hostOkNow) {
           res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'forbidden host' }))
           return
