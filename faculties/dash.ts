@@ -101,7 +101,7 @@ import { createBus, busFlowStats } from '../nervous-system.js'
 // web-ui/src/lib/Chat.svelte (v0.1.1 build artifact — pre-trim) to here so the
 // served frame is the single source of truth.
 export const BANNER_VERSION = 'v0.1.1'
-export const BANNER_TITLE = '  CARL ── PROVISIONING TERMINAL ' + BANNER_VERSION
+export const BANNER_TITLE = 'CARL ── PROVISIONING TERMINAL ' + BANNER_VERSION
 export const BANNER_GATE_DISPLAY = 'hermes,127.0.0.1'
 export const BANNER_LINK_DISPLAY = '10.240.232.32:8000'
 export const BANNER_READY_ROW = '  READY.'
@@ -135,7 +135,7 @@ export function bannerStatsRow(): string {
 export const BANNER_TRIAD_ROW = '  GATE hermes,127.0.0.1 · LINK 10.240.232.32:8000'
 
 // --- band text (typed by the server; docs/char-band-wire.md) --------------------
-const T_NL = "\n"
+const T_NL = "\r\n"
 const T_BS = "\b"
 const T_SPIN_HEAD = ' »  ⋯ '
 const T_RETRY = ' · retry ·  '
