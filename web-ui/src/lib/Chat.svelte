@@ -23,7 +23,7 @@
   let inputEl: HTMLTextAreaElement;
 
   // Visible, editable request parameters (everything sent to vLLM).
-  const DEFAULT_BASE_URL = 'http://10.240.232.32:8000';
+  const DEFAULT_BASE_URL = 'http://hermes:3000';
   let baseUrl = $state(DEFAULT_BASE_URL);
   let model = $state(DEFAULT_MODEL);
   let systemRole = $state<Role>('system');
@@ -125,7 +125,6 @@
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf8');
       let buf = '';
@@ -246,7 +245,7 @@
   <div class="params">
     <label class="param-row">
       <span class="param-label">base_url</span>
-      <input class="param-input" bind:value={baseUrl} type="text" autocomplete="off" spellcheck="false" placeholder="vLLM endpoint (empty → server default)" />
+      <input class="param-input" bind:value={baseUrl} type="text" autocomplete="off" spellcheck="false" placeholder="vLLM endpoint (empty — uses the internal vLLM constant in model/vllm.ts)" />
     </label>
     <label class="param-row">
       <span class="param-label">model</span>
