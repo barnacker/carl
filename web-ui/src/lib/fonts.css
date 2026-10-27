@@ -1,31 +1,63 @@
-/* Self-hosted fonts (OFL only — no CDN/typekit). Vendored in web-ui/src/lib/fonts/.
+/* Self-hosted fonts (OFL/owner-license only — no CDN/typekit). Vendored in web-ui/src/lib/fonts/.
  *
- * Font decision (operator path (b)):
- *   • JetBrains Mono  — the BODY face. xterm terminal content (transcript,
- *     boot banner, banner title + frame) renders in it. Pure mono so the
- *     font-native box-drawing glyphs (─ │ ┌ ┐ etc.) stay on the 16px + 0.3px
- *     grid — xterm stays clean mono for ALL terminal content.
- *   • Orbitron        — the SPCPECTRA UI SHELL face. HUD cell titles,
- *     card/tab labels, the params column chrome. Baked in, weights 500/700/900
- *     (the variable file carries all three).
+ * Font decision (operator heirloom call — supersedes the Departure Mono steer):
+ *   • Glass (Glass TTY VT220) — the BODY face. Heirloom pixel/terminal face,
+ *     already in the operator's live stack (gaia frontend, registered as
+ *     @font-face 'Glass'). 322 glyphs, single weight (usWeightClass 500 —
+ *     declared font-weight: normal per gaia's own registration). Coverage:
+ *     full basic latin + latin-1 + 30/30 common punct — but NO box-drawing
+ *     (┌─┐│└┘: 0/11) and NO ▼/❯/… marks (only · of the banner marks). The
+ *     box frame + those marks therefore ride the FALLBACK chain per-glyph
+ *     (unicode-range points them straight at JetBrains) — the operator
+ *     accepts this mixed-frame evidence (see the 4-panel pitch shot).
+ *   • JetBrains Mono — FALLBACK OF RECORD: box-drawing + ▼/❯/… + any latin
+ *     hole Glass lacks. Variable 400-700.
+ *   • Departure Mono — RETAINED (SIL OFL, zero cost; operator's steer
+ *     stays in the bake): third-line fallback after JetBrains; also the
+ *     ready swap if the operator prefers a richer native box set.
+ *   • Orbitron — the SPCPECTRA UI SHELL face (chrome/HUD only, never
+ *     terminal content). Baked, weights 500/700/900.
  *
- * Both are Variable WOFF2 (a single file per family spans its weight range),
- * so one @font-face per family covers regular+bold. Total payload ≈ 43 KB,
- * far under the 300 KB budget. The unicode-range is the Google Fonts latin
- * subset (U+0000-00FF + Latin ext + general punctuation) — sufficient for the
- * terminal (ASCII + the box/marker glyphs) and the chrome.
+ * All terminal glyphs the banner draws sit in these three faces + the
+ * system monospace tail. Total font payload ≈ 70 KB (under the 300 KB
+ * budget).
  */
 
+/* Body face — the heirloom (gaia's exact declaration style: weight normal,
+ * style normal, woff2). No unicode-range: Glass's 322 glyphs are thin
+ * enough that per-glyph fallback to the next family is automatic and cheap. */
+@font-face {
+  font-family: 'Glass';
+  font-style: normal;
+  font-weight: normal;
+  font-display: swap;
+  src: url('./fonts/glass-tty-vt220.woff2') format('woff2');
+}
+
+/* Fallback of record — variable 400-700; serves the box-drawing + ▼/❯/…
+ * marks (unicode-range scopes exactly those) + any latin hole. */
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
-  /* variable: 400 (regular) + 700 (bold) live in this one file */
   font-weight: 400 700;
   font-display: swap;
   src: url('./fonts/jetbrains-mono-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
     U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
-    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    U+2190-223F, U+2500-25FF, U+2768-276F, U+FEFF, U+FFFD;
+}
+
+/* Retained steer (OFL) — third line; full box set + · ▼ ❯ … natively. */
+@font-face {
+  font-family: 'DepartureMono';
+  font-style: normal;
+  /* static: Regular (400) only — the shipped file carries no weight axis */
+  font-weight: normal;
+  font-display: swap;
+  src: url('./fonts/departure-mono.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2190-223F, U+2500-25FF, U+2768-276F, U+FEFF, U+FFFD;
 }
 
 @font-face {

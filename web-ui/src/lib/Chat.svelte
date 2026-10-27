@@ -22,9 +22,16 @@
   // boot banner + frame box/title — font-native box-drawing), 16px + 0.3px
   // letter-spacing locked. Orbitron is chrome-only (the SPCPECTRA shell).
   const FONT_STACK =
-    "'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace";
+    "'Glass', 'JetBrains Mono', 'DepartureMono', 'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace";
+  // TERMINAL GRID SPEC FINAL (operator lock): fontSize 16 + letterSpacing '0'
+  // (a pixel face on a fractional split breaks the monospace lattice — 0 is
+  // structurally correct) + lineHeight pending the operator's pitch-judge
+  // call on the 4-panel frame shot (D=1.0 connected; A=1.1 / B=1.2 / C=1.3
+  // gapped — the Glass face's │ is a JetBrains-supplied glyph; the panels
+  // are the pick input). Bake placeholder 1.2 until the call lands.
   const FONT_SIZE = 16;
-  const FONT_LETTER_SPACING = 0.3;
+  const LETTER_SPACING = '0';
+  const LINE_HEIGHT = 1.2;
 
   const CLEAR_LINE = '\x1b[2K';
 
@@ -381,7 +388,9 @@
   }
 
   let selftestHeaderY = 0; // absolute buffer row of the SELF-TEST header row
-  const BANNER_TITLE = '  CARL ── PROVISIONING TERMINAL' + ' '.repeat(frameW - 37) + BANNER_VERSION;
+  // TITLE-FINAL (operator): the version is ADJACENT to the title — plain
+  // text, one space, no right-push/padding calc.
+  const BANNER_TITLE = '  CARL ── PROVISIONING TERMINAL ' + BANNER_VERSION;
   function bootHeaderLine(h: 'testing' | 'passed' | 'fault'): string {
     return frameRow(selftestHeaderLine(h).trimStart());
   }
@@ -676,8 +685,8 @@
       cursorStyle: 'block',
       fontFamily: FONT_STACK,
       fontSize: FONT_SIZE,
-      lineHeight: 1.2,
-      letterSpacing: FONT_LETTER_SPACING,
+      lineHeight: LINE_HEIGHT,
+      letterSpacing: LETTER_SPACING,
       // Natural flow — xterm behaves normal: append-at-current + its own
       // follow-near-tail default is the ONLY follow logic (no tail math, no
       // pad seeding, no clamp). Deterministic 1000-line scrollback.
