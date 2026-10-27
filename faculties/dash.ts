@@ -1160,11 +1160,11 @@ export class DASHFaculty {
         // field zone on tape: segue = back to the 13th col (the open space
         // INSTANTLY after the 12-char field) and type the status word.
         if (s.closed || s.boot.moduleState[name] !== 'fault') return
-        this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 1) + T_FAULT)
+        this.type(s, T_BS.repeat(BANNER_DOT_COUNT + 2) + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_FAULT.padEnd(14))
       } else {
         // probe landed before the zone frame: paint the full row directly.
         if (s.closed || s.boot.moduleState[name] !== 'fault') return
-        this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + T_FAULT)
+        this.type(s, T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_FAULT.padEnd(14))
       }
       this.advanceRowMachine(s)
       s.boot.activeModule = null
