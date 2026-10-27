@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // cli/carl — thin HTTP client for the CARL chat faculty.
-// Consumes the POST / SSE chat endpoint on the running service; spawns no runtime.
+// Consumes the POST /chat SSE chat endpoint on the running service; spawns no runtime.
 
 const args = process.argv.slice(2);
 let ask = null, host = '127.0.0.1', port = '3000', model, temperature, topP;
@@ -27,7 +27,7 @@ if (!Number.isNaN(temperature) && temperature !== undefined) body.temperature = 
 if (!Number.isNaN(topP) && topP !== undefined) body.top_p = topP;
 
 try {
-  const res = await fetch(`http://${host}:${port}/`, {
+  const res = await fetch(`http://${host}:${port}/chat`, {
     method: 'POST',
     headers: { Host: host + ':' + port, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

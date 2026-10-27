@@ -1,16 +1,54 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { spinners, spinnerById, DEFAULT_SPINNER_ID } from './spinners';
 
+  const CHAT_ENDPOINT = '/chat';
   const DEFAULT_MODEL = 'Qwen/Qwen3.8-27B-FP8';
+  const SPINNER_KEY = 'carl.spinner';
 
   type Entry = {
     user: string;
     reasoning: string;
     content: string;
     open: boolean;
+    thinking: boolean;
+    firstByte: boolean;
     reqId: string | null;
     error: string | null;
   };
+
+  function loadSpinner(): string {
+    try {
+      const v = localStorage.getItem(SPINNER_KEY);
+      if (v && spinners.some((s) => s.id === v)) return v;
+    } catch {
+      /* storage unavailable — fall through to default */
+    }
+    return DEFAULT_SPINNER_ID;
+  }
+
+  let spinnerId = $state(loadSpinner());
+  function setSpinner(v: string) {
+    spinnerId = v;
+    try {
+      localStorage.setItem(SPINNER_KEY, v);
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  // Thinking spinner state. Only one entry is open at a time (sending
+  // lock), so one global ticker is the spinner. Re-created whenever the
+  // selected set changes; advances on the SET's own interval.
+  let spinnerFrame = $state(spinnerById(loadSpinner()).frames[0]);
+  $effect(() => {
+    const set = spinnerById(spinnerId);
+    spinnerFrame = set.frames[0];
+    const t = setInterval(() => {
+      spinnerFrame = set.frames[(set.frames.indexOf(spinnerFrame) + 1) % set.frames.length];
+    }, set.interval);
+    return () => clearInterval(t);
+  });
 
   let history = $state<Entry[]>([]);
   let input = $state('');
@@ -35,37 +73,46 @@
     if (terminalEl) terminalEl.scrollTop = terminalEl.scrollHeight;
   }
 
-  function pushAssistantToken(lane: 'reasoning' | 'content', text: string, id: string | null) {
+  // Auto-scroll pin: follow while the operator is at the bottom of the
+  // pane; back off when they scroll up (never yank them back down).
+  let followBottom = $state(true);
+  function onHistScroll() {
+    if (terminalEl) {
+      followBottom = terminalEl.scrollHeight - terminalEl.scrollTop - terminalEl.clientHeight < 24;
+      if (followBottom) scrollTerminal();
+    }
+  }
+  function scrollIfPinned() {
+    if (followBottom) scrollTerminal();
+  }
+
+  function applyToken(lane: 'reasoning' | 'content', text: string, id: string | null) {
     if (text.length === 0) return;
+    let e: Entry | undefined;
     if (id) {
       if (activeRequestId === null) activeRequestId = id;
       if (id !== activeRequestId) return; // stale/late frame from another request
-      const e = history.find((x) => x.reqId === activeRequestId);
-      if (e) {
-        if (e.reqId === null) e.reqId = id; // attribute id to the active entry
-        if (lane === 'reasoning') e.reasoning += text;
-        else e.content += text;
-      } else {
-        // Pre-first-frame: no entry carries the id yet → last entry (safe: sending lock)
-        const last = history[history.length - 1];
-        if (lane === 'reasoning') last.reasoning += text;
-        else last.content += text;
-      }
+      e = history.find((x) => x.reqId === id);
+    }
+    if (!e) e = history[history.length - 1];
+    if (e.reqId === null && id) e.reqId = id;
+    if (lane === 'reasoning') {
+      if (e.reasoning.length === 0 && lastFirstByte === null) e.thinking = true;
+      e.reasoning += text;
     } else {
-      const last = history[history.length - 1];
-      if (lane === 'reasoning') last.reasoning += text;
-      else last.content += text;
+      if (!e.firstByte) { e.firstByte = true; e.thinking = false; }
+      e.content += text;
     }
     if (lastFirstByte === null) lastFirstByte = Date.now();
     if (lampState === 'posting') lampState = 'receiving';
     streaming = true;
-    setTimeout(scrollTerminal, 0);
+    setTimeout(scrollIfPinned, 0);
   }
 
   function markAssistantDone() {
     streamDone = true;
     if (lastLastByte === null) lastLastByte = Date.now();
-    setTimeout(scrollTerminal, 0);
+    setTimeout(scrollIfPinned, 0);
   }
 
   function closeEntry(entry: Entry | undefined) {
@@ -79,16 +126,16 @@
     if (!id || activeRequestId === id) activeRequestId = null;
     streamDone = true;
     if (lastLastByte === null) lastLastByte = Date.now();
-    setTimeout(scrollTerminal, 0);
+    setTimeout(scrollIfPinned, 0);
   }
 
   function focusInput() {
     setTimeout(() => {
       if (inputEl) {
-        inputEl.focus();
-        inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
-      }
-    }, 0);
+          inputEl.focus();
+          inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+        }
+      }, 0);
   }
 
   onMount(focusInput);
@@ -102,7 +149,8 @@
     lastFirstByte = null;
     lastLastByte = null;
     streamDone = false;
-    history.push({ user: text, reasoning: '', content: '', open: true, reqId: null, error: null });
+    followBottom = true;
+    history.push({ user: text, reasoning: '', content: '', open: true, thinking: false, firstByte: false, reqId: null, error: null });
     scrollTerminal();
 
     controller = new AbortController();
@@ -122,7 +170,7 @@
       const mt = parseInt(max_tokens, 10);
       if (!Number.isNaN(mt) && mt > 0) body.max_tokens = mt;
 
-      const res = await fetch('/', {
+      const res = await fetch(CHAT_ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
@@ -164,7 +212,7 @@
               (parsed.lane === 'reasoning' || parsed.lane === 'content') &&
               typeof parsed.text === 'string'
             ) {
-              pushAssistantToken(parsed.lane, parsed.text, parsed.id ?? null);
+              applyToken(parsed.lane, parsed.text, parsed.id ?? null);
             } else if (parsed && parsed.type === 'error') {
               const e = history.find((x) => x.reqId === parsed.id) ?? history[history.length - 1];
               if (e) e.error = parsed.message ?? 'unknown error';
@@ -186,7 +234,7 @@
       sending = false;
       streaming = false;
       controller = null;
-      setTimeout(scrollTerminal, 0);
+      setTimeout(scrollIfPinned, 0);
       focusInput();
     }
   }
@@ -207,19 +255,29 @@
     >
       {lampState.toUpperCase()}
     </span>
-    <div class="term-history" bind:this={terminalEl} aria-live="polite">
+    <div class="term-history" bind:this={terminalEl} aria-live="polite" onscroll={onHistScroll}>
       {#each history as entry (entry.reqId || entry)}
         <div class="term-entry">
-          <div class="term-user">{entry.user}</div>
-          <div class="term-content" class:open-stream={entry.open}>
-            {@html entry.content || (entry.open ? '…' : '')}
-          </div>
+          <div class="term-user"><span class="marker">«</span><span class="user-text">{entry.user}</span></div>
+          {#if entry.firstByte}
+            <div class="term-content" class:open-stream={entry.open}>
+              <span class="marker">»</span><span class="content-text">{@html entry.content}</span>
+            </div>
+          {:else if entry.error === null}
+            <div class="term-content term-placeholder" class:open-stream={entry.open}>
+              <span class="marker">»</span>
+              <span class="spinner-frame" aria-label="thinking">{spinnerFrame}</span>
+            </div>
+          {:else}
+            <!-- no reply yet (e.g. HTTP error before first byte): nothing to show -->
+          {/if}
           {#if entry.error}<div class="term-error">E {entry.error}</div>{/if}
         </div>
       {/each}
     </div>
     <div class="term-prompt-row">
       <textarea
+        class="term-input"
         bind:this={inputEl}
         bind:value={input}
         rows="1"
@@ -261,9 +319,17 @@
       <span class="param-label">max_tokens</span>
       <input class="param-input" bind:value={max_tokens} type="number" placeholder="(empty → omit)" />
     </label>
+    <label class="param-row">
+      <span class="param-label">spinner</span>
+      <select class="param-input" value={spinnerId} onchange={(e) => setSpinner((e.target as HTMLSelectElement).value)}>
+        {#each spinners as s (s.id)}
+          <option value={s.id}>{s.label} ({s.id})</option>
+        {/each}
+      </select>
+    </label>
     <p class="wire-line">
       <span class="param-label">wire</span>
-      content-type: application/json · accept: text/event-stream · auth: none
+      POST /chat · content-type: application/json · accept: text/event-stream · auth: none
     </p>
   </div>
 </div>
@@ -300,6 +366,7 @@
     color: transparent;
     outline: none;
     flex-shrink: 0;
+    z-index: 2;
   }
   .lamp-idle { background-color: #e5484d; }
   .lamp-posting { background-color: #d29922; }
@@ -310,13 +377,19 @@
     color: #0f3d1a;
   }
   .term-history {
-    flex: 1;
-    overflow-y: auto;
+    flex: 1 1 0;
     min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
     padding: 16px 8px 8px;
   }
   .term-entry {
-    margin-bottom: 10px;
+    margin: 0 0 10px;
+  }
+  .marker {
+    display: inline;
+    font-family: var(--mono);
   }
   .term-user {
     color: #00ff41;
@@ -326,6 +399,9 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
+  .term-user .marker {
+    color: #93a6b8;
+  }
   .term-content {
     color: #e6edf3;
     font-family: var(--mono);
@@ -334,35 +410,56 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  .term-content:empty {
-    display: none;
+  .term-content .marker {
+    color: #5c6c7d;
   }
-  .term-content.open-stream {
+  .term-content.open-stream .content-text {
     color: #7ee787;
   }
+  .term-placeholder {
+    min-height: 1.25em;
+    color: #5c6c7d;
+  }
+  .spinner-frame {
+    /* exactly 1ch of the monospace stack — single-width constraint. The
+       frame char itself is verified single-width in the font actually
+       used by this host (headless chromium cell probe). */
+    display: inline-block;
+    width: 1ch;
+  }
   .term-error {
-    color: #7a5c00; /* dimmer than content, on its own line */
+    color: #7a5c00;
     font-family: var(--mono);
     font-size: 12px;
     line-height: 1.25;
     white-space: pre-wrap;
     word-break: break-word;
-    margin-top: 2px;
+    margin: 2px 0 0;
   }
+  /* Prompt row containment: fixed single-line box; flex 0 0 auto means the
+     row can never stretch to make room for history content. The textarea
+     is a fixed 1.25em line box; text past one line scrolls inside it.
+     Measured with the DOM-stub probe (scratch dir, variant C): the prompt
+     row rect is identical before/after a new entry appends below the fold
+     — the pane grows in history, the prompt stays put. */
   .term-prompt-row {
-    flex-shrink: 0;
+    flex: 0 0 auto;
   }
-  .term-prompt-row textarea {
+  .term-input {
+    display: block;
     width: 100%;
+    height: 1.25em;
     background: #000;
     border: none;
+    padding: 0;
+    margin: 0;
     color: #00ff41;
     font-family: var(--mono);
     font-size: 14px;
     line-height: 1.25;
     resize: none;
     outline: none;
-    caret-color: #00ff41;
+    overflow: hidden;
   }
   .term-prompt-row textarea:disabled {
     opacity: 0.5;

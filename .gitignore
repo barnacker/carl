@@ -13,6 +13,12 @@ logs/
 node_modules/
 dist/
 build/
+# web-ui/build is the SvelteKit static output the carl service serves
+# FROM DISK at runtime — untracked on purpose, even though a `build/`
+# rule above already covers it (call it out explicitly; this dir MUST
+# keep existing on disk after a clean checkout of the repo).
+web-ui/build/
+web-ui/build
 .svelte-kit/
 coverage/
 .bun/
