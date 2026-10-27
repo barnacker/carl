@@ -72,6 +72,70 @@
   let terminalEl: HTMLDivElement;
   let inputEl: HTMLTextAreaElement;
 
+  // Telemetry stream (Slice D): the thinking-state source is now the /telemetry
+  // SSE lane, NOT the chat stream. We open ONE perpetual /telemetry stream for
+  // the page life (in onMount) and route its snapshots to the active entry.
+  //   state:'reasoning'  →  entry.thinking = true  (spinner shows; NO » marker,
+  //                     because entry.firstByte is still false until the FIRST
+  //                     content frame from /chat arrives — same structural swap
+  //                     as before, just a new source for the thinking trigger.)
+  //   state:'content'    →  does NOT set thinking — the chat stream content
+  //                     frames (applyToken lane:'content') drive the swap.
+  //   state:'done'       →  no-op (the chat stream's done frame finalizes).
+  // The telemetry stream NEVER blocks content rendering: if it lags /chat,
+  // the spinner simply appears slightly late (acceptable per spec). It is a
+  // separate fetch from /chat; both run in parallel.
+  let telemetryController: AbortController | null = null;
+
+  async function openTelemetryStream() {
+    if (telemetryController) return; // already open
+    const c = new AbortController();
+    telemetryController = c;
+    try {
+      const res = await fetch('/telemetry', { signal: c.signal });
+      if (!res.ok || !res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf8');
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let sep;
+        while ((sep = buf.indexOf('\n\n')) !== -1) {
+          const frameMsg = buf.slice(0, sep);
+          buf = buf.slice(sep + 2);
+          for (const line of frameMsg.split('\n')) {
+            const t = line.trim();
+            if (!t.startsWith('data:')) continue; // skip comment frames (": ...")
+            const payload = t.slice(5).trim();
+            if (payload === '[DONE]') continue;
+            let parsed: { id?: string; state?: 'reasoning' | 'content' | 'done' } | null = null;
+            try { parsed = JSON.parse(payload) as typeof parsed; } catch { continue; }
+            if (!parsed || typeof parsed !== 'object') continue;
+            const id = parsed.id ?? null;
+            if (id && activeRequestId && id !== activeRequestId) continue; // stale frame
+            const e = (id && history.find((x) => x.reqId === id)) || history[history.length - 1];
+            if (!e) continue;
+            if (id && e.reqId === null) e.reqId = id;
+            if (parsed.state === 'reasoning') {
+              // New thinking source: flip thinking on the first reasoning frame
+              // from the telemetry lane (replaces the old chat-stream lane:reasoning
+              // trigger — same spinner, new source).
+              if (e.reasoning.length === 0 && lastFirstByte === null) e.thinking = true;
+              setTimeout(scrollIfPinned, 0);
+            }
+            // 'content' / 'done' are no-ops here — the /chat stream owns those.
+          }
+        }
+      }
+    } catch {
+      /* stream closed (page unload or abort) — non-fatal */
+    } finally {
+      telemetryController = null;
+    }
+  }
+
   // Visible, editable request parameters (everything sent to vLLM).
   let model = $state(DEFAULT_MODEL);
   let temperature = $state('1.0');
@@ -147,7 +211,10 @@
     }, 0);
   }
 
-  onMount(focusInput);
+  onMount(() => {
+    focusInput();
+    void openTelemetryStream(); // perpetual /telemetry SSE — the thinking source
+  });
 
   async function send() {
     const text = input.trim();

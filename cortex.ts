@@ -1,5 +1,5 @@
 import type { Synapse } from './synapse/index.js'
-import type { CortexRequestEvent, LlmTokenEvent, LlmDoneEvent, LlmErrorEvent, PromptMessage } from './nervous-system.js'
+import type { CortexRequestEvent, LlmContentTokenEvent, LlmDoneEvent, LlmErrorEvent, PromptMessage } from './nervous-system.js'
 
 // #IDENTITY block — hardcoded in Cortex source (compiled identity, not a
 // disk-loadable artifact). Inlined FIRST in the system prompt, ahead of
@@ -29,10 +29,15 @@ const SYSTEM_PROMPT = `${IDENTITY_BLOCK}\n\n${LOOP_PARAGRAPH}`
  * Cortex — Stage 0.5 forwarder with #IDENTITY compiled in.
  *
  * Bus wiring:
- *   cortex.request → llm.request   (same { type:'prompt', id, messages, ... })
- *   llm.token      → chat.response (same { type:'token',   id, lane, text })
- *   llm.done       → chat.response (same { type:'done',    id })
- *   llm.error      → chat.response (same { type:'error',   id, message })
+ *   cortex.request          → llm.request   (same { type:'prompt', id, messages, ... })
+ *   llm.content.token       → chat.response (same { type:'token',   id, lane, text }) — content only
+ *   llm.done                → chat.response (same { type:'done',    id })
+ *   llm.error               → chat.response (same { type:'error',   id, message })
+ *
+ * The cortex forwards llm.content.token only. Reasoning text is not a bus
+ * type in this round — it lives exclusively in the telemetry lane inside
+ * llm.telemetry (the #IDENTITY round and the terminal round are live; this
+ * is purely a topology change).
  *
  * System prompt: #IDENTITY FIRST (hardcoded above), then the existing
  * cognitive-loop paragraph. Prepending happens here, in the Cortex.
@@ -62,18 +67,18 @@ export class recreateCortex {
         'llm.request',
       )
     })
-    synapse.subscribe('llm.token', async (event: unknown) => {
-      await this.forward('chat.response', event as LlmTokenEvent)
-    })
+    synapse.subscribe('llm.content.token', async (event: unknown) => {
+      await this.forward('chat.response', event as LlmContentTokenEvent)
+    }, 'cortex')
     synapse.subscribe('llm.done', async (event: unknown) => {
       await this.forward('chat.response', event as LlmDoneEvent)
-    })
+    }, 'cortex')
     synapse.subscribe('llm.error', async (event: unknown) => {
       await this.forward('chat.response', event as LlmErrorEvent)
-    })
+    }, 'cortex')
   }
 
-  private async forward(channel: 'chat.response', event: LlmTokenEvent | LlmDoneEvent | LlmErrorEvent): Promise<void> {
+  private async forward(channel: 'chat.response', event: LlmContentTokenEvent | LlmDoneEvent | LlmErrorEvent): Promise<void> {
     await this.synapse.publish(event, channel)
   }
 }

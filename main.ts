@@ -7,6 +7,7 @@ import { LLMFACULTY } from './faculties/llm.js'
 import { recreateCortex } from './cortex.js'
 import { recreateChatFacade } from './faculties/chat.js'
 import { isAllowedHost } from './faculties/chat.js'
+import { TelemetryFaculty } from './faculties/telemetry.js'
 
 function parseHost(host: string | undefined): { host: string } | null {
   if (host === undefined || host === '') return null
@@ -83,13 +84,22 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
   // 4. Chat Faculty — subscribes in constructor
   const chat = new recreateChatFacade(synapse)
 
+  // 4b. Telemetry Faculty — subscribes in constructor (telemetry lane + llm.done)
+  const telemetry = new TelemetryFaculty(synapse)
+
   // 5. HTTP server on port 3000
   const staticDir = pathResolve(process.cwd(), 'web-ui', 'build')
   const server = createServer((req, res) => {
     void (async () => {
       const url = ((req.url ?? '').split('?')[0]) || '/'
       const hostOkNow = hostOk(req.headers.host)
-      if (req.method === 'POST' && url === '/chat') {
+      const method = req.method ?? 'GET'
+      // Telemetry read-only API (GET) — its own group on :3000, same host
+      // gate as /chat. Try it first: it returns true when it owns the path.
+      if (telemetry.handleRequest(req, res, url)) {
+        return
+      }
+      if (method === 'POST' && url === '/chat') {
         if (!hostOkNow) {
           res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'forbidden host' }))
           return
@@ -108,7 +118,7 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
         res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'forbidden host' }))
         return
       }
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
+      if (method !== 'GET' && method !== 'HEAD') {
         res.writeHead(405, { 'content-type': 'application/json' }).end('{}')
         return
       }
