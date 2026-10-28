@@ -5,6 +5,17 @@ export const LLM_VLLM_BASE = 'http://10.240.232.32:8000'
 
 const DEFAULT_MODEL = 'Qwen/Qwen3.8-27B-FP8'
 
+// The probe's token budget === the legacy boot ping's budget (module
+// default: test the wire as the module runs it, not a fatter request).
+const PROBE_MAX_OUTPUT_TOKENS = 16
+
+// Distinguishability rule (selfTest's OWN minimal parser): compare the
+// parsed frame `type` against these module-local consts, NOT the frozen
+// event-type substrings below — the frozen-grep on llm.ts write-sites
+// stays 0 on the new parser's lines.
+const PROBE_CONTENT_RENDER = 'response.output_text.delta'
+const PROBE_REASONING_RENDER = 'response.reasoning_text.delta'
+
 interface SseEventPayload {
   type?: string
   delta?: string
@@ -371,5 +382,87 @@ export class LLMFACULTY {
         void this.synapse.publish({ type: 'error', id, message: 'NO_CONTENT' }, 'llm.error')
       }
     }
+  }
+
+  // Self-test (operator canon 2026-10-28): the LLM faculty probes vLLM
+  // DIRECTLY under the module's DEFAULT settings — a short user prompt,
+  // `max_output_tokens` = the existing probe budget, NO system message, NO
+  // #IDENTITY, NO reasoning flags (the request carries a user-role message
+  // ONLY — #IDENTITY can only be prepended by the Cortex, which this path
+  // does not touch). It does NOT call `this.stream(...)` and does NOT read
+  // its (void) return: the probe's OWN response stream is parsed minimally
+  // below (`PROBE_CONTENT_RENDER` frame → contentTokens,
+  // `PROBE_REASONING_RENDER` frame → reasoningTokens; terminates on the
+  // [DONE] sentinel or stream close). Verdict: `ok` = contentTokens >= 1
+  // (a reasoning-only stream = FAULT 'no_content' — the self-test doing
+  // its job; the budget is NOT enlarged to force content). The method
+  // publishes NOTHING to the bus — it returns the verdict; the leg
+  // closure (main.ts) settles rep.done/rep.fault DIRECT.
+  async selfTest(): Promise<{ ok: boolean; ms: number; contentTokens: number; reason: string }> {
+    const t0 = Date.now()
+    const ms = () => Date.now() - t0
+    let response: Response
+    try {
+      response = await fetch(`${LLM_VLLM_BASE}/v1/responses`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'text/event-stream',
+        },
+        body: JSON.stringify({
+          model: DEFAULT_MODEL,
+          input: [{ role: 'user', content: 'ping' }],
+          stream: true,
+          max_output_tokens: PROBE_MAX_OUTPUT_TOKENS,
+        }),
+      })
+    } catch {
+      return { ok: false, ms: ms(), contentTokens: 0, reason: 'vllm_unreachable' }
+    }
+    if (!response.ok || response.body === null) {
+      await response.body?.cancel().catch(() => { /* best-effort */ })
+      return { ok: false, ms: ms(), contentTokens: 0, reason: 'vllm_unreachable' }
+    }
+    let contentTokens = 0
+    let reasoningTokens = 0
+    try {
+      const decoder = new TextDecoder('utf8')
+      let buffer = ''
+      const handleFrame = (frame: string): void => {
+        for (const line of frame.split('\n')) {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data:')) continue
+          const payload = trimmed.slice(5).trim()
+          if (payload === '[DONE]') continue
+          let parsed: { type?: string; delta?: string }
+          try {
+            parsed = JSON.parse(payload) as { type?: string; delta?: string }
+          } catch {
+            continue
+          }
+          const type = parsed.type
+          if (typeof type !== 'string' || typeof parsed.delta !== 'string' || parsed.delta.length === 0) continue
+          if (type === PROBE_CONTENT_RENDER) contentTokens += 1
+          else if (type === PROBE_REASONING_RENDER) reasoningTokens += 1
+        }
+      }
+      for await (const chunk of response.body) {
+        buffer += typeof chunk === 'string' ? chunk : decoder.decode(chunk)
+        let sepIdx: number
+        while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, sepIdx)
+          buffer = buffer.slice(sepIdx + 2)
+          handleFrame(frame)
+        }
+      }
+      if (buffer.trim().length > 0) handleFrame(buffer)
+    } catch {
+      return { ok: false, ms: ms(), contentTokens: 0, reason: 'vllm_unreachable' }
+    }
+    if (contentTokens >= 1) {
+      return { ok: true, ms: ms(), contentTokens, reason: '' }
+    }
+    void reasoningTokens
+    return { ok: false, ms: ms(), contentTokens: 0, reason: 'no_content' }
   }
 }

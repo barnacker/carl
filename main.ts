@@ -99,6 +99,34 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
   //      outer host gate is the HTTP layer's).
   const IMMU_BOOT = dash
 
+  // 4c''' HOLDCARDS (operator canon 2026-10-28): the migrating legs' probe
+  //      closures. IMMU is the sole authority over the self-test
+  //      (sequence, budgets, backstop, patience); each MODULE tests ITSELF
+  //      and the closure settles the leg DIRECT via rep.done/rep.fault
+  //      (no dash.ext.done — that route stays for CRAA cross-adopt).
+  //      DASH assembles + registers DASH/TELE/NERV itself; these two legs
+  //      are wired here, after cortex/llm/dash exist.
+  dash.getImmu().registerLeg('CRTX', (rep) => {
+    try {
+      const v = cortex.cortexSelfTest()
+      if (v.ok) rep.done(v.ms)
+      else rep.fault('cortex-selftest', `${v.reason} (steps: ${v.steps.join(',')})`)
+    } catch (e) {
+      rep.fault('probe-throw', (e as Error).message)
+    }
+  })
+  dash.getImmu().registerLeg('LLM1', (rep) => {
+    void (async () => {
+      try {
+        const v = await llm.selfTest()
+        if (v.ok) rep.done(v.ms)
+        else rep.fault(v.reason, `contentTokens=${v.contentTokens}`)
+      } catch (e) {
+        rep.fault('probe-throw', (e as Error).message)
+      }
+    })()
+  })
+
   // 4c' The Nervous System observes ITS OWN flow: ns.telemetry @ 10 Hz on the
   //     telemetry lane (the permission map grants 'ns' on that lane for
   //     exactly this — read-only of itself; DASH consumes it via the

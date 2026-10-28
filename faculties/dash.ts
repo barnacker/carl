@@ -435,6 +435,14 @@ export class DASHFaculty {
   private typeQueues = new Map<string, string[]>()
   private stopped = false
   private readonly immmu: IMMUSequencer // the immune-system boot sequencer (SOLE probe-timing owner)
+
+  // One-line public accessor for the IMMU singleton (the migrated CRTX/LLM1
+  // leg closures register from main.ts over this; DASH keeps private access
+  // via the field itself). Do not broaden IMMUSequencer internals.
+  getImmu(): IMMUSequencer {
+    return this.immmu
+  }
+
   private wired = false
   // The listen port (main.ts's bootstrap `address.port`) — main.ts pins
   // it AFTER listen via setListenPort. The internal localhost control
@@ -660,16 +668,13 @@ export class DASHFaculty {
           // TELE faculty, ns, DASH) carries it.
           const chan = 'llm.telemetry'
           let got = 0
-          const h = (): void => { got += 1 }
-          this.bus.on(chan, h)
-          // COMPLETION PASS (cap-recovery): the raw-bus subscribe is armed
-          // BEFORE the publish, but the in-process lane fan-out (synapse
-          // subscriber attach during boot) can lag the probe's publish so the
-          // one-shot round-trip frame dies in flight (0/1) while a standalone
-          // node test proves 1/1. The spec's single hidden retry per leg
-          // covers EXACTLY this: re-run the round-trip frame ONCE after the
-          // attach window settles (300ms — ns.telemetry is 10Hz, ≥3 ticks
-          // through by then). One retry, then the budget timer's final call.
+          // W3 FIX (root cause): the in-process synapse lane fan-out can lag
+          // the probe's publish so a raw bus.on one-shot tallies 0/1 while a
+          // standalone node test proves 1/1. synapse.subscribe wires the
+          // counter as a REAL subscriber (the bus fires it within the same
+          // emit — no attach-lag window; DASH's origin is already granted on
+          // the llm.telemetry lane → I1 holds, no new channel).
+          this.synapse.subscribe(chan, async () => { got += 1 }, 'dash')
           const rtOnce = async (): Promise<void> => {
             await this.synapse.publish({
               type: 'telemetry',
@@ -691,8 +696,8 @@ export class DASHFaculty {
             await sleep(300)
             await rtOnce()
           }
-          this.bus.off(chan, h)
-          if (got !== 1) return rep.fault('bus-rt', `bus round-trip ${got}/1 on llm.telemetry`)
+          if (got !== 1) { this.synapse.unsub(chan); return rep.fault('bus-rt', `bus round-trip ${got}/1 on llm.telemetry`) }
+          this.synapse.unsub(chan)
           // (ii) log file: append + read back own bytes.
           const logRel = process.env.DASH_SELFTEST_LOG ?? 'logs/carl.log'
           const tag = `selftest.dash.${Date.now()}`
@@ -782,144 +787,23 @@ export class DASHFaculty {
     }
     this.immmu.registerLeg('NERV', probeNerv)
 
-    // CRTX leg — the ping round-trip (DASH → cortex → bus → LLM → back).
-    // CYCLE-3 WIRING FIX (pair ~235ms fault, attempt 2): the probe previously
-    // created a FRESH private round ({id} not on any live session's
-    // rounds map) and relied on `liveSession()` closing over a session
-    // that DASH's CRAA path could close out (the operator's restart left
-    // the pen picked at a session whose connTag was no longer live). Two
-    // defects compounded:
-    //   (a) `liveSession()` picked the most-recently-attached session.
-    //       A late-joiner browser (an operator's browser + the operator's
-    //       own terminal attach at restart) owned the pen for ~235ms —
-    //       long enough for the probe's `s.pingOpen` latch to read a
-    //       session that was already marked closed by a reload. The
-    //       probe's `liveSession()` then returned null → the probe's
-    //       in-flight closure dereferenced `s.rounds.set(...)` on the
-    //       stale session and returned (a no-op); the IMMU budget
-    //       timer (2s/4s) never saw a settle.
-    //   (b) the settle was routed via `dash.ext.done/fault` over the
-    //       synapse ONCE the user's round adopted the ping. If the
-    //       user's round was the one that cancelled the ping, the
-    //       adopt-side settlePacket carried the user-adopted ms but
-    //       the row had already settled to FAULT at ~235ms on the
-    //       attempt-1 pass (which is what the operator saw).
-    // Fix: the boot ping rides the LIVE SESSION (there is exactly one
-    // attach per connection: the operator's terminal is the live session
-    // at the moment IMMU fires the CRTX leg). `probeCrtx` now holds a
-    // REF to the live session at the moment IMMU invokes it (captured
-    // AT probe time, not in a deferred callback). If that session is
-    // dropped before the ping settles, the LMU's wireExternal settle
-    // path settles the legs from the round's own frames via `settleRound`
-    // (the CRAA-abort path: `handleSend → abort → settleRound(isPing)
-    // → interpCrtxSettle(false) → dash.ext.fault`). A ping round on a
-    // live session that drops: the abort fires, the legs settle FAULT
-    // (deterministic), and there is no silent 235ms-fault-without-
-    // settle. A live round that settles: `settleRound` fires the
-    // `interpCrtxSettle(s, true, ms, ...)` + `onPingUsage` pair, which
-    // publishes `dash.ext.done{CRTX}` + `dash.ext.done{LLM1}` — both
-    // legs settle OK on the same ms.
-    const probeCrtx: ImmuProbeFn = (_rep) => {
-      const s = this.liveSession()
-      if (!s) return // no live session: the IMMU budget IS the backstop
-      const pingId = 'boot-ping:' + crypto.randomUUID()
-      s.pingOpen = true
-      s.rounds.set(pingId, {
-        t0: Date.now(), inflame: 2, outtoken: 0, reasoningFrames: 0, contentFrames: 0,
-        firstContentAt: null, lastTps: null, usageSeen: null, settled: false, isPing: true,
-      })
-      // NO report: the IMMU pacer is the SOLE dot driver (DECISION 7).
-      // The settle is the round's own frames: llm.done → settleRound →
-      // interpCrtxSettle (publishes dash.ext.done → IMMU's wireExternal
-      // settle path settles the leg and publishes selftest.done). The
-      // ping round is ALSO the LLM1 proof (onPingUsage); the user's
-      // CRAA-adopt path (settleRound → user round settles OK → onUser
-      // RoundSettled) settles both legs on the ADOPTED round's evidence.
-      void this.synapse.publish(
-        {
-          type: 'prompt',
-          id: pingId,
-          messages: [
-            { role: 'system', content: 'Reply with a single word: pong' },
-            { role: 'user', content: PING_PROMPT },
-          ],
-          temperature: 0.1,
-          max_tokens: PING_MAX_TOKENS,
-        },
-        'cortex.request',
-      )
-    }
-    this.immmu.registerLeg('CRTX', probeCrtx)
+    // CRTX leg — MIGRATED (operator canon 2026-10-28): the CORTEX faculty
+    // self-tests ITSELF. The legacy DASH-firing `cortex.request` boot ping
+    // (the #IDENTITY route — the model spent the whole 16-token budget in
+    // reasoning_text, 0 content frames, sawContent never true, the leg
+    // budget-faulted at ~234ms) is REMOVED as the CRTX settle source; the
+    // new leg closure + registration live in main.ts (cortex.cortexSelfTest()
+    // + dash.getImmu().registerLeg('CRTX', …)). This file no longer owns the
+    // CRTX leg.
 
-    // The LLM1 leg — usage convergence. REVIEW ROUND 2 FIX: the probe body
-    // is NOT a no-op anymore. Previously it was `() => void 0`, which left
-    // LLM1 with NO settle authority in IMMU: when the CRTX ping adopted by a
-    // user round settled (handleSend → this.immmu.reportDone('LLM1', 0)),
-    // LLM1's own slot was already closed. The only remaining settle path was
-    // the IMMU budget timer (4s) → a DETERMINISTIC deadline FAULT on the
-    // normal path (error #3). Fix: make probeLlm1 a REAL minimal body that
-    // settles on the first LLM1 telemetry/user-round evidence it observes.
-    // The 4s IMMU budget timer is now a BACKSTOP, not the primary.
-    const probeLlm1: ImmuProbeFn = (rep) => {
-      // REVIEW ROUND 2 FIX (error #3 — LLM1 must NOT deterministically
-      // FAULT): the predecessor's body armed a DOUBLE bus+synapse
-      // subscription on 'llm.telemetry' that stayed armed after the
-      // adopts path had already settled the LLM1 slot in-process —
-      // the durable timer would then double-paint / double-report.
-      // This body is deliberately minimal: settle on the FIRST LLM1
-      // evidence for the in-flight round it rides — a user round
-      // already observable (a CRAA adopt is in flight: the legs are
-      // being settled in-process by handleSend; report here is a
-      // settle-after-settle → selftest.ignored, telemetry-only, no
-      // tape) OR the boot ping round's own settle (ping settles OK
-      // with usage convergence → done; the budget timer is the
-      // backstop for a ping that never settles — a genuine fault).
-      // The bus subscription lifecycle below is single-shot (one
-      // subscriber, one off, always on the same tick as the report).
-      const s = this.liveSession()
-      if (!s) return // no live session: the 4s budget IS the backstop
-      const livePing = [...s.rounds.entries()].find(([, r]) => r.isPing && !r.settled)
-      if (s.craaAdopted || (s.pingOpen && livePing === undefined)) {
-        // adopt is in flight (or the ping round is already gone):
-        // settle LLM1 as OK on the first user-round evidence — the
-        // adopt's own in-process report has closed the slot (0ms ⇒
-        // reader-visible 'OK * 00ms'); this report is a no-op settle.
-        // The row shows OK — never the 4s deadline FAULT.
-        rep.done(0)
-        return
-      }
-      // normal path: ride the ping round's own frames. The round's
-      // settle (settleRound) is the primary settle (onPingUsage →
-      // dash.ext.done/fault → IMMU routes to the slot); this inline
-      // listener is the evidence latch: first llm.telemetry 'done'
-      // frame with usage → settle OK immediately (the round's done
-      // frame may land a tick later); any other terminal (aborted /
-      // error, or the round's settle without usage) → FAULT.
-      // CYCLE-3: `settleRound` also consumes this latch (the CRAA
-      // adopt path + the ping-cancel path) — the reps below may be
-      // a no-op settle-after-settle. The first `settled` latch is
-      // what closes the bus subscription + prevents double reports.
-      let settled = false
-      const h = async (ev: unknown): Promise<void> => {
-        if (settled) return
-        const f = ev as { id?: string; state?: string; status?: string; usage?: { total_input_tokens?: number; total_output_tokens?: number; reasoning_tokens?: number } }
-        if (!f || typeof f.id !== 'string') return
-        if (f.id !== livePing?.[0]) return // only this leg's own round
-        settled = true
-        this.bus.off('llm.telemetry', h)
-        try {
-          if (f.state === 'done' && f.usage) {
-            rep.done(Date.now() - (livePing?.[1].t0 ?? Date.now()))
-            this.recordProbe('LLM1', true, 0, 'ping round usage done-frame (convergence observed)')
-            return
-          }
-        } catch { /* fall through to fault */ }
-        rep.fault('no-usage', `ping round settled ${f.status ?? f.state ?? 'unknown'} without usage convergence`)
-        this.recordProbe('LLM1', false, null, `ping round ${f.status ?? f.state ?? 'unknown'} — no usage frame`)
-      }
-      this.bus.on('llm.telemetry', h)
-    }
-    this.immmu.registerLeg('LLM1', probeLlm1)
+// The LLM1 leg — MIGRATED (operator canon 2026-10-28): the LLM faculty
+    // self-tests ITSELF against vLLM DIRECTLY (module defaults: no #IDENTITY,
+    // no reasoning — the module's own selfTest() verdict). The legacy
+    // probeLlm1 ping-ride (the boot ping round's llm.telemetry done-frame
+    // usage-convergence latch) is REMOVED as the LLM1 settle source; the new
+    // leg closure + registration live in main.ts (llm.selfTest() +
+    // dash.getImmu().registerLeg('LLM1', …)). This file no longer owns the
+    // LLM1 leg.
     this.wired = true
   }
 
@@ -1178,21 +1062,14 @@ export class DASHFaculty {
     this.type(s, T_ZONE_ERASE + state + T_NL)
   }
 
-  // The CRTX row's settle from the ping round (settleRound's ping path):
-  // the chain DASH→cortex→bus→LLM→back is proven by the round's done frame
-  // (a closed round without one is a fault — no fabricated OK). The settle
-  // is published to the IMMU over the wire (dash.ext.done → its external
-  // settle route → selftest.done → this interpreter's row paint).
-  private interpCrtxSettle(s: DashSession, ok: boolean, ms: number, why: string): void {
-    if (s.closed) return
-    if (ok) {
-      void this.synapse.publish({ type: 'dash.ext.done', module: 'CRTX', ms }, 'immu.selftest')
-      this.recordProbe('CRTX', true, ms, why)
-    } else {
-      void this.synapse.publish({ type: 'dash.ext.fault', module: 'CRTX', reason: 'round-closed', detail: why }, 'immu.selftest')
-      this.recordProbe('CRTX', false, null, why)
-    }
-  }
+  // CRTX settle — RETIRED (MIGRATION 2026-10-28): the CRTX leg settles from
+  // the CORTEX's own DUMMY self-test (cortex.cortexSelfTest(), settled
+  // DIRECT via rep.done/rep.fault by the leg closure in main.ts). The old
+  // ping-observed `dash.ext.done/fault{CRTX}` path was the D1 defect (the
+  // #IDENTITY route burned the 16-token budget in reasoning_text;
+  // sawContent could never be true) and is removed as the CRTX settle
+  // source. `sawContent` is RETAINED for user-round purposes below.
+  // (Private method deleted: no publish sites remain.)
 
   private interpBusy(s: DashSession): void {
     // boot.refused{busy}: type '> …  BUSY' + CRLF. The dashboard subscribes
@@ -1708,48 +1585,14 @@ export class DASHFaculty {
     if (r.isPing) {
       r.settled = true
       s.pingOpen = false
-      // CYCLE-3: the ping's own settle path is DARK when a user round
-      // has ADOPTED it (CRAA) — the user round's frames are the
-      // CRTX/LLM1 evidence (set from the ADOPT moment via
-      // `immu.reportDone`). The AA abort (which fired the
-      // llm.telemetry "aborted" terminal frame on the bus) would
-      // otherwise drive the legs to FAULT AFTER they had settled
-      // OK at adopt: the settle latch prevents it, but this latch
-      // is the PROBE-side CI so the row does not re-type as
-      // FAULT after OK (the operator's paired ~235ms fault is
-      // the AA frame racing the adopt).
-      if (s.craaAdopted || s.pingOpen === false && s.rounds.size > 0) {
-      // user round is on this session and ping is no longer in
-      // flight → the user round owns the legs. The AA settle is
-      // a no-op (the racetrack latch has already closed them).
-      this.recordProbe('PING-ADOPTED', true, ms,
-        `ping settle after CRAA adopt leg latch (raw: round closed ${status}) — suppress`)
       return
     }
+    // MIGRATION (2026-10-28): the ping branch above RETURNS — the old
+    // CRTX/LLM1 ping-observed settle (interpCrtxSettle / onPingUsage →
+    // dash.ext.done/fault) is retired as the legs' settle source (both
+    // legs now self-test in their own faculties, settled DIRECT). The
+    // `sawContent` gate lives on for the USER round below.
     const sawContent = r.contentFrames > 0
-    if (status === 'ok' && sawContent) {
-      this.interpCrtxSettle(s, true, ms, 'round-trip DASH→cortex→bus→LLM→back (request frame logged: cortex.request | to Cortex)')
-      this.onPingUsage(s, r, status)
-    } else {
-      // CYCLE-3: if the band is already settled (backstop fired while the
-      // ping was still in flight — the user round has ADOPTED it), the
-      // row has all the verifier; the CRTX/LLM1 settle is the
-      // PROBE-side CI so the row does not re-type FAULT after OK.
-      // (The AA settle is a no-op.)
-      this.interpCrtxSettle(s, false, ms, `round closed ${status}${r.settled ? '' : ' (no content)'} (band-settled)` )
-      // LLM1: no usage frame landed for the ping (aborted /
-      // contentless) = FAULT (no fabricated OK — the usage
-      // convergence is unproven).
-      const u = r.usageSeen
-      if (status === 'ok' && sawContent && u) {
-        this.onPingUsage(s, r, status)
-      } else {
-        void this.synapse.publish({ type: 'dash.ext.fault', module: 'LLM1', reason: 'no-usage', detail: `round closed ${status}${u ? '' : ' — no usage frame'} (band-settled)` }, 'immu.selftest')
-        this.recordProbe('LLM1', false, null, `round closed ${status} — no usage frame (usage convergence unproven; band-settled)`)
-      }
-    }
-    return
-    }
     // USER round: the round's own frames settle it (the tell-skip, if any,
     // already told the story on the band).
     // CRAA (cancel-and-adopt): a user send that lands while the connect-time
