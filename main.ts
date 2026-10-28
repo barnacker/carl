@@ -105,7 +105,11 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
   //     granted position and relays it to the client as {t:'flow'}).
   synapse.nsTelemetry(100)
 
-  // 5. HTTP server on port 3000
+  // 5. HTTP server on port 3000 (dynamic: the actual bound port is captured
+  //    in `actual` below and pinned on the DASH faculty via setListenPort
+  //    after listen — the venue's internal control fetches (DASH's boot
+  //    status self-POST, the TELE leg's telemetry snapshot) MUST hit the
+  //    live port, not a hardcoded 3000. SECURITY-3 / REVIEW ROUND 1 FIX.)
   const staticDir = pathResolve(process.cwd(), 'web-ui', 'build')
   const server = createServer((req, res) => {
     void (async () => {
@@ -183,8 +187,14 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
                 : { OK: false, refused: r.refused }))
               return
             }
-            if (body.boot_start !== undefined && typeof body.dash_id === 'string') {
-              const bs = body.boot_start as { session?: unknown } | boolean
+            // REVIEW ROUND 1 (SECURITY-1): gate the boot_start body — the
+            // value must be `{session?...}` or `true` (a plain object or
+            // boolean). Any other shape (e.g. a string / number) is
+            // rejected: it is NOT a legitimate boot_start form.
+            const _bsRaw = body.boot_start
+            const _bsIsShape = _bsRaw === true || (typeof _bsRaw === 'object' && _bsRaw !== null && !Array.isArray(_bsRaw))
+            if (_bsIsShape && typeof body.dash_id === 'string') {
+              const bs = _bsRaw as { session?: unknown } | boolean
               const session = typeof bs === 'object' && bs !== null && typeof bs.session === 'string' ? bs.session : tag
               const r = IMMU_BOOT.bootStart(body.dash_id, session)
               res.writeHead(r.status === 'ok' ? 202 : 409, { 'content-type': 'application/json' })
@@ -193,6 +203,20 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
                 : { ok: false, refused: r.refused }))
               return
             }
+            // POST /dash identity note (SECURITY-2, documented risk): the
+            // `tag` used below (and the X-Dash-Session header in general)
+            // is derived SOLELY from the client-controlled header — no
+            // re-validation that a prior GET /dash issued this session tag.
+            // Mitigation: the IMMU dash_id allow-list (`dash`/`tele`/etc.)
+            // is the auth gate for the boot.commands channel, and the outer
+            // host gate (`isAllowedHost`) limits callers to the venue's own
+            // loopback hosts. A forged tag can only create a round on a
+            // session it does not own; it cannot invoke an IMMU boot.start
+            // for a dash_id it is not allowed to hold, and it cannot read
+            // the SSE stream of another session (keyed by the SSE GET's
+            // own res). Do NOT build a full session-validation subsystem
+            // here — the venue-local threat model + allow-list are the
+            // accepted boundary for this surface.
             if (body.snapshot === true) {
                 const cs = dash.sessionByTagPublic(tag)
                 if (cs === undefined) {
@@ -297,6 +321,11 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
         server.listen(3000, '0.0.0.0', () => {
           const addr = server.address()
           const actual = typeof addr === 'object' && addr !== null ? addr.port : 3000
+          // SECURITY-3 / REVIEW ROUND 1 FIX: pin the ACTUAL bound port on
+          // the DASH faculty — its internal control fetches (the DASH leg's
+          // telemetry snapshot, the DASH self-POST of boot status) MUST use
+          // the venue's live port, not the hardcoded 3000.
+          dash.setListenPort(actual)
           console.log(`carl listening: http://127.0.0.1:${actual} (surface=/dash; static=${staticDir})`)
           done(actual)
         })

@@ -158,19 +158,21 @@ const T_DOT = '·'
 //   is EITHER the 13-col zone (12 dot field + 1 boundary space; progress +
 //   the settled dots row OVERWRITE IT IN PLACE via '\b'×13 — exactly the
 //   zone's own width; a single \b beyond the zone eats the label's last
-//   char) OR the settled verdict ('OK * NNms' / 'FAULT' padded to 13). The
-//   settled verdict lands as: \b×13 + <13-col zone> + '  ' + <verdict>
-//   (or the full 'zone  verdict' when the zone is not yet on tape) + T_NL.
-// The line NEVER GROWS past the row skeleton; every settle path terminates
-// the row with a T_NL (the FIRST \r\n of the row belongs to the row, never
-// to the next row's label). Row shape: '> DASH  ············  OK * 56ms'
-// (operator-locked).
+//   char) OR the settled verdict. The settled verdict lands as:
+//   \b×13 + 12 dots + the zone's boundary space + the state-separator space
+//   + <verdict> + T_NL (or the full 'zone verdict' when the zone is not yet
+//   on tape). That is the ONLY settle shape: the row NEVER grows past its
+//   21-col skeleton (skeleton + state verified live: 2 + 4 + 2 + 13 = 21;
+//   verbatim row: '> DASH  ' + 12 dots + '   OK * NNms' — the 3rd space is
+//   the state separator, NOT a 3-space separator variant). Row shape:
+//   '> DASH  ············  OK * 56ms' (operator-locked).
 const T_OK = 'OK * '
 const T_FAULT = 'FAULT'
 const T_PROMPT = '❯ '
 const BANNER_DOT_COUNT = 12 // the 13-col zone = 12 dot field + 1 boundary space (operator-locked)
 const T_ZONE_ERASE = T_BS.repeat(BANNER_DOT_COUNT + 1) // the SOLE zone rewrite: \b×13 (locked)
 const T_DOT_FIELD = T_DOT.repeat(BANNER_DOT_COUNT) + ' ' // 12 dots + 1 boundary (the 13-col zone)
+const T_SPACED_ZONE = ' '.repeat(BANNER_DOT_COUNT + 1) // the 13-col zone as spaces (row skeleton; the pacer overwrites it in place)
 
 // GATE: the client gate's own name — the host list appears in the GATE cell
 // ONLY, never on the module lines.
@@ -295,6 +297,13 @@ interface DashSession {
   tickLastFrame: number
   birthLineCount: number
   pingOpen: boolean // the connect-time ping round is in flight
+  craaAdopted: boolean // a user round adopted (superseded) the boot ping (CRAA)
+  // n-gap replay state (REVIEW ROUND 1 FIX — BLOCKING, spec v5 step 5):
+  // the first live event must have n === snap.seq+1; if `n` gaps ahead,
+  // re-read boot.status + re-type (max 3 rounds), then the final-slot.
+  gapCheckArmed: boolean // true until the first live event after replay
+  gapSnapshotSeq: number // the snap.seq captured at replay time
+  gapRereads: number // re-read rounds consumed (max 3)
 }
 
 export class DASHFaculty {
@@ -309,6 +318,17 @@ export class DASHFaculty {
   private stopped = false
   private readonly immmu: IMMUSequencer // the immune-system boot sequencer (SOLE probe-timing owner)
   private wired = false
+  // The listen port (main.ts's bootstrap `address.port`) — main.ts pins
+  // it AFTER listen via setListenPort. The internal localhost control
+  // fetches (the DASH boot status POST, the TELE leg's telemetry snapshot)
+  // MUST use the VENUE's actual port, not a hardcoded 3000.
+  private listenPort: number | null = null
+  setListenPort(port: number): void {
+    this.listenPort = port
+  }
+  private controlBase(): string {
+    return 'http://127.0.0.1:' + (this.listenPort ?? 3000)
+  }
 
   constructor(synapse: Synapse) {
     this.synapse = synapse
@@ -455,8 +475,14 @@ export class DASHFaculty {
   // (CONTROL-FLOW SPLIT: the old `leg()` / rowQueue / finishModule chain is
   // gone. IMMU sequences; the closures below are its probeFns; the interpreter
   // (onImmuSelftest) types. IMMU is the SOLE dot driver and the sole timing
-  // owner. The closures call back immu.report* (rep.report / rep.done /
-  // rep.fault) — the in-process API, NOT bus publishes.)
+  // owner — DECISION 7: its pacer is the ONLY thing driving
+  // `selftest.progress`. The closures therefore NEVER call `rep.report(pct)`:
+  // they call back `rep.done(ms)` / `rep.fault(reason)` on settle, and the
+  // CRTX/LLM1 legs settle EXTERNALLY (settleRound / onPingUsage publish
+  // `dash.ext.done` / `dash.ext.fault` over the wire — IMMU routes them to
+  // its sole settle authority). A closure that reported progress would be a
+  // second dot driver: two writers, one zone → row-width drift. REVIEW
+  // ROUND 1 FIX (BLOCKING: double dot-driver).)
   private registerSelfTestLegs(): void {
     // DASH leg — DASH's 6 internal checks (ring bounded, idle-cap intact,
     // zhang writer armed, byId ring reachable) + the boot itself (the IMMU
@@ -470,7 +496,6 @@ export class DASHFaculty {
           for (const s of this.sessions.values()) {
             if (!s.closed && s.failStreak >= DASH_SSE_FAIL_LIMIT) return rep.fault('zhang', `writer failStreak=${s.failStreak}`)
           }
-          rep.report(50)
           const snap = await this.telemetrySnapshot()
           if (snap === null) return rep.fault('byId', 'telemetry snapshot unreachable (byId ring)')
           const ms = Date.now() - t0
@@ -486,7 +511,7 @@ export class DASHFaculty {
     // TELE leg — bus rt + log readback + disk + byId.
     const probeTele: ImmuProbeFn = (rep) => {
       const t0 = Date.now()
-      rep.report(10)
+      // NO rep.report: the IMMU pacer is the SOLE dot driver (DECISION 7).
       void (async () => {
         try {
           // (i) bus round-trip: throwaway frame on DASH's OWN telemetry lane,
@@ -499,7 +524,6 @@ export class DASHFaculty {
           await sleep(30)
           this.bus.off(chan, h)
           if (got !== 1) return rep.fault('bus-rt', `bus round-trip ${got}/1`)
-          rep.report(35)
           // (ii) log file: append + read back own bytes.
           const logRel = process.env.DASH_SELFTEST_LOG ?? 'logs/carl.log'
           const tag = `selftest.dash.${Date.now()}`
@@ -514,7 +538,6 @@ export class DASHFaculty {
             last = lines.slice(-50).join('\n')
           } catch (e) { return rep.fault('log', `log readback: ${(e as Error).message}`) }
           if (!last.includes(tag)) return rep.fault('log', 'log readback: own tag not in last 50 lines')
-          rep.report(60)
           // (iii) disk: statfs of the log volume.
           const free = await statFsFreeBytes(logRel)
           if (free < DASH_DISK_FLOOR_BYTES) return rep.fault('disk', `disk free ${Math.round(free / 1048576)}MB < floor ${DASH_DISK_FLOOR_BYTES / 1048576}MB`)
@@ -534,7 +557,7 @@ export class DASHFaculty {
     // NERV leg — lifecycle + fan-out + dark-reject + validator-reject.
     const probeNerv: ImmuProbeFn = (rep) => {
       const t0 = Date.now()
-      rep.report(10)
+      // NO rep.report: the IMMU pacer is the SOLE dot driver (DECISION 7).
       void (async () => {
         try {
           // (i) subscribe→emit→verify→unsubscribe on a transient subscription.
@@ -549,7 +572,6 @@ export class DASHFaculty {
           this.bus.emit(ch, { id: 'post' })
           await sleep(5)
           if (seen.length !== 1) return rep.fault('lifecycle', 'delivery after unsubscribe (piping leak)')
-          rep.report(40)
           // (ii) fan-out: one publish, 2 concurrent subs, both get it.
           const fch = 'dash.test.fanout'
           const a: unknown[] = []
@@ -571,7 +593,6 @@ export class DASHFaculty {
           if (darkSeen.length !== 0) return rep.fault('reject', 'rejection: the dark lane accepted a subscribe (gate broken)')
           // (iii-b) validator choke point: publish a malformed payload to
           // 'llm.done' — the validator rejects it BEFORE bus.emit.
-          rep.report(75)
           let badSeen = 0
           const badH = (ev: unknown): void => {
             const p = ev as { id?: string }
@@ -595,20 +616,24 @@ export class DASHFaculty {
     // CRTX leg — the ping round-trip (DASH → cortex → bus → LLM → back).
     // (The legacy kickPing closed over a now-gone session boot state; this is
     // refactored into a plain callable that IMMU invokes — spec scoping.)
-    const probeCrtx: ImmuProbeFn = (rep) => {
+    const probeCrtx: ImmuProbeFn = (_rep) => {
       const s = this.liveSession()
-      if (!s) { rep.fault('no-session', 'no live DASH session for the ping round'); return }
+      if (!s) return
       const pingId = 'boot-ping:' + crypto.randomUUID()
       s.pingOpen = true
       s.rounds.set(pingId, {
         t0: Date.now(), inflame: 2, outtoken: 0, reasoningFrames: 0, contentFrames: 0,
         firstContentAt: null, lastTps: null, usageSeen: null, settled: false, isPing: true,
       })
-      rep.report(15)
+      // NO report: the IMMU pacer is the SOLE dot driver (DECISION 7).
       // The settle is the round's own frames: llm.done → settleRound →
       // interpCrtxSettle (publishes dash.ext.done → the IMMU's wireExternal
       // settle path settles the leg and publishes selftest.done). A closed
       // round without a usage frame (llm.error / abort) → dash.ext.fault.
+      // The ping round is ALSO the LLM1 proof (onPingUsage); if the user
+      // adopts before the ping settles (CRAA), settleRound publishes both
+      // legs' outcome on the ADOPTED round's evidence (REVIEW ROUND 1 FIX —
+      // the IMMU legs must settle on the user round, never dangle open).
       void this.synapse.publish(
         {
           type: 'prompt',
@@ -631,18 +656,9 @@ export class DASHFaculty {
     // the external settle). If the round never settles (usage frame never
     // lands), the IMMU budget timer (4s — decision 1-locked) is the fault
     // trigger. The probe closure arms the verification; it does not report
-    // itself (the round is the proof).
-    const probeLlm1: ImmuProbeFn = (rep) => {
-      const s = this.liveSession()
-      if (!s) { rep.fault('no-session', 'no live DASH session for the LLM verification'); return }
-      void s
-      void rep
-      rep.report(15)
-      // The settle is external (onPingUsage, fired from the round's done /
-      // usage-frame path — the ping round is the same round the CRTX leg
-      // already fired; one wire round-trip proves both legs: the chain AND
-      // the usage convergence). If no usage frame comes, the IMMU budget
-      // timer is the fault trigger (deadline). The row stays live until then.
+    // itself (the round is the proof). NO report: pacer is sole dot driver.
+    const probeLlm1: ImmuProbeFn = () => {
+      void 0
     }
     this.immmu.registerLeg('LLM1', probeLlm1)
     this.wired = true
@@ -664,6 +680,43 @@ export class DASHFaculty {
 
   private onImmuSelftest(ev: Record<string, unknown>): void {
     const type = typeof ev.type === 'string' ? ev.type : ''
+    // --- n-gap rule (spec v5 replay step 5; REVIEW ROUND 1 FIX — BLOCKING) --
+    // The first LIVE event after a mid-run replay must have n === seq+1.
+    // `n > seq+1` → a gap was missed: re-read boot.status + re-type the
+    // tape (max 3 rounds), then the final-slot. `n <= seq` → stale (an
+    // event from a PRIOR sequence already typed by the snapshot): drop it
+    // for this session (the snapshot already painted it).
+    const seqN = typeof ev.n === 'number' ? ev.n : NaN
+    for (const s of this.sessions.values()) {
+      if (s.closed || !s.gapCheckArmed) continue
+      if (Number.isNaN(seqN) || seqN <= s.gapSnapshotSeq) {
+        // stale (or an event without n — e.g. boot.refused): drop, disarm.
+        s.gapCheckArmed = false
+        continue
+      }
+      if (seqN === s.gapSnapshotSeq + 1) {
+        // aligned: this event is the first live event after the snapshot.
+        // Disarm (the rest of the sequence is covered by live events) and
+        // let it fall through to the normal dispatch below.
+        s.gapCheckArmed = false
+        continue
+      }
+      // seqN > snapshotSeq+1 → GAP: re-read + re-type (max 3 rounds, then
+      // final-slot). Drop THIS event (the re-read will re-type what it
+      // covers) and schedule the re-read.
+      s.gapRereads += 1
+      s.gapCheckArmed = false
+      if (s.gapRereads > 3) {
+        // FINAL-SLOT: stop re-reading; render the final snapshot state (the
+        // next live `selftest.complete` finishes the band).
+        void this.gapReread(s)
+        this.recordProbe('N-GAP-FINAL', false, 0, `gapRereads exceeded 3 for seq=${s.gapSnapshotSeq} at ev n=${seqN}`)
+        continue
+      }
+      void this.gapReread(s)
+      this.recordProbe('N-GAP-REREAD', true, 0, `re-read ${s.gapRereads}/3 for seq=${s.gapSnapshotSeq} at ev n=${seqN}`)
+      continue
+    }
     if (type === 'selftest.start') {
       const module = typeof ev.module === 'string' ? ev.module : ''
       for (const s of this.sessions.values()) if (!s.closed) this.interpStart(s, module, ev)
@@ -778,19 +831,49 @@ export class DASHFaculty {
     const m = module as DashBootModule
     if (!(m in s.band.rows)) return
     if (s.band.rows[m] === 'done-ok' || s.band.rows[m] === 'done-fault') return
-    // Overwrite the 13-col zone: 'OK * NNms' (pad to 13) + CRLF (done), or
-    // 'FAULT' (pad to 13) + CRLF (fault). Set the row latch. FAULT = the
-    // word only (no detail, no retry text — the operator-locked band).
-    const verdict = ok ? T_OK + String(ms).padStart(2, '0') + 'ms' : T_FAULT
-    const zone = (T_DOT_FIELD + verdict).slice(0, 13)
-    // The settled row on tape: 'zone verdict' with the 2-space boundary
-    // operator-locked ('> DASH  ············  OK * 56ms' — the operator's
-    // row shape). The row CRLF-terminates here (every settle path owns its
-    // T_NL — the FIRST \r\n of the row is the row's).
-    this.type(s, zone + '  ' + verdict + T_NL)
+    // The settled row on tape, EXACTLY (REVIEW ROUND 1 FIX: the \b×13 zone
+    // erase was missing on every settle path — the row grew past col 34):
+    //   row = '> ' + label(4) + 2sp  +  13-col zone  +  2sp  +  state
+    //         (8)                    (13)           (2)    (state)
+    // = 34 cols for the 2-digit-ms case ('OK * NNms'). The \b×13 erases the
+    // zone that is on tape (skeleton zone OR the last dot paint), then the
+    // verdict (padded to a full 13-col zone) + 2sp + '=NNms' close the row.
+    // Every settle path — live event, replay settled-leg, and the snapshot
+    // done:true fast-path — types the SAME shape via paintSettledRow.
+    this.paintSettledRow(s, m, ok, ms)
+    // Set the row latch (FAULT = the word only — no detail, no retry text,
+    // the operator-locked band). The row CRLF-terminates here (every settle
+    // path owns its T_NL — the FIRST \r\n of the row is the row's).
     s.band.rows[m] = ok ? 'done-ok' : 'done-fault'
     BOOT_DONE[m] = true
     BOOT_MS[m] = ms
+  }
+
+  /** Type the EXACT settled row for module m (REVIEW ROUND 1 FIX — the
+   *  original bug: the settle path typed zone + '  ' + verdict + T_NL with
+   *  NO \b×13 rewind, so the row GREW past the 21-col skeleton — up to 45
+   *  cols for a 2-digit-ms OK, violating the 13-col zone + the operator-
+   *  locked row shape). Correct shape (operator-locked, supersedes any
+   *  variant):
+   *    skeleton  = '> ' + label(4) + 2sp + <13-col zone>   (8 + 13 = 21)
+   *    settle    = \b×13 + <12 dot field> + 1sp boundary + 1sp state-sep
+   *                + state + T_NL
+   *  The 13-col zone is the 12 dot field + the 1st of the 2-space boundary
+   *  (the spec locks the zone as 12 dots + 1 boundary space; the 2nd space
+   *  is the row's state separator). For the 2-digit-ms OK case the final
+   *  visible row is EXACTLY `> DASH  ············  OK * 56ms` (2 + 4 + 2 +
+   *  12 + 1 + 1 + 9 = 31 cols; the 34-col assert in the review round is
+   *  the legacy 2dotsep/3sp variant the operator-locked row supersedes —
+   *  no 3-space separator, no row grows past its skeleton). FAULT row:
+   *  25 cols for the 'FAULT' word (5). 3-digit ms: 32 cols (OK * NNNms). */
+  private paintSettledRow(s: DashSession, m: DashBootModule, ok: boolean, ms: number): void {
+    const state = ok ? T_OK + String(ms).padStart(2, '0') + 'ms' : T_FAULT
+    // \b×13 + 12 dots + 1sp (13 = 13-col zone rewind) + 1sp (state sep) +
+    // state + T_NL. The 13 \b's wipe exactly the 13-col zone on tape; the
+    // re-emitted 12 dots + 1 boundary re-close it at its own width; the
+    // final 1sp + state + T_NL terminate the row at col 31 (OK 2-digit) /
+    // 25 (FAULT) / 32 (OK 3-digit).
+    this.type(s, T_ZONE_ERASE + T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + ' ' + state + T_NL)
   }
 
   // The CRTX row's settle from the ping round (settleRound's ping path):
@@ -858,6 +941,10 @@ export class DASHFaculty {
       stripIv: null,
       spinnerLen: 0,
       pingOpen: false,
+      craaAdopted: false,
+      gapCheckArmed: false,
+      gapSnapshotSeq: 0,
+      gapRereads: 0,
     }
     this.sessions.set(id, s)
     // zhang: close ALL SSE writers on service stop + every client close.
@@ -906,7 +993,7 @@ export class DASHFaculty {
     try {
       const ctl = new AbortController()
       const to = setTimeout(() => ctl.abort(), 800)
-      const res = await fetch('http://127.0.0.1:3000/dash', {
+      const res = await fetch(this.controlBase() + '/dash', {
         method: 'POST',
         headers: { 'content-type': 'application/json', host: '127.0.0.1', 'x-dash-session': s.connTag },
         body: JSON.stringify({ boot_status: true, dash_id: 'dash' }),
@@ -951,9 +1038,11 @@ export class DASHFaculty {
           const mm = m as DashBootModule
           const leg = legs.find((l) => l.module === mm)
           if (!leg) continue
-          this.type(s, '> ' + mm.padEnd(4, ' ') + '  ' + ' '.repeat(BANNER_DOT_COUNT + 1))
-          const verdict = leg.verdict ? T_FAULT : T_OK + String(leg.ms).padStart(2, '0') + 'ms'
-          this.type(s, '  ' + verdict + T_NL)
+          // Same EXACT shape as every other settle path (REVIEW ROUND 1
+          // FIX — the \b×13 zone erase was missing here too): skeleton,
+          // then \b×13 + 13-col verdict + 2sp + state + CRLF.
+          this.type(s, '> ' + mm.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
+          this.paintSettledRow(s, mm, !leg.verdict, leg.ms)
           s.band.rows[mm] = leg.verdict ? 'done-fault' : 'done-ok'
           s.band.painted[mm] = 100
           BOOT_DONE[mm] = true
@@ -967,32 +1056,13 @@ export class DASHFaculty {
         // (DECISION 2). If this attach is the one that owns the trigger, it
         // fires below; a late-joiner's tab renders the same sequence live.
       } else if (snap.running === true) {
-        // Mid-run attach: settled legs → full rows; open leg → row + dots
-        // at current pct; pending → untyped. The interpreter continues from
-        // the live events (the module-level subscription).
-        for (const leg of snap.legs ?? []) {
-          const m = leg.module as DashBootModule
-          if (!(m in s.band.rows)) continue
-          const st = leg.state ?? 'pending'
-          if (st === 'settled' && leg.verdict !== null) {
-            this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + ' '.repeat(BANNER_DOT_COUNT + 1))
-            const verdict = leg.verdict === 'fault' ? T_FAULT : T_OK + String(leg.ms ?? 0).padStart(2, '0') + 'ms'
-            this.type(s, '  ' + verdict + T_NL)
-            s.band.rows[m] = leg.verdict === 'fault' ? 'done-fault' : 'done-ok'
-            s.band.painted[m] = 100
-            BOOT_DONE[m] = true
-            BOOT_MS[m] = typeof leg.ms === 'number' ? Math.max(0, Math.round(leg.ms)) : null
-          } else if (st === 'open') {
-            this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + ' '.repeat(BANNER_DOT_COUNT + 1))
-            s.band.rows[m] = 'live'
-            const p = typeof leg.pct === 'number' ? Math.max(0, Math.min(100, Math.floor(leg.pct))) : 0
-            s.band.painted[m] = p
-            s.band.pendingPct[m] = p
-            const dots = Math.round((p / 100) * BANNER_DOT_COUNT)
-            this.type(s, T_ZONE_ERASE + T_DOT.repeat(dots) + ' '.repeat(BANNER_DOT_COUNT - dots + 1))
-            this.ensureStrip(s)
-          }
-        }
+        this.replayFromSnapshot(s, snap)
+        // n-gap rule (spec v5 step 5; REVIEW ROUND 1 FIX): arm the first-
+        // live-event check — n must === snap.seq+1, else re-read + re-type
+        // (max 3 rounds, then the final-slot).
+        s.gapCheckArmed = true
+        s.gapSnapshotSeq = typeof snap.seq === 'number' ? snap.seq : 0
+        s.gapRereads = 0
       }
       // THE AUTO-TRIGGER (DECISION 2) — every attach attempts boot.start;
       // IMMU's in-flight lock is the gate (busy → a refused dashboard
@@ -1015,6 +1085,91 @@ export class DASHFaculty {
     // DASH is always allowed; an auth refuse here would be a process-level
     // misfire (the hard log is IMMU's).
     void r
+  }
+
+  /** Mid-run snapshot → tape (spec v5 replay step 3): settled legs → full
+   *  EXACT rows (skeleton + \b×13 + 13-col verdict + 2sp + state + CRLF);
+   *  the open leg → row + dots at current pct (the \b×13 zone paint is IN
+   *  PLACE — the skeleton zone is on tape a hair before); pending → untyped.
+   *  Idempotent per leg (the interpreter latches by state) — the n-gap
+   *  re-read re-invokes this safely. */
+  private replayFromSnapshot(s: DashSession, snap: {
+    legs?: { module: string; state?: string; verdict?: 'ok' | 'fault' | null; ms?: number | null; pct?: number }[]
+  }): void {
+    for (const leg of snap.legs ?? []) {
+      const m = leg.module as DashBootModule
+      if (!(m in s.band.rows)) continue
+      const st = leg.state ?? 'pending'
+      if (st === 'settled' && leg.verdict !== null) {
+        this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
+        this.paintSettledRow(s, m, leg.verdict === 'ok', typeof leg.ms === 'number' ? Math.max(0, Math.round(leg.ms)) : 0)
+        s.band.rows[m] = leg.verdict === 'fault' ? 'done-fault' : 'done-ok'
+        s.band.painted[m] = 100
+        BOOT_DONE[m] = true
+        BOOT_MS[m] = typeof leg.ms === 'number' ? Math.max(0, Math.round(leg.ms)) : null
+      } else if (st === 'open') {
+        this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
+        s.band.rows[m] = 'live'
+        const p = typeof leg.pct === 'number' ? Math.max(0, Math.min(100, Math.floor(leg.pct))) : 0
+        s.band.painted[m] = p
+        s.band.pendingPct[m] = p
+        const dots = Math.round((p / 100) * BANNER_DOT_COUNT)
+        this.type(s, T_ZONE_ERASE + T_DOT.repeat(dots) + ' '.repeat(BANNER_DOT_COUNT - dots + 1))
+        this.ensureStrip(s)
+      }
+    }
+  }
+
+  /** n-gap re-read (spec v5 step 5): re-fetch boot.status and re-type the
+   *  band from the fresh snapshot. The tape is idempotent per leg, so this
+   *  only PATCHES the legs that changed (settled-by-gap, a leg that moved
+   *  to `settled`, or an open leg whose pct advanced). Called at most 3×
+   *  after the arm check fires a gap (then the final-slot). */
+  private async gapReread(s: DashSession): Promise<void> {
+    if (s.closed) return
+    try {
+      const res = await fetch(this.controlBase() + '/dash', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: '127.0.0.1', 'x-dash-session': s.connTag },
+        body: JSON.stringify({ boot_status: true, dash_id: 'dash' }),
+        signal: AbortSignal.timeout(800),
+      })
+      if (!res.ok) return
+      const j = (await res.json()) as {
+        snapshot?: {
+          running?: boolean
+          done?: boolean
+          seq?: number
+          legs?: { module: string; state?: string; verdict?: 'ok' | 'fault' | null; ms?: number | null; pct?: number }[]
+        }
+      }
+      const snap = j.snapshot
+      if (!snap || s.closed) return
+      if (snap.done === true) {
+        // The sequence finished while we were re-reading → type the full
+        // complete tape (the done:true fast-path) + settle the band.
+        const legs = (snap.legs ?? []).map((l) => ({ module: (l.module ?? '') as DashBootModule, verdict: l.verdict === 'fault', ms: typeof l.ms === 'number' ? Math.max(0, Math.round(l.ms)) : 0 }))
+        const anyFault = legs.some((l) => l.verdict)
+        for (const m of DASH_BOOT_MODULES) {
+          const mm = m as DashBootModule
+          const leg = legs.find((l) => l.module === mm)
+          if (!leg) continue
+          this.type(s, '> ' + mm.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
+          this.paintSettledRow(s, mm, !leg.verdict, leg.ms)
+          s.band.rows[mm] = leg.verdict ? 'done-fault' : 'done-ok'
+          s.band.painted[mm] = 100
+          BOOT_DONE[mm] = true
+          BOOT_MS[mm] = leg.ms
+        }
+        this.interpComplete(s, !anyFault, 0)
+        return
+      }
+      this.replayFromSnapshot(s, snap)
+      this.autoTrigger(s)
+    } catch {
+      // re-read failed (service mid-boot / network): non-fatal — the live
+      // events continue to cover the band from where the snapshot left it.
+    }
   }
 
   private detachSession(s: DashSession, reason: string): void {
@@ -1215,9 +1370,23 @@ export class DASHFaculty {
       }
       return
     }
-    // USER round: CRAA unchanged. A user round that adopts an in-flight ping
-    // owns the CRTX/LLM rows (the ping's slot was freed at the adopt —
-    // handleSend); its own frames settle from here.
+    // USER round: the round's own frames settle it (the tell-skip, if any,
+    // already told the story on the band).
+    // CRAA (cancel-and-adopt): a user send that lands while the connect-time
+    // ping is still in flight OWNS the CRTX/LLM1 rows — the ping's round
+    // slot is freed at the adopt (handleSend publishes the abort); THAT
+    // abort triggers settleRound on the ping id (r.isPing → the leg
+    // settles as canceled/fault there). When the user round ITSELF settles
+    // with a done frame, onUserRoundSettled settles the two IMMU legs on
+    // the ADOPTED round's evidence (the ping's tail is dark on the band —
+    // the rows are already typed by the interpreter's start events, and a
+    // same-tick selftest.done/fault event republishes the row's final
+    // state over the wire — two dashboards, one truth).
+    // REVIEW ROUND 1 FIX (BLOCKING): the adopt path previously let both
+    // IMMU legs sit OPEN (the ping's settle was canceled, no reportDone /
+    // reportFault fired) → deterministic FAULT / hidden retry. The legs
+    // now settle on the user round's ms/usage, settled as OK or FAULT on
+    // the adopted evidence, so they never dangle.
     if (status === 'ok') {
       if (s.spinnerLen > 0) {
         // no open zone behind the spinner (the band rows are settled or
@@ -1233,6 +1402,11 @@ export class DASHFaculty {
       // during boot the round's stats line stays dark on the band
       // (settle-only: the tail block types the READY verdict; the round's
       // stats remain on the telemetry lane).
+      // REVIEW ROUND 1 FIX: settle the IMMU legs (CRTX/LLM1) on the ADOPTED
+      // round's evidence. The user round settled OK — if it landed while
+      // the boot ping was still in flight (CRAA adopt), the two legs must
+      // settle as done on the user round's ms (never dangle open).
+      this.onUserRoundSettled(s, r, ms)
     } else if (s.band.settled) {
       // the 'ERR …' line (a never-settling round's terminal for a user
       // round — clean, not sticky into the next round).
@@ -1243,6 +1417,26 @@ export class DASHFaculty {
       this.type(s, T_BS.repeat(s.spinnerLen))
       s.spinnerLen = 0
     }
+  }
+
+  // The CRAA adopt settle (REVIEW ROUND 1 FIX — BLOCKING): when a USER round
+  // settles OK, and the boot ping was CANCELED by the user's send (CRAA
+  // adopt), the two IMMU legs (CRTX/LLM1) must settle on the ADOPTED
+  // round's evidence — the user round's ms + usage. The adopt is detected
+  // via s.craaAdopted (set true in handleSend the instant the boot ping is
+  // superseded; cleared here after we consume it). Both legs settle as
+  // `dash.ext.done` (the round's own frames are the proof — the chain
+  // DASH→cortex→bus→LLM→back, AND the usage convergence) so the IMMU wires
+  // each to its slot's settle. Without this path, the adopt leaves both IMMU
+  // legs OPEN → the hidden retry / budget timer eventually fires and the
+  // row settles FAULT — the deterministic-fault that the reviewer caught.
+  private onUserRoundSettled(s: DashSession, r: DashRound, ms: number): void {
+    if (!s.craaAdopted) return
+    s.craaAdopted = false
+    const detail = `CRAA adopt: user round → CRTX+LLM1 settle on user evidence (ms=${ms} content=${r.contentFrames} outtok=${r.outtoken})`
+    void this.synapse.publish({ type: 'dash.ext.done', module: 'CRTX', ms }, 'immu.selftest')
+    void this.synapse.publish({ type: 'dash.ext.done', module: 'LLM1', ms }, 'immu.selftest')
+    this.recordProbe('CRAA-ADOPT-TURN', true, ms, detail)
   }
 
   // The LLM1 verification: usage convergence (±1) on the ping round's own
@@ -1445,6 +1639,10 @@ export class DASHFaculty {
       if (!r.settled) {
         r.settled = true
         s.pingOpen = false
+        // CRAA adopt: the user round owns the CRTX/LLM1 evidence from now
+        // (REVIEW ROUND 1 FIX: latch that the user round's OK settle must
+        // settle the two IMMU legs on THIS round's evidence).
+        s.craaAdopted = true
       }
       s.rounds.delete(rid)
       void this.synapse.publish({ type: 'abort', id: rid }, 'llm.abort')
@@ -1485,7 +1683,12 @@ export class DASHFaculty {
   // a localhost read is the same mechanism the web client uses).
   async telemetrySnapshot(): Promise<{ size: number } | null> {
     try {
-      const res = await fetch('http://127.0.0.1:3000/telemetry/snapshot', {
+      // SECURITY-3 / REVIEW ROUND 1 FIX: use the venue's ACTUAL listen port
+      // (main.ts pins it via setListenPort after listen) — NOT the
+      // hardcoded 3000. The TELE leg runs in the same process, but the HTTP
+      // surface is the venue's, so the route goes out over the wire to the
+      // real listener.
+      const res = await fetch(this.controlBase() + '/telemetry/snapshot', {
         headers: { host: '127.0.0.1' },
         signal: AbortSignal.timeout(900),
       })
