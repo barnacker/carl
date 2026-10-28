@@ -182,6 +182,16 @@ const T_DOT = '·'
 //   '> DASH  ············  OK * 56ms' (operator-locked).
 const T_OK = 'OK * '
 const T_FAULT = 'FAULT'
+// R-S band-complete line (the operator-locked narrative row): eye U+25CC
+// (◌, open, hollow) while the band is pending; RESOLVED U+25CE (⬤, filled)
+// on all-OK; SCANNING keeps the open eye U+25CC on SYSTEM BANKRUPT. The
+// R-S row repaints exactly once, at band-complete, rewriting its zone
+// (BS×N to the row start + the final word + CRLF).
+const T_RS_PENDING = 'R-S PENDING \u25cc SYSTEM BOUND '
+const T_RS_RESOLVED = 'R-S RESOLVED \u25ce SYSTEM BOUND '
+const T_RS_SCANNING = 'R-S SCANNING \u25cc SYSTEM BANKRUPT '
+const T_RS_REWIND = 27 // = [...T_RS_PENDING].length — rewind the whole pending row
+const T_RS_LEN = 32
 // OPERATOR-LOCKED PROMPT (spec decision 15): the user prompt is NOT a '❯'
 // glyph and NOT line-drawing — it is the BLOCK CURSOR (U+2588 █) ALONE on
 // the input line (the type position is the block cursor itself; no caret,
@@ -277,11 +287,31 @@ interface DashRound {
 // operator-locked invariant: every row starts at col 0 with '>', is
 // CRLF-terminated on settle, and the 13-col state zone is \b×13-overwritten
 // in place (progress dots / verdict) — one owner of the tape, per session.
+// OP-LOCKED BAND PAINT (2026-10-28): the interpreter pre-paints the ENTIRE
+// tape on attach (streamBanner) — no live typing on attach (the operator's
+// lock: "paint everything on the stream when they attach, no live typing
+// on attach"). Row states:
+//   pending     — untyped (pre-attach)
+//   armed       — the armed skeleton is on tape ('> LABEL  ' + 12· + 2sp)
+//   live        — armed + dot progress painted (legacy mid-run replay)
+//   done-ok/…   — a BORN SETTLED row or a settle-repainted row (latch)
+//
+// ARMS-FIRST settle path (the OP-LOCKED B rule, byte-exact): the settle
+// repaint is the ONLY repaint of a row. If the row is still 'pending'
+// when the settle lands (a leg settled before paint — BORN SETTLED), the
+// settle anchors the row itself: type '>' + label + 2sp (the 8-col prefix)
+// + 12· + 2sp on a fresh line (the line is the prior row's CRLF), then
+// rewind \b×14 to the state zone + re-emit state + CRLF. If already
+// 'armed'/'live', it's the pure rewind \b×14 + state + CRLF. The 14 is
+// computed FROM the arm bytes: 2-space boundary + 12-dot field.
+type RowState = 'pending' | 'armed' | 'live' | 'done-ok' | 'done-fault'
 interface DashInterp {
-  rows: Record<DashBootModule, 'pending' | 'live' | 'done-ok' | 'done-fault'>
+  rows: Record<DashBootModule, RowState>
   painted: Record<DashBootModule, number> // last pct painted (progress interval)
   pendingPct: Record<DashBootModule, number> // latest pct waiting for the strip
   settled: boolean // the tail is typed (band_settled)
+  r_s_pending: boolean // the R-S row was painted as PENDING (armed for repaint)
+  r_s_rss: number | null // server RSS captured at R-S paint (MB text source)
 }
 function initInterp(): DashInterp {
   return {
@@ -289,6 +319,8 @@ function initInterp(): DashInterp {
     painted: { DASH: -1, TELE: -1, NERV: -1, CRTX: -1, LLM1: -1 },
     pendingPct: { DASH: -1, TELE: -1, NERV: -1, CRTX: -1, LLM1: -1 },
     settled: false,
+    r_s_pending: false,
+    r_s_rss: null,
   }
 }
 
@@ -330,6 +362,11 @@ interface DashSession {
   gapCheckArmed: boolean // true until the first live event after replay
   gapSnapshotSeq: number // the snap.seq captured at replay time
   gapRereads: number // re-read rounds consumed (max 3)
+  // OP-LOCKED BAND PAINT: the per-session band-state latch for attach
+  // replay/done-fast-path. `rowSettledAtPaint` records which legs were
+  // settled-by-snapshot before the attach's band repaint (BORN SETTLED).
+  // Set by `attachTapePaint` below (the LIVE REPLAY and the DONE FAST-PATH
+  // both route through it).
 }
 
 export class DASHFaculty {
@@ -951,9 +988,23 @@ export class DASHFaculty {
   }
 
   private interpStart(s: DashSession, module: string, ev: Record<string, unknown>): void {
+    // OP-LOCKED BAND PAINT: under the operator-locked "attach-time band
+    // paint", the leg's row is ALREADY on tape (armed from the attach
+    // tape paint — or from a replay done-fast-path). A `start` event only
+    // transitions the row to live (dot progress paints it in place).
+    // Legacy path (no attach paint — e.g. a mid-run snapshot where the
+    // leg was untyped) still types the armed skeleton once, as before.
     void ev
     const m = module as DashBootModule
     if (!(m in s.band.rows)) return
+    if (s.band.rows[m] === 'armed') {
+      // The row is on tape: it's the leg's live run beginning.
+      s.band.rows[m] = 'live'
+      s.band.painted[m] = -1
+      s.band.pendingPct[m] = -1
+      this.ensureStrip(s)
+      return
+    }
     if (s.band.rows[m] !== 'pending') return // a re-start (attempt 2) reuses the row
     // start{module}: type '> ' + label + 2sp + 14-col zone (12 dot field +
     // 2-col boundary — typed as 14 SPACES; the pacer overwrites in place)
@@ -973,7 +1024,7 @@ export class DASHFaculty {
     s.band.pendingPct[m] = pct
     // LANE-LOCK: the zone is on tape ONLY after the title/header + label
     // prefix + any prior row have drained the type queue; a paint mid-queue
-    // would '\b' past the row's own label (the pacer's old mis-target, now
+    // would erase past the row's own label (the pacer's old mis-target, now
     // structurally barred: the interpreter is the SOLE zone driver — the
     // only other emitters into this session's queue are title/footer/tail,
     // which type on their own lines and never open a zone).
@@ -1020,25 +1071,17 @@ export class DASHFaculty {
   private interpSettle(s: DashSession, module: string, ok: boolean, ms: number): void {
     const m = module as DashBootModule
     if (!(m in s.band.rows)) return
-    // CYCLE-3 LATE-SETTLE: the band may be settled (backstop fired while
-    // the round's settle frame was still in flight) — the row redraw is
-    // the settle's own job and the tape is PHYSICAL (each row rides its
-    // own line: the BS×14 rewind returns to this row's zone and the new
-    // verdict + CRLF supersede; the band_settled latch stays true, the
-    // tail/prompt are not re-typed). The 'done-*' latch only stops
-    // DOUBLE-drawing the same verdict twice — a second settle event
-    // (e.g. a settle-after-settle on a different attempt's evidence)
-    // re-types the row from its current state, which is idempotent.
-    if (s.band.rows[m] === 'done-ok' || s.band.rows[m] === 'done-fault') return
-    // The settled row on tape, EXACTLY (REVIEW ROUND 1 FIX: the \b×13 zone
-    // erase was missing on every settle path — the row grew past col 34):
-    //   row = '> ' + label(4) + 2sp  +  13-col zone  +  2sp  +  state
-    //         (8)                    (13)           (2)    (state)
-    // = 34 cols for the 2-digit-ms case ('OK * NNms'). The \b×13 erases the
-    // zone that is on tape (skeleton zone OR the last dot paint), then the
-    // verdict (padded to a full 13-col zone) + 2sp + '=NNms' close the row.
-    // Every settle path — live event, replay settled-leg, and the snapshot
-    // done:true fast-path — types the SAME shape via paintSettledRow.
+    // OP-LOCKED B rule: the settle IS the repaint. If the row is STILL
+    // UNPAINTED (state === 'pending' — a leg settled before the attach's
+    // tape paint typed it, or a replay missed the row), the settle ANCHORS
+    // the row: type the armed skeleton, then rewind + state + CRLF.
+    if (s.band.rows[m] === 'pending') {
+      this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ')
+    }
+    // The row's state zone is on tape (either the attach paint's dots, a
+    // live rerun's dot-paint, or the fresh arm above). The locked repaint
+    // is: \b×14 + state + CRLF. The rewind erases exactly the 14 armed cols
+    // (2 boundary + 12-dot field) and re-emits the state verbatim.
     this.paintSettledRow(s, m, ok, ms)
     // Set the row latch (FAULT = the word only — no detail, no retry text,
     // the operator-locked band). The row CRLF-terminates here (every settle
@@ -1068,15 +1111,16 @@ export class DASHFaculty {
   // operator literal pins the 2-digit OK and the FAULT word only.
   // =============================================================
   /** Type the EXACT settled row for module m. The shuttle is locked:
-   *  \b×14 + 12 dots + 2sp + state + CRLF (zone rewind computed from
-   *  the armed skeleton — see OPERATOR-LOCKED ZONE GEOMETRY above).
-   *  The settle row byte-matches '> DASH  ············  OK * 56ms'
-   *  for 2-digit ms (31 body code units + CRLF). FAULT = 27. */
+   *  BS×14 + state + CRLF — the state zone alone is rewritten (the OP-LOCKED
+   *  B rule: the settle is the ONLY repaint of the row; the 12· + 2sp dot
+   *  field is painted at attach and NOT re-emitted). The rewind erases
+   *  exactly the armed grid (2 boundary + 12-dot field = 14 cols, computed
+   *  from the arm bytes). The final visible row for the 2-digit-ms OK case
+   *  is BYTE-EXACTLY '> LABEL  ············ OK * NNms' (armed 25 cols; the
+   *  state zone occupies cols 16-29). FAULT row = '…····· FAULT'. */
   private paintSettledRow(s: DashSession, m: DashBootModule, ok: boolean, ms: number): void {
-    const state = ok ? T_OK + String(ms).padStart(2, '0') + 'ms' : T_FAULT
-    // \b×14 (erase the armed 14-col zone) + 12 dots + 2sp (the locked
-    // boundaries re-emitted) + state + T_NL.
-    this.type(s, T_ZONE_ERASE + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
+    const state = ok ? T_OK + String(Math.min(999, ms)).padStart(2, '0') + 'ms' : T_FAULT
+    this.type(s, T_ZONE_ERASE + state + T_NL)
   }
 
   // The CRTX row's settle from the ping round (settleRound's ping path):
@@ -1103,35 +1147,51 @@ export class DASHFaculty {
     this.type(s, '> …  BUSY' + T_NL)
   }
 
+  // The finalize tail of the band: the R-S narrative row's SINGLE final
+  // repaint (rewind + re-emit final word + CRLF) and the band latch.
+  //
+  // OP-LOCKED BAND PAINT: the attach tape (streamBanner → attachTapePaint)
+  // already painted, BEFORE any settle repaint:
+  //   5 armed rows + R-S PENDING (eye U+25CC) + 32×'-' + ROM/MEM footer +
+  //   READY. + CRLF + the block cursor U+2588 (no trailing CRLF).
+  // So band-complete ONLY repaints the R-S line — the locked literals
+  // (verbatim, operator-locked):
+  //   all-OK      → 'R-S RESOLVED ⬤ SYSTEM BOUND'   (eye U+25CE)
+  //   any FAULT   → 'R-S SCANNING ◌ SYSTEM BANKRUPT' (eye U+25CC preserved)
+  // Rewind: BS×([T_RS_PENDING].length = 27) returns to row start (25 if a
+  // live dot-paint ran in the zone — but attach paint never dots the R-S
+  // row, so the pending body is always exactly 27 cols on tape); the final
+  // word is then re-emitted from col 0. The 32-dash + footer + READY. +
+  // block cursor are NOT re-typed — the tail is painted once at attach.
+  private rsRewind(): string {
+    return T_BS.repeat(T_RS_REWIND)
+  }
   private interpComplete(s: DashSession, ok: boolean, msTotal: number): void {
-    // CYCLE-3 LATE-SETTLE GUARD: the band settles (backstop 15s fires,
-    // verdict typed, tail typed, prompt typed) while the CRTX/LLM1
-    // rounds are still in flight — the user round is the normal
-    // settle path (CRAA adopt or the ping's own settle: it lands on
-    // the wire as selftest.done/fault AFTER the backstop's
-    // selftest.complete). The interpreter MUST still apply those
-    // late settles to the rows on tape (the band is painted; the
-    // row redraw is the settle's own job). The band_settled latch
-    // stays true (the tail + prompt are not re-typed).
+    void msTotal
     if (s.band.settled) return
     s.band.settled = true
     if (s.stripIv) { clearInterval(s.stripIv); s.stripIv = null }
-    // Tail block (OPERATOR LOCK): blank | ROM+CRLF | blank | READY.+CRLF.
-    // The prompt (the block cursor, U+2588) is typed LAST as the final
-    // bytes of the stream — the row settle paths after this paint the
-    // stats line + the block cursor directly (they are the tail of the
-    // prompt row — the user's next byte lands at the block cursor's
-    // position). Cyf: stripIv is cleared above (no more zone paints).
-    this.type(s, T_NL)
-    this.type(s, bannerStatsRow() + T_NL)
-    this.type(s, T_NL)
-    this.type(s, BANNER_READY_ROW + T_NL)
-    // Block cursor (U+2588) is the FINAL BYTES of the entire stream — no
-    // trailing CRLF, no ❯, no caret. Every row above ends with T_NL (CRLF),
-    // so the cursor lands on its own fresh line, byte-exact per the
-    // operator's spec decision 15: "the user prompt is not ❯, we just
-    // put a block cursor there."
-    this.type(s, T_PROMPT)
+    // The tail is ALREADY on tape from the attach paint (blank | footer |
+    // READY. | block cursor). The R-S line repaints ONCE here — the only
+    // remaining repaint in the band.
+    this.paintRSFinal(s, ok)
+    this.recordProbe('SELFTEST', ok, 0, ok ? 'PASSED — all legs settled ok (IMMU)' : 'FAULT — a leg did not settle ok (IMMU)')
+  }
+
+  // The R-S line's band-complete rewrite: rewind + re-emit the final word.
+  // Latch: painted at attach as T_RS_PENDING; the final is the locked
+  // literal for this run's verdict. PENDING→final only (no intermediate
+  // repaints) — the SCANNING word lands the first time any FAULT exists
+  // at band-complete (precedence: FAULT filed while a later leg is still
+  // open → SCANNING immediately; the operator's veto window ships).
+  private paintRSFinal(s: DashSession, ok: boolean): void {
+    if (!s.band.r_s_pending) return
+    s.band.r_s_pending = false
+    const final = ok ? T_RS_RESOLVED : T_RS_SCANNING
+    // Rewind the PENDING row's cols and re-emit the 22-col final body:
+    // BS×(T_RS_REWIND) + final body (no CRLF here — the row keeps the
+    // attach paint's CRLF; the prompt stays the last byte on the wire).
+    this.type(s, this.rsRewind() + final)
   }
 
   // --- session lifecycle -------------------------------------------------------
@@ -1247,20 +1307,16 @@ export class DASHFaculty {
         }
       }
       if (snap.done === true) {
-        // done:true fast-path: type the complete tape + band_settled=true
-        // (GUARANTEE 3 — the flag is set on BOTH the live-complete and the
-        // snapshot-done:true paths, the two-dashboards-one-truth rule).
+        // OP-LOCKED BORN SETTLED: paint every row at its RESOLVED state
+        // (settled rows settled, zero repaint — no BS frames) + R-S final.
         const legs = (snap.legs ?? []).map((l) => ({ module: (l.module ?? '') as DashBootModule, verdict: l.verdict === 'fault', ms: typeof l.ms === 'number' ? Math.max(0, Math.round(l.ms)) : 0 }))
         const anyFault = legs.some((l) => l.verdict)
         for (const m of DASH_BOOT_MODULES) {
           const mm = m as DashBootModule
           const leg = legs.find((l) => l.module === mm)
           if (!leg) continue
-          // Same EXACT shape as every other settle path (REVIEW ROUND 1
-          // FIX — the \b×13 zone erase was missing here too): skeleton,
-          // then \b×13 + 13-col verdict + 2sp + state + CRLF.
-          this.type(s, '> ' + mm.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
-          this.paintSettledRow(s, mm, !leg.verdict, leg.ms)
+          const state = !leg.verdict ? T_OK + String(Math.min(999, leg.ms)).padStart(2, '0') + 'ms' : T_FAULT
+          this.type(s, '> ' + mm + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
           s.band.rows[mm] = leg.verdict ? 'done-fault' : 'done-ok'
           s.band.painted[mm] = 100
           BOOT_DONE[mm] = true
@@ -1295,6 +1351,36 @@ export class DASHFaculty {
     }
   }
 
+  // OP-LOCKED ATTACH TAPE PAINT: the full tape as char(s) frame(s) — NO
+  // per-row dot-typing timer, NO typing one row at a time (chunked chars
+  // frames are fine — see the 50ms type queue — what is NOT allowed is a
+  // timer that animates one row's dots before the next row's bytes land).
+  // This runs synchronously inside `streamBanner` on attach (BEFORE any
+  // settle repaint), so the FIRST chars payload(s) contain the ENTIRE
+  // tape:
+  //   line1: BANNER_TITLE + CRLF
+  //   line2: BANNER_SELFTEST_ROW + CRLF
+  //   5 rows: '> ' + LABEL(4) + 2sp + 12· + 2sp + CRLF (armed, leg order)
+  //   R-S row: T_RS_PENDING + CRLF (eye U+25CC open while pending)
+  //   32-dash footer line + CRLF
+  //   ROM n/a · MEM <RSS>MB + CRLF (bannerStatsRow — the server's LIVE RSS)
+  //   READY. + CRLF
+  //   block cursor U+2588 (no trailing CRLF — decision 15)
+  // Every row is CRLF-terminated (E): the prompt row is the sole exception.
+  private attachTapePaint(s: DashSession): void {
+    for (const m of DASH_BOOT_MODULES) {
+      const mm = m as DashBootModule
+      this.type(s, '> ' + mm + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_NL)
+      s.band.rows[mm] = 'armed'
+    }
+    this.type(s, T_RS_PENDING + T_NL)
+    s.band.r_s_pending = true
+    this.type(s, '-'.repeat(32) + T_NL)
+    this.type(s, bannerStatsRow() + T_NL)
+    this.type(s, BANNER_READY_ROW + T_NL)
+    this.type(s, T_PROMPT) // block cursor: the FINAL byte of the attach paint
+  }
+
   private autoTrigger(s: DashSession): void {
     if (!this.wired) return
     const r = this.immmu.bootStart('dash', s.connTag)
@@ -1305,12 +1391,10 @@ export class DASHFaculty {
     void r
   }
 
-  /** Mid-run snapshot → tape (spec v5 replay step 3): settled legs → full
-   *  EXACT rows (skeleton + \b×13 + 13-col verdict + 2sp + state + CRLF);
-   *  the open leg → row + dots at current pct (the \b×13 zone paint is IN
-   *  PLACE — the skeleton zone is on tape a hair before); pending → untyped.
-   *  Idempotent per leg (the interpreter latches by state) — the n-gap
-   *  re-read re-invokes this safely. */
+  /** Mid-run snapshot → tape (spec v5 replay step 3): settled legs →
+   *  BORN SETTLED rows (state painted, zero repaint); the open leg → the
+   *  armed row (the pacer's live dots take over); pending → untyped
+   *  (the start event types the arm). Idempotent per leg. */
   private replayFromSnapshot(s: DashSession, snap: {
     legs?: { module: string; state?: string; verdict?: 'ok' | 'fault' | null; ms?: number | null; pct?: number }[]
   }): void {
@@ -1319,14 +1403,14 @@ export class DASHFaculty {
       if (!(m in s.band.rows)) continue
       const st = leg.state ?? 'pending'
       if (st === 'settled' && leg.verdict !== null) {
-        this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
-        this.paintSettledRow(s, m, leg.verdict === 'ok', typeof leg.ms === 'number' ? Math.max(0, Math.round(leg.ms)) : 0)
+        const state = leg.verdict === 'ok' ? T_OK + String(Math.min(999, typeof leg.ms === 'number' ? Math.max(0, Math.round(leg.ms)) : 0)).padStart(2, '0') + 'ms' : T_FAULT
+        this.type(s, '> ' + m + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
         s.band.rows[m] = leg.verdict === 'fault' ? 'done-fault' : 'done-ok'
         s.band.painted[m] = 100
         BOOT_DONE[m] = true
         BOOT_MS[m] = typeof leg.ms === 'number' ? Math.max(0, Math.round(leg.ms)) : null
       } else if (st === 'open') {
-        this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
+        this.type(s, '> ' + m + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_NL)
         s.band.rows[m] = 'live'
         const p = typeof leg.pct === 'number' ? Math.max(0, Math.min(100, Math.floor(leg.pct))) : 0
         s.band.painted[m] = p
@@ -1364,16 +1448,16 @@ export class DASHFaculty {
       const snap = j.snapshot
       if (!snap || s.closed) return
       if (snap.done === true) {
-        // The sequence finished while we were re-reading → type the full
-        // complete tape (the done:true fast-path) + settle the band.
+        // OP-LOCKED BORN SETTLED: paint every row at its recorded state
+        // (settled rows settled, zero repaint) + R-S final.
         const legs = (snap.legs ?? []).map((l) => ({ module: (l.module ?? '') as DashBootModule, verdict: l.verdict === 'fault', ms: typeof l.ms === 'number' ? Math.max(0, Math.round(l.ms)) : 0 }))
         const anyFault = legs.some((l) => l.verdict)
         for (const m of DASH_BOOT_MODULES) {
           const mm = m as DashBootModule
           const leg = legs.find((l) => l.module === mm)
           if (!leg) continue
-          this.type(s, '> ' + mm.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
-          this.paintSettledRow(s, mm, !leg.verdict, leg.ms)
+          const state = !leg.verdict ? T_OK + String(Math.min(999, leg.ms)).padStart(2, '0') + 'ms' : T_FAULT
+          this.type(s, '> ' + mm + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
           s.band.rows[mm] = leg.verdict ? 'done-fault' : 'done-ok'
           s.band.painted[mm] = 100
           BOOT_DONE[mm] = true
@@ -1726,15 +1810,17 @@ export class DASHFaculty {
   }
 
   // --- the banner (the server OWNS the banner text; the client renders it) ---
-  // The banner tape — title + SELF-TEST header (typed once per attach). The
-  // 5 module rows + tail are typed by the INTERPRETER from the immu.selftest
-  // events (the old row machine is gone: IMMU sequences, the interpreter
-  // paints; the title/header are the only typed text before the events).
+  // The banner tape — title + SELF-TEST header, then the OP-LOCKED band
+  // PRE-PAINT: the ENTIRE tape (5 armed rows + R-S PENDING + 32×'-' footer
+  // + ROM/MEM + READY. + block cursor) emitted as chars frames, synchronously
+  // at attach, BEFORE any settle repaint (the operator's lock: "paint
+  // everything on the stream when they attach, no live typing on attach").
   private streamBanner(s: DashSession): void {
     // Each header line ends with its OWN T_NL (byte contract: every row
     // CRLF-terminated; the prompt is the ONLY non-CRLF line by design).
     this.type(s, BANNER_TITLE + T_NL)
     this.type(s, BANNER_SELFTEST_ROW + T_NL)
+    this.attachTapePaint(s)
   }
 
   private recordProbe(name: string, ok: boolean, ms: number | null, detail: string): void {
