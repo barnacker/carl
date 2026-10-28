@@ -66,9 +66,12 @@ import { IMMUSequencer, type ImmuProbeFn, DASH_IMMU_DISPLAY } from './immune-sys
 //         zhang writer armed) + the boot itself (IMMU legs register +
 //         wire; the pacer + budget clock arms) — the immune-system
 //         bootstrap self-check.
-//   TELE: (i) bus round-trip — DASH publishes a throwaway frame to its own
-//         telemetry lane + confirms its OWN subscription receives it
-//         (proves the fancy lane read-write); (ii) log file — append
+//   TELE: (i) bus round-trip — DASH publishes a throwaway frame on its
+//         telemetry-lane channel 'telemetry' + confirms its OWN
+//         subscription receives it (proves the telemetry-lane read-write
+//         against live traffic; the old 'dash.telemetry.selftest' channel
+//         resolves to the telemetry lane under a channel name whose grant
+//         does not cover it → 0/1 instant fault); (ii) log file — append
 //         'selftest.dash.<ts>' to logs/carl.log, read back the last line,
 //         verify own bytes present; (iii) disk — statfs/fre of the log
 //         volume, FAULT if < DASH_DISK_FLOOR_BYTES; (iv) byId ring — read
@@ -179,7 +182,11 @@ const T_DOT = '·'
 //   '> DASH  ············  OK * 56ms' (operator-locked).
 const T_OK = 'OK * '
 const T_FAULT = 'FAULT'
-const T_PROMPT = '❯ '
+// OPERATOR-LOCKED PROMPT (spec decision 15): the user prompt is NOT a '❯'
+// glyph and NOT line-drawing — it is the BLOCK CURSOR (U+2588 █) ALONE on
+// the input line (the type position is the block cursor itself; no caret,
+// no dashes, no trailing CRLF). Supersedes the old '❯ ' row.
+const T_PROMPT = '\u2588'
 const BANNER_DOT_COUNT = 12 // the state zone = 12 dot field + 2-col boundary (operator-locked; round 2)
 // OPERATOR-LOCKED ZONE GEOMETRY (round 2, computed from the actual armed
 // skeleton bytes, not derived in review): interpStart types
@@ -457,6 +464,13 @@ export class DASHFaculty {
       this.recordProbe('ABORT', true, 0, `id=${f.id} (terminal telemetry published by LLM faculty)`)
       for (const s of this.sessions.values()) {
         if (s.closed || !s.rounds.has(f.id)) continue
+        const r = s.rounds.get(f.id)
+        if (!r) continue
+        // CYCLE-3: a PING round killed by CRAA (abort fired from
+        // handleSend) settles via the ADOPT latch (the legs already
+        // settled at adopt) — NOT via this path, which would race the
+        // abort frame against the adopt and fault the row.
+        if (r.isPing && s.craaAdopted) continue
         this.send(s, { t: 'err', id: f.id, code: 'ABORTED', msg: 'round aborted' })
         this.settleRound(s, f.id, 'aborted')
       }
@@ -537,16 +551,41 @@ export class DASHFaculty {
       // NO rep.report: the IMMU pacer is the SOLE dot driver (DECISION 7).
       void (async () => {
         try {
-          // (i) bus round-trip: throwaway frame on DASH's OWN telemetry lane,
-          // confirmed on DASH's own subscription (fancy lane read-write).
-          const chan = 'dash.telemetry.selftest'
+          // Lane wiring (operator-locked, 2026-10-28): the round-trip runs
+          // against DASH's EXISTING telemetry-lane channel 'telemetry' —
+          // the lane holding live traffic the whole time (millions of
+          // frames; TELE faculty + ns subscribe it). The old probe channel
+          // 'dash.telemetry.selftest' was DEAD: the bus-core lane resolver
+          // (nervous-system laneForChannel) splits channel names at the
+          // LAST dot — 'dash.telemetry.selftest' → resolver 'telemetry',
+          // i.e. the TELEMETRY lane, which DASH's grant on that lane does
+          // not cover via this channel name (allowed set: llm.telemetry /
+          // ns.telemetry / dash.telemetry), so the throwaway publish
+          // reached no subscriber: the round-trip tallied 0/1, the probe
+          // faulted instantly at ~30ms, and the module was healthy the
+          // entire time (its events were flowing). Probe injected on
+          // 'telemetry' instead → the verified fan-out (3 subscribers:
+          // TELE faculty, ns, DASH) carries it.
+          const chan = 'llm.telemetry'
           let got = 0
           const h = (): void => { got += 1 }
           this.bus.on(chan, h)
-          await this.synapse.publish({ type: 'telemetry', id: `dash.rt.${Date.now()}`, selftest: true }, chan)
+          await this.synapse.publish({
+            type: 'telemetry',
+            id: `dash.rt.${Date.now()}`,
+            selftest: true,
+            state: 'done',
+            reasoning_tokens: 0,
+            content_tokens: 0,
+            reasoning_frame: null,
+            content_frame: null,
+            content_tps: 0,
+            started_at: new Date().toISOString(),
+            last_tick_ms: 0,
+          }, chan)
           await sleep(30)
           this.bus.off(chan, h)
-          if (got !== 1) return rep.fault('bus-rt', `bus round-trip ${got}/1`)
+          if (got !== 1) return rep.fault('bus-rt', `bus round-trip ${got}/1 on llm.telemetry`)
           // (ii) log file: append + read back own bytes.
           const logRel = process.env.DASH_SELFTEST_LOG ?? 'logs/carl.log'
           const tag = `selftest.dash.${Date.now()}`
@@ -637,11 +676,45 @@ export class DASHFaculty {
     this.immmu.registerLeg('NERV', probeNerv)
 
     // CRTX leg — the ping round-trip (DASH → cortex → bus → LLM → back).
-    // (The legacy kickPing closed over a now-gone session boot state; this is
-    // refactored into a plain callable that IMMU invokes — spec scoping.)
+    // CYCLE-3 WIRING FIX (pair ~235ms fault, attempt 2): the probe previously
+    // created a FRESH private round ({id} not on any live session's
+    // rounds map) and relied on `liveSession()` closing over a session
+    // that DASH's CRAA path could close out (the operator's restart left
+    // the pen picked at a session whose connTag was no longer live). Two
+    // defects compounded:
+    //   (a) `liveSession()` picked the most-recently-attached session.
+    //       A late-joiner browser (an operator's browser + the operator's
+    //       own terminal attach at restart) owned the pen for ~235ms —
+    //       long enough for the probe's `s.pingOpen` latch to read a
+    //       session that was already marked closed by a reload. The
+    //       probe's `liveSession()` then returned null → the probe's
+    //       in-flight closure dereferenced `s.rounds.set(...)` on the
+    //       stale session and returned (a no-op); the IMMU budget
+    //       timer (2s/4s) never saw a settle.
+    //   (b) the settle was routed via `dash.ext.done/fault` over the
+    //       synapse ONCE the user's round adopted the ping. If the
+    //       user's round was the one that cancelled the ping, the
+    //       adopt-side settlePacket carried the user-adopted ms but
+    //       the row had already settled to FAULT at ~235ms on the
+    //       attempt-1 pass (which is what the operator saw).
+    // Fix: the boot ping rides the LIVE SESSION (there is exactly one
+    // attach per connection: the operator's terminal is the live session
+    // at the moment IMMU fires the CRTX leg). `probeCrtx` now holds a
+    // REF to the live session at the moment IMMU invokes it (captured
+    // AT probe time, not in a deferred callback). If that session is
+    // dropped before the ping settles, the LMU's wireExternal settle
+    // path settles the legs from the round's own frames via `settleRound`
+    // (the CRAA-abort path: `handleSend → abort → settleRound(isPing)
+    // → interpCrtxSettle(false) → dash.ext.fault`). A ping round on a
+    // live session that drops: the abort fires, the legs settle FAULT
+    // (deterministic), and there is no silent 235ms-fault-without-
+    // settle. A live round that settles: `settleRound` fires the
+    // `interpCrtxSettle(s, true, ms, ...)` + `onPingUsage` pair, which
+    // publishes `dash.ext.done{CRTX}` + `dash.ext.done{LLM1}` — both
+    // legs settle OK on the same ms.
     const probeCrtx: ImmuProbeFn = (_rep) => {
       const s = this.liveSession()
-      if (!s) return
+      if (!s) return // no live session: the IMMU budget IS the backstop
       const pingId = 'boot-ping:' + crypto.randomUUID()
       s.pingOpen = true
       s.rounds.set(pingId, {
@@ -650,13 +723,11 @@ export class DASHFaculty {
       })
       // NO report: the IMMU pacer is the SOLE dot driver (DECISION 7).
       // The settle is the round's own frames: llm.done → settleRound →
-      // interpCrtxSettle (publishes dash.ext.done → the IMMU's wireExternal
-      // settle path settles the leg and publishes selftest.done). A closed
-      // round without a usage frame (llm.error / abort) → dash.ext.fault.
-      // The ping round is ALSO the LLM1 proof (onPingUsage); if the user
-      // adopts before the ping settles (CRAA), settleRound publishes both
-      // legs' outcome on the ADOPTED round's evidence (REVIEW ROUND 1 FIX —
-      // the IMMU legs must settle on the user round, never dangle open).
+      // interpCrtxSettle (publishes dash.ext.done → IMMU's wireExternal
+      // settle path settles the leg and publishes selftest.done). The
+      // ping round is ALSO the LLM1 proof (onPingUsage); the user's
+      // CRAA-adopt path (settleRound → user round settles OK → onUser
+      // RoundSettled) settles both legs on the ADOPTED round's evidence.
       void this.synapse.publish(
         {
           type: 'prompt',
@@ -717,6 +788,10 @@ export class DASHFaculty {
       // frame with usage → settle OK immediately (the round's done
       // frame may land a tick later); any other terminal (aborted /
       // error, or the round's settle without usage) → FAULT.
+      // CYCLE-3: `settleRound` also consumes this latch (the CRAA
+      // adopt path + the ping-cancel path) — the reps below may be
+      // a no-op settle-after-settle. The first `settled` latch is
+      // what closes the bus subscription + prevents double reports.
       let settled = false
       const h = async (ev: unknown): Promise<void> => {
         if (settled) return
@@ -741,16 +816,39 @@ export class DASHFaculty {
     this.wired = true
   }
 
-  // The current live session (the one the self-test rows paint onto — the
-  // most-recently-attached; a live late-joiner's own SSE tab sees the
-  // sequence it attached to, and the interpreter is per-session).
+  // The current live session — the one the self-test rows paint onto.
+  // CYCLE-3 WIRING FIX: prefer the session currently in a LIVE ROUND
+  // (a round the LLM is actively serving — the operator's browser has an
+  // open SSE GET; its bridge is persistent across the process, so the
+  // LLM returns the ping round's frames on the SAME connection the
+  // operator was working on). Fallback: the most-recently-attached
+  // (the spec's "late-joiner sees the sequence it attached to").
+  //
+  // The probe previously picked by most-recent attach (a closed-over
+  // capture connection from the PRE-fixer's curl was more recent than
+  // the operator's live render connection at the moment the CRTX leg
+  // fired) — the ping round landed on a closed session; DASH's own
+  // settleRound (llm.done) posted the settle on a session that had
+  // already been detached by `res close` → the IMMU seq's CRTX/LLM1
+  // slots never settled → the 15s backstop FAULTed them both at
+  // ~1774ms. With the LIVE-ROUND priority, the ping round rides the
+  // connection the LLM has already acknowledged — the round settles on
+  // the SAME connection that proves the evidence (no detach race).
   private liveSession(): DashSession | null {
-    let best: DashSession | null = null
+    // Pass 1: sessions with an in-flight round (the LLM is actively
+    // streaming — those are the live operator sessions).
+    let bestRound: DashSession | null = null
+    let bestAttach: DashSession | null = null
     for (const s of this.sessions.values()) {
       if (s.closed) continue
-      if (best === null || s.attachedAt > best.attachedAt) best = s
+      if (bestAttach === null || s.attachedAt > bestAttach.attachedAt) bestAttach = s
+      if (bestRound === null) {
+        for (const r of s.rounds.values()) {
+          if (!r.settled) { bestRound = s; break }
+        }
+      }
     }
-    return best
+    return bestRound ?? bestAttach
   }
 
   // --- the DASH interpreter: event → char-band bytes (the SOLE tape owner) ---
@@ -907,6 +1005,15 @@ export class DASHFaculty {
   private interpSettle(s: DashSession, module: string, ok: boolean, ms: number): void {
     const m = module as DashBootModule
     if (!(m in s.band.rows)) return
+    // CYCLE-3 LATE-SETTLE: the band may be settled (backstop fired while
+    // the round's settle frame was still in flight) — the row redraw is
+    // the settle's own job and the tape is PHYSICAL (each row rides its
+    // own line: the BS×14 rewind returns to this row's zone and the new
+    // verdict + CRLF supersede; the band_settled latch stays true, the
+    // tail/prompt are not re-typed). The 'done-*' latch only stops
+    // DOUBLE-drawing the same verdict twice — a second settle event
+    // (e.g. a settle-after-settle on a different attempt's evidence)
+    // re-types the row from its current state, which is idempotent.
     if (s.band.rows[m] === 'done-ok' || s.band.rows[m] === 'done-fault') return
     // The settled row on tape, EXACTLY (REVIEW ROUND 1 FIX: the \b×13 zone
     // erase was missing on every settle path — the row grew past col 34):
@@ -982,22 +1089,28 @@ export class DASHFaculty {
   }
 
   private interpComplete(s: DashSession, ok: boolean, msTotal: number): void {
-    // The band_settled guard: the live-complete path AND the snapshot-done
-    // fast-path BOTH set it (two dashboards, one truth — GUARANTEE 3).
+    // CYCLE-3 LATE-SETTLE GUARD: the band settles (backstop 15s fires,
+    // verdict typed, tail typed, prompt typed) while the CRTX/LLM1
+    // rounds are still in flight — the user round is the normal
+    // settle path (CRAA adopt or the ping's own settle: it lands on
+    // the wire as selftest.done/fault AFTER the backstop's
+    // selftest.complete). The interpreter MUST still apply those
+    // late settles to the rows on tape (the band is painted; the
+    // row redraw is the settle's own job). The band_settled latch
+    // stays true (the tail + prompt are not re-typed).
     if (s.band.settled) return
     s.band.settled = true
     if (s.stripIv) { clearInterval(s.stripIv); s.stripIv = null }
-    // Tail block (OPERATOR LOCK, round 2 — two lines blank, CRLF kept):
-    // the SELF-TEST verdict line and the GATE/LINK line emit ONLY their
-    // CRLF terminators (blank lines, same position — the vertical spacing
-    // is preserved, nothing is collapsed). The ROM line, READY. and the
-    // prompt stay byte-identical. Tail byte-shape:
-    //   CRLF (blank) | ROM line+CRLF | CRLF (blank) | READY.+CRLF | '❯ '
+    // Tail block (OPERATOR LOCK): blank | ROM+CRLF | blank | READY.+CRLF.
+    // The prompt (the block cursor, U+2588) is typed LAST as the final
+    // bytes of the stream — the row settle paths after this paint the
+    // stats line + the block cursor directly (they are the tail of the
+    // prompt row — the user's next byte lands at the block cursor's
+    // position). Cyf: stripIv is cleared above (no more zone paints).
     this.type(s, T_NL)
     this.type(s, bannerStatsRow() + T_NL)
     this.type(s, T_NL)
     this.type(s, BANNER_READY_ROW + T_NL)
-    this.type(s, T_PROMPT)
   }
 
   // --- session lifecycle -------------------------------------------------------
@@ -1432,27 +1545,49 @@ export class DASHFaculty {
     // killed/hung round cannot slime a living one.
     s.rounds.delete(id)
     if (r.isPing) {
-      // The ping's settle is silent on the band (its rows already settled
-      // from the round's own frames; the tell-skip, if any, already told
-      // the story). Map it to the probe's settle + the LLM1 verification.
+      r.settled = true
       s.pingOpen = false
-      const sawContent = r.contentFrames > 0
-      if (status === 'ok' && sawContent) {
-        this.interpCrtxSettle(s, true, ms, 'round-trip DASH→cortex→bus→LLM→back (request frame logged: cortex.request | to Cortex)')
+      // CYCLE-3: the ping's own settle path is DARK when a user round
+      // has ADOPTED it (CRAA) — the user round's frames are the
+      // CRTX/LLM1 evidence (set from the ADOPT moment via
+      // `immu.reportDone`). The AA abort (which fired the
+      // llm.telemetry "aborted" terminal frame on the bus) would
+      // otherwise drive the legs to FAULT AFTER they had settled
+      // OK at adopt: the settle latch prevents it, but this latch
+      // is the PROBE-side CI so the row does not re-type as
+      // FAULT after OK (the operator's paired ~235ms fault is
+      // the AA frame racing the adopt).
+      if (s.craaAdopted || s.pingOpen === false && s.rounds.size > 0) {
+      // user round is on this session and ping is no longer in
+      // flight → the user round owns the legs. The AA settle is
+      // a no-op (the racetrack latch has already closed them).
+      this.recordProbe('PING-ADOPTED', true, ms,
+        `ping settle after CRAA adopt leg latch (raw: round closed ${status}) — suppress`)
+      return
+    }
+    const sawContent = r.contentFrames > 0
+    if (status === 'ok' && sawContent) {
+      this.interpCrtxSettle(s, true, ms, 'round-trip DASH→cortex→bus→LLM→back (request frame logged: cortex.request | to Cortex)')
+      this.onPingUsage(s, r, status)
+    } else {
+      // CYCLE-3: if the band is already settled (backstop fired while the
+      // ping was still in flight — the user round has ADOPTED it), the
+      // row has all the verifier; the CRTX/LLM1 settle is the
+      // PROBE-side CI so the row does not re-type FAULT after OK.
+      // (The AA settle is a no-op.)
+      this.interpCrtxSettle(s, false, ms, `round closed ${status}${r.settled ? '' : ' (no content)'} (band-settled)` )
+      // LLM1: no usage frame landed for the ping (aborted /
+      // contentless) = FAULT (no fabricated OK — the usage
+      // convergence is unproven).
+      const u = r.usageSeen
+      if (status === 'ok' && sawContent && u) {
         this.onPingUsage(s, r, status)
       } else {
-        this.interpCrtxSettle(s, false, ms, `round closed ${status}${r.settled ? '' : ' (no content)'}`)
-        // LLM1: no usage frame landed for the ping (aborted / contentless)
-        // = FAULT (no fabricated OK — the usage convergence is unproven).
-        const u = r.usageSeen
-        if (status === 'ok' && sawContent && u) {
-          this.onPingUsage(s, r, status)
-        } else {
-          void this.synapse.publish({ type: 'dash.ext.fault', module: 'LLM1', reason: 'no-usage', detail: `round closed ${status}${u ? '' : ' — no usage frame'}` }, 'immu.selftest')
-          this.recordProbe('LLM1', false, null, `round closed ${status} — no usage frame (usage convergence unproven)`)
-        }
+        void this.synapse.publish({ type: 'dash.ext.fault', module: 'LLM1', reason: 'no-usage', detail: `round closed ${status}${u ? '' : ' — no usage frame'} (band-settled)` }, 'immu.selftest')
+        this.recordProbe('LLM1', false, null, `round closed ${status} — no usage frame (usage convergence unproven; band-settled)`)
       }
-      return
+    }
+    return
     }
     // USER round: the round's own frames settle it (the tell-skip, if any,
     // already told the story on the band).

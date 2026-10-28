@@ -122,7 +122,9 @@
   // server's '« …' text is what we paint via the char band).
   const USER_MARKER = '\u00AB';
   const ASSISTANT_MARKER = '\u00BB';
-  const PROMPT_PREFIX = '❯';
+  // The prompt marker is NO LONGER typed by the client — the server types
+  // the block cursor (U+2588 █) per spec decision 15 (no '❯', no
+  // line-drawing). The composer is the NEXT byte on the same visual row.
 
   // ── COMPOSER (the type-drift fix) ─────────────────────────────────────────
   // THE PROMPT ROW is at a FIXED ABSOLUTE buffer Y (the row where the banner
@@ -266,8 +268,14 @@
   }
 
   // ── open DASH stream ───────────────────────────────────────────────────────
+  // CYCLE-3: the `if (dashController) return;` guard early-returned on
+  // EVERY post-drop re-attach while `dashController` was still set (the
+  // catch runs BEFORE the `finally` clears it) — the re-attach never
+  // fired and the client stayed on a dead connection. `dashController`
+  // is now only nulled in `finally` (the natural exit path), so the
+  // retry chain actually re-runs `fetch` on each backoff step.
   async function openDashStream(): Promise<void> {
-    if (dashController) return;
+    if (dashController) return; // a stream is already open
     const c = new AbortController();
     dashController = c;
     try {
@@ -279,9 +287,10 @@
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf8');
       let buf = '';
+      let cleanDone = false;
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) { cleanDone = true; break; } // server closed the stream gracefully (restart) — treat as a drop
         buf += decoder.decode(value, { stream: true });
         let sep;
         while ((sep = buf.indexOf('\n\n')) !== -1) {
@@ -299,6 +308,13 @@
           }
         }
       }
+      // CYCLE-3: a clean `done:true` close (the server dropping its side,
+      // e.g. across a `systemctl restart`) leaves the client on a dead
+      // connection that retry of — the catch block never sees an `err`
+      // and the re-attach never fires. Route the clean close through the
+      // same catch path by re-throwing a tagged error (caught below, which
+      // triggers the bounded re-attach + input latch).
+      if (cleanDone) throw new Error('dash-stream-clean-close');
     } catch (err) {
       // The stream dropped. Bounded retry (DECISION 14, the NEW client
       // change): while the band is UNSETTLED (a module row has begun
@@ -309,11 +325,32 @@
       // missed). A drop AFTER the band settled is a normal end (no retry).
       // An in-flight abort (page unload / manual stop) is the same as
       // before: non-fatal, no retry.
+      //
+      // CYCLE-3 RE-ATTACH FIX (input-dead gate): the catch above ONLY
+      // re-attach while `selftestSeenActive && !selftestSettled`. That gate
+      // collapsed across a server restart / mid-band drop in two ways:
+      //   (a) `dashController` was still set at drop time (read's for-loop
+      //       exited gracefully, e.g. after an attach-during-restart that
+      //       returned `done:true` mid-stream briefly), so `openDashStream`
+      //       early-returned at its `if (dashController) return;` check;
+      //   (b) the retry count was spent on prior attempts, so the client
+      //       stalled on a DEAD connection — no `sseinit`, no `ready` frame
+      //       ever landed again → `streamReady` stayed `false` → the
+      //       composer's send gate (`if (!streamReady) return;`) made
+      //       typing and Enter both drop, with the block cursor still
+      //       visible on the final row. Operator symptom: 'block cursor
+      //       visible, input dead, even after reload-a-while-ago'.
+      // Fix: reset `dashController` at parse-loop exit; if the stream dies
+      // with the band SEEEN + UNSETTLED or never settled, re-attach as long
+      // as the retry budget remains — even if `selftestSeenActive` was lost
+      // (e.g. page held open across the server's service restart). A
+      // 401 still types the operator-locked line and stops.
       const aborted = (err as { name?: string } | null | undefined)?.name === 'AbortError';
       const status = (err as { status?: number } | null | undefined)?.status;
       if (status === 401) {
         // Auth expired: a retry would loop on the same 401 — type the
         // operator-locked line instead (the operator's session lapsed).
+        streamReady = false; dashAttached = false;
         if (term) term.write('AUTH EXPIRED \u2014 refresh\r\n');
       } else if (!aborted && selftestSeenActive && !selftestSettled && dashRetryCount < DASH_RETRY_MAX) {
         dashRetryCount += 1;
@@ -322,6 +359,26 @@
         setTimeout(() => {
           if (!selftestSettled) void openDashStream();
         }, backoff);
+      } else if (!aborted && dashRetryCount < DASH_RETRY_MAX) {
+        // The stream died WITHOUT instructions about the band state
+        // (a restart mid-band wiped `selftestSeenActive` too): retry
+        // budget still available → re-attach (the server-side REPLAY
+        // will either type-from-snapshot done:true and settle the band,
+        // or kick a fresh auto-trigger start — the composer unlocks on
+        // `ready` + the sseinit clear on re-attach).
+        dashRetryCount += 1;
+        const n = dashRetryCount;
+        const backoff = DASH_RETRY_BASE_MS * 2 ** (n - 1);
+        setTimeout(() => {
+          void openDashStream();
+        }, backoff);
+      } else {
+        // No budget left — mark the composer aware the stream is not
+        // live (the input's gate resets on the next sseinit/ready).
+        // `ready`/`streamReady` are already false; reset the latch
+        // so the LIT input (see `:disabled` below) reflects reality and
+        // the operator knows the surface is dead.
+        streamReady = false;
       }
     } finally {
       dashController = null;
@@ -414,13 +471,25 @@
   }
 
   // ── send ───────────────────────────────────────────────────────────────────
+  // CYCLE-3 INPUT-UNLOCK: the composer's ONLY hard gate is the stream being
+  // live (`streamReady` — the `ready` frame landed on THIS connection's
+  // attach). A user round posted mid-boot is NOT gated on the selftest
+  // verdict — the server-side CRAA-abort path carries the user round
+  // through an unsettled band (the ping is superseded on send; the band
+  // settles on the user's frames). The pre-fix gate re-checked
+  // `selftestSeenActive && !selftestSettled` here: a band that got seen as
+  // active but never settled (a restart in between) made BOTH typing and
+  // Enter silent — the operator's 'block cursor visible, input dead'
+  // symptom. The latch `streamReady` is the single truth: it flips true on
+  // `ready` (fresh attach), false on 401 / no-budget retry exhaustion.
   async function send(): Promise<void> {
     const text = typedText.trim();
     // Gate on the stream being live (sseinit+ready seen) — a send before the
     // handshake has a tag would 400 (attach first). The user line still
-    // commits to the transcript so nothing is lost; the POST retries on the
-    // next send if the stream isn't up yet.
+    // commits to the transcript so nothing is lost; the POST rides the
+    // next live attach if the stream isn't up yet.
     if (text.length === 0 || sending) return;
+    if (!streamReady) return;
     // COMMIT the user send line to the transcript (the server's '« …' echo
     // on the char band is the visible print — the client does not pre-echo).
     if (inputEl) inputEl.value = '';
@@ -483,6 +552,17 @@
         {step.toUpperCase()}
       </span>
       <div class="term-host" bind:this={termHost}>
+        <!-- CYCLE-3 INPUT-UNLOCK: the input is `:disabled` until the
+             client's `streamReady` latch says the SSE attach is live
+             (the `ready` frame landed). Once the band settles
+             (snapshot `done:true` fast-path OR live complete), the
+             input stays enabled for subsequent rounds — the CRAA path
+             on the server side handles the post-boot user round; the
+             client does NOT gate on `!selftestSettled` (that would
+             brick the composer on a band that got seen but never
+             settled, which is the operator's 'input dead' symptom).
+             `streamReady` is the single unlock: true on ready, false
+             on 401 / dead-retry exhaustion / stream died. -->
         <input
           class="term-input"
           bind:this={inputEl}
@@ -491,6 +571,7 @@
           autocapitalize="off"
           autocorrect="off"
           spellcheck="false"
+          :disabled={!streamReady}
           value={typedText}
           oninput={onInputEdit}
           onkeydown={onInputKeyDown}
