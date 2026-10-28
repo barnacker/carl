@@ -9,6 +9,19 @@
   import { ROM_KIB, XTERM_VERSION } from './boot-consts';
 
   // ── DASH — the single surface ─────────────────────────────────────────────
+  // The mid-band SSE drop RETRY (spec v5 DECISION 14 — the NEW client
+  // change): if the stream drops while the self-test band is UNSETTLED
+  // (selftestSeenActive && !selftestSettled), re-call openDashStream() up
+  // to 3 times with exponential backoff. Each retry = fresh GET /dash +
+  // new connTag + new DashSession + a new sseinit clear (the PRE-ATTACH
+  // CLEAR below + the server-side REPLAY: boot status snapshot → typed
+  // from the snapshot → subscribe; the band re-types the legs it missed).
+  // The server owns the full replay; the client only re-attaches.
+  let selftestSeenActive = false; // a row (chars) for a module leg has begun typing
+  let selftestSettled = false;     // the band is settled (READY. typed)
+  let dashRetryCount = 0;
+  const DASH_RETRY_MAX = 3;
+  const DASH_RETRY_BASE_MS = 250;
   // One SSE stream carries ONE visible frame kind — {t:'chars', c} — plus
   // sseinit/ready/stats/flow/vram. The SPA is term.write(frame.c) ONLY (the
   // char-band contract — see docs/char-band-wire.md): no banner template,
@@ -213,7 +226,18 @@
         break;
       }
       case 'chars': {
-        if (typeof f.c === 'string') onChars(f.c);
+        if (typeof f.c === 'string') {
+          const c = f.c;
+          onChars(c);
+          // Band latch (DECISION 14): a row's label prefix ('> ') begins
+          // the band's active typing; the READY. row (the tail's end)
+          // settles it. The reader's catch block reads these to gate the
+          // mid-band drop retry (unsettled → re-attach, settled → stop).
+          if (!selftestSettled) {
+            if (c.startsWith('>')) selftestSeenActive = true;
+            if (c.includes('READY.')) selftestSettled = true;
+          }
+        }
         break;
       }
       case 'stats': {
@@ -275,8 +299,30 @@
           }
         }
       }
-    } catch {
-      /* stream closed (page unload or abort) — non-fatal */
+    } catch (err) {
+      // The stream dropped. Bounded retry (DECISION 14, the NEW client
+      // change): while the band is UNSETTLED (a module row has begun
+      // but READY. has not landed), re-attach up to 3× with exponential
+      // backoff — a fresh GET /dash, new connTag, new session, the
+      // PRE-ATTACH CLEAR + the server-side REPLAY (boot status snapshot →
+      // typed from the snapshot → subscribe; the band re-types what it
+      // missed). A drop AFTER the band settled is a normal end (no retry).
+      // An in-flight abort (page unload / manual stop) is the same as
+      // before: non-fatal, no retry.
+      const aborted = (err as { name?: string } | null | undefined)?.name === 'AbortError';
+      const status = (err as { status?: number } | null | undefined)?.status;
+      if (status === 401) {
+        // Auth expired: a retry would loop on the same 401 — type the
+        // operator-locked line instead (the operator's session lapsed).
+        if (term) term.write('AUTH EXPIRED \u2014 refresh\r\n');
+      } else if (!aborted && selftestSeenActive && !selftestSettled && dashRetryCount < DASH_RETRY_MAX) {
+        dashRetryCount += 1;
+        const n = dashRetryCount;
+        const backoff = DASH_RETRY_BASE_MS * 2 ** (n - 1);
+        setTimeout(() => {
+          if (!selftestSettled) void openDashStream();
+        }, backoff);
+      }
     } finally {
       dashController = null;
     }

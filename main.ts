@@ -85,8 +85,19 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
   // 4c. DASH Faculty — the ONE user control surface (POST /dash, SSE,
   //     multiplexed). A real faculty on the nervous system: it publishes to
   //     corners (cortex.request / llm.abort) and consumes llm.* + llm.
-  //     telemetry + ns.telemetry via its granted bus positions.
+  //     telemetry + ns.telemetry via its granted bus positions. Constructs
+  //     the IMMU (the immune-system boot sequencer — the SOLE owner of
+  //     self-test probe timing) and hands main.ts its boot control surface.
   const dash = new DASHFaculty(synapse)
+
+  // 4c'' The IMMU boot control surface — main.ts's POST /dash branches
+  //      ({boot_status:true,dash_id} / {boot_start:{session},dash_id})
+  //      route here. The DASH faculty owns the IMMU (the immune-system boot
+  //      sequencer — the SOLE owner of self-test probe timing); its
+  //      boot-status/boot-start accessors expose the in-process singleton
+  //      (dash_id allow-list inside faculties/immune-system/boot.ts; the
+  //      outer host gate is the HTTP layer's).
+  const IMMU_BOOT = dash
 
   // 4c' The Nervous System observes ITS OWN flow: ns.telemetry @ 10 Hz on the
   //     telemetry lane (the permission map grants 'ns' on that lane for
@@ -155,10 +166,34 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
             // a POST's own res can never match a session keyed by the GET.)
             let text = ''
             let tag = typeof req.headers['x-dash-session'] === 'string' ? (req.headers['x-dash-session'] as string) : ''
+            let body: Record<string, unknown> = {}
             try {
-              const body = JSON.parse(raw || '{}') as Record<string, unknown>
-              if (tag === '' && typeof body.session === 'string') tag = body.session
-              if (body.snapshot === true) {
+              body = JSON.parse(raw || '{}') as Record<string, unknown>
+            } catch {
+              /* not JSON / no body — fall through with whatever we have */
+            }
+            if (tag === '' && typeof body.session === 'string') tag = body.session
+            // IMMU boot protocol (spec v5): the self-test sequencer's
+            // control surface. The outer host gate already passed (above).
+            if (body.boot_status === true && typeof body.dash_id === 'string') {
+              const r = IMMU_BOOT.bootStatus(body.dash_id)
+              res.writeHead(r.status === 'ok' ? 200 : 403, { 'content-type': 'application/json; charset=utf-8' })
+              res.end(JSON.stringify(r.status === 'ok'
+                ? { OK: true, snapshot: r.snapshot }
+                : { OK: false, refused: r.refused }))
+              return
+            }
+            if (body.boot_start !== undefined && typeof body.dash_id === 'string') {
+              const bs = body.boot_start as { session?: unknown } | boolean
+              const session = typeof bs === 'object' && bs !== null && typeof bs.session === 'string' ? bs.session : tag
+              const r = IMMU_BOOT.bootStart(body.dash_id, session)
+              res.writeHead(r.status === 'ok' ? 202 : 409, { 'content-type': 'application/json' })
+              res.end(JSON.stringify(r.status === 'ok'
+                ? { ok: true, stream: '/dash' }
+                : { ok: false, refused: r.refused }))
+              return
+            }
+            if (body.snapshot === true) {
                 const cs = dash.sessionByTagPublic(tag)
                 if (cs === undefined) {
                   res.writeHead(404, { 'content-type': 'application/json' }).end('{}')
@@ -179,19 +214,15 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
                   probes: dash.probes().slice(-16),
                 }
                 res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
-                res.end(JSON.stringify(snap))
-                return
-              }
-              // The message rides on `msg` (canonical) or `text` (the
-              // earlier client shape, kept for compat).
-              if (typeof body.msg === 'string') text = body.msg
-              else if (typeof body.text === 'string') text = body.text
-            } catch {
-              /* not JSON / no body — fall through with whatever we have */
+              res.end(JSON.stringify(snap))
+              return
             }
+            // The message rides on `msg` (canonical) or `text` (the
+            // earlier client shape, kept for compat).
+            if (typeof body.msg === 'string') text = body.msg
+            else if (typeof body.text === 'string') text = body.text
             const out: Record<string, unknown> = { ok: true, stream: '/dash' }
-            const resBody = text !== '' ? JSON.stringify({ msg: text, session: tag }) : raw
-            const r = dash.handleConn(tag, resBody)
+            const r = dash.handleConn(tag, raw === '' ? JSON.stringify({ msg: text, session: tag }) : raw)
             if (!r.ok) {
               out.ok = false
               out.msg = r.err ?? 'attach first'
