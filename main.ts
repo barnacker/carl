@@ -11,7 +11,7 @@ import { TelemetryFaculty } from './faculties/telemetry.js'
 // The baked SEMVER for the /version endpoint (display version; the JSON-epoch
 // in web-ui/_app/version.json stays for cache busting only — the two are
 // independent). The CLI queries GET /version to learn the service version.
-const BAKED_SEMVER = '0.1.0'
+const BAKED_SEMVER = '0.1.1'
 
 // --- client gate (structural; kept verbatim from the pre-DASH shape) --------
 // Allows Host {127.0.0.1, localhost, hermes}; a missing/bad host is 403.

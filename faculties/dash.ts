@@ -1,5 +1,7 @@
 import * as crypto from 'node:crypto'
-import { appendFile, readFileSync } from 'node:fs'
+import { appendFile, readFileSync, readdirSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { join } from 'node:path'
 import type { ServerResponse } from 'node:http'
 import type { Synapse } from '../synapse/index.js'
 import { createBus, busFlowStats } from '../nervous-system.js'
@@ -130,16 +132,63 @@ export const BANNER_GATE_DISPLAY = 'hermes,127.0.0.1'
 export const BANNER_LINK_DISPLAY = '10.240.232.32:8000'
 export const BANNER_READY_ROW = 'READY.'
 
-// The ROM value was a build-time baked constant (web-ui measure-rom.mjs). The
-// server-side banner footer carries ROM from the same build artifact when it
-// is readable (best-effort; the primary value on the footer is the LIVE MEM).
+// ROM = LIVE per-boot diskwalk of the tracked project tree (spec §4): the
+// sum of git-tracked file bytes at process boot, integer KiB + 'k' suffix on
+// the band. Canonical exclusion set: web-ui/scripts/measure-rom.mjs (build/
+// lock/cache dirs + lock files). Captured ONCE at module load, in-process
+// cache — never re-walked per attach; the first attach renders from the
+// cache (a walk is a git-ls-files + stat pass, not a recursive FS crawl).
+// Render failure (git missing / zero bytes) → 'n/a' (existing contract).
+const ROM_WALK_LIMIT_MS = 2_000 // guard: a walk slower than 2s is a FLAG, not a hang
+const ROM_EXCLUDE_DIR_RE = /(node_modules|build|dist|\.svelte-kit|\.vercel|\.cache|logs|\.git)\//
+const ROM_EXCLUDE_NAME_RE = /^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/
 const BANNER_ROM_TEXT: string = (() => {
-  try {
-    const raw = JSON.parse(readFileSync(new URL('../web-ui/src/lib/boot-consts.json', import.meta.url), 'utf8'))
-    const kb = Number(raw.romKiB ?? raw.romBytes / 1024)
-    if (Number.isFinite(kb) && kb > 0) return kb >= 1024 ? (kb / 1024).toFixed(1) + 'MB' : kb.toFixed(1) + 'KiB'
-  } catch { /* best-effort */ }
-  return 'n/a'
+  const walkRomDisk = (): string => {
+    const t0 = Date.now()
+    try {
+      const root = process.cwd()
+      const paths: string[] = (() => {
+        try {
+          // Preferred: git ls-files (tracked tree only — the source, not out)
+          return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 16 << 20, timeout: ROM_WALK_LIMIT_MS }).split('\0').filter(Boolean)
+        } catch {
+          return [] // git unavailable or timed out → bounded fallback walk
+        }
+      })()
+      let total = 0
+      if (paths.length > 0) {
+        for (const rel of paths) {
+          if (ROM_EXCLUDE_DIR_RE.test(rel)) continue
+          const base = rel.split('/').pop() ?? ''
+          if (ROM_EXCLUDE_NAME_RE.test(base)) continue
+          try { total += statSync(join(root, rel)).size } catch { /* deleted-on-disk tracked file — skip */ }
+        }
+      } else {
+        // Fallback (git unavailable): bounded depth-capped directory walk with
+        // the same exclusion set; dirs starting with '.' are pruned outright
+        // (.git/.cache/.svelte-kit/.vercel), plus the dir regex above.
+        const walk = (dir: string, depth: number): void => {
+          if (depth > 12 || Date.now() - t0 > ROM_WALK_LIMIT_MS) return
+          let entries: import('node:fs').Dirent[] | undefined
+          try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+          for (const e of entries) {
+            if (e.isDirectory()) {
+              if (e.name.startsWith('.') || ROM_EXCLUDE_DIR_RE.test(e.name + '/')) continue
+              walk(join(dir, e.name), depth + 1)
+            } else if (e.isFile()) {
+              if (!ROM_EXCLUDE_NAME_RE.test(e.name)) {
+                try { total += statSync(join(dir, e.name)).size } catch { /* skip */ }
+              }
+            }
+          }
+        }
+        walk(root, 0)
+      }
+      if (total > 0 && Date.now() - t0 <= ROM_WALK_LIMIT_MS) return Math.round(total / 1024) + 'k'
+    } catch { /* best-effort */ }
+    return 'n/a'
+  }
+  return walkRomDisk()
 })()
 
 // MEM = the server's own RSS (process.memoryUsage()), not the browser heap:
@@ -259,6 +308,12 @@ export type DashBootModule = 'DASH' | 'TELE' | 'NERV' | 'CRTX' | 'LLM1'
 // HUD reads is keyed by the explicit DASH_IMMU_DISPLAY name (the IMMU subject
 // — its boot sequencer — is DASH's own bootstrap, not a sequenced bone).
 export const DASH_BOOT_MODULES: readonly DashBootModule[] = ['DASH', 'TELE', 'NERV', 'CRTX', 'LLM1']
+// DASH→DASE display-label map (operator decision V1; docs/char-band-wire.md
+// §6 D3(4)): the code key STAYS 'DASH' (IMMU leg order, I1); only the on-tape
+// label is the locked 'DASE'. The other four keys already equal their locked
+// display codes — this is the ONLY remapping.
+const DASH_DISPLAY_LABEL: Record<DashBootModule, string> = { DASH: 'DASE', TELE: 'TELE', NERV: 'NERV', CRTX: 'CRTX', LLM1: 'LLM1' }
+export const dashDisplayLabel = (m: DashBootModule | string): string => (DASH_DISPLAY_LABEL[m as DashBootModule] ?? m)
 // Process-level census (the HUD's subject registry): the current state of
 // each sequenced beam (BOOT_DONE/BOOT_MS are written by the interpreter's
 // settle path — they serve main.ts's {snapshot} POST route + telemetry).
@@ -1009,7 +1064,7 @@ export class DASHFaculty {
     // start{module}: type '> ' + label + 2sp + 14-col zone (12 dot field +
     // 2-col boundary — typed as 14 SPACES; the pacer overwrites in place)
     // (NO CRLF — the row is un-closed; the settle owns the CRLF).
-    this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
+    this.type(s, '> ' + dashDisplayLabel(m) + '  ' + T_SPACED_ZONE)
     s.band.rows[m] = 'live'
     s.band.painted[m] = -1
     s.band.pendingPct[m] = -1
@@ -1076,7 +1131,7 @@ export class DASHFaculty {
     // tape paint typed it, or a replay missed the row), the settle ANCHORS
     // the row: type the armed skeleton, then rewind + state + CRLF.
     if (s.band.rows[m] === 'pending') {
-      this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ')
+      this.type(s, '> ' + dashDisplayLabel(m) + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ')
     }
     // The row's state zone is on tape (either the attach paint's dots, a
     // live rerun's dot-paint, or the fresh arm above). The locked repaint
@@ -1152,8 +1207,9 @@ export class DASHFaculty {
   //
   // OP-LOCKED BAND PAINT: the attach tape (streamBanner → attachTapePaint)
   // already painted, BEFORE any settle repaint:
-  //   5 armed rows + R-S PENDING (eye U+25CC) + 32×'-' + ROM/MEM footer +
-  //   READY. + CRLF + the block cursor U+2588 (no trailing CRLF).
+  //   title + ONE blank line + SELF-TEST header + 5 armed rows + R-S PENDING
+  //   (eye U+25CC) + 32×'-' + ROM/MEM footer + READY. + CRLF + the block
+  //   cursor U+2588 (no trailing CRLF).
   // So band-complete ONLY repaints the R-S line — the locked literals
   // (verbatim, operator-locked):
   //   all-OK      → 'R-S RESOLVED ⬤ SYSTEM BOUND'   (eye U+25CE)
@@ -1316,7 +1372,7 @@ export class DASHFaculty {
           const leg = legs.find((l) => l.module === mm)
           if (!leg) continue
           const state = !leg.verdict ? T_OK + String(Math.min(999, leg.ms)).padStart(2, '0') + 'ms' : T_FAULT
-          this.type(s, '> ' + mm + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
+          this.type(s, '> ' + dashDisplayLabel(mm) + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
           s.band.rows[mm] = leg.verdict ? 'done-fault' : 'done-ok'
           s.band.painted[mm] = 100
           BOOT_DONE[mm] = true
@@ -1370,7 +1426,7 @@ export class DASHFaculty {
   private attachTapePaint(s: DashSession): void {
     for (const m of DASH_BOOT_MODULES) {
       const mm = m as DashBootModule
-      this.type(s, '> ' + mm + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_NL)
+      this.type(s, '> ' + dashDisplayLabel(mm) + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + T_NL)
       s.band.rows[mm] = 'armed'
     }
     this.type(s, T_RS_PENDING + T_NL)
@@ -1457,7 +1513,7 @@ export class DASHFaculty {
           const leg = legs.find((l) => l.module === mm)
           if (!leg) continue
           const state = !leg.verdict ? T_OK + String(Math.min(999, leg.ms)).padStart(2, '0') + 'ms' : T_FAULT
-          this.type(s, '> ' + mm + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
+          this.type(s, '> ' + dashDisplayLabel(mm) + '  ' + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
           s.band.rows[mm] = leg.verdict ? 'done-fault' : 'done-ok'
           s.band.painted[mm] = 100
           BOOT_DONE[mm] = true
@@ -1818,7 +1874,10 @@ export class DASHFaculty {
   private streamBanner(s: DashSession): void {
     // Each header line ends with its OWN T_NL (byte contract: every row
     // CRLF-terminated; the prompt is the ONLY non-CRLF line by design).
+    // One blank line (T_NL alone) between the title and the SELF-TEST
+    // header — the operator-locked layout (docs/char-band-wire.md §2).
     this.type(s, BANNER_TITLE + T_NL)
+    this.type(s, T_NL)
     this.type(s, BANNER_SELFTEST_ROW + T_NL)
     this.attachTapePaint(s)
   }

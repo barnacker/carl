@@ -30,9 +30,6 @@ const SYSTEM_PROMPT = `${IDENTITY_BLOCK}\n\n${LOOP_PARAGRAPH}`
  *
  * Bus wiring:
  *   cortex.request          → llm.request   (same { type:'prompt', id, messages, ... })
- *   llm.content.token       → chat.response (same { type:'token',   id, lane, text }) — content only
- *   llm.done                → chat.response (same { type:'done',    id })
- *   llm.error               → chat.response (same { type:'error',   id, message })
  *
  * The cortex forwards llm.content.token only. Reasoning text is not a bus
  * type in this round — it lives exclusively in the telemetry lane inside
