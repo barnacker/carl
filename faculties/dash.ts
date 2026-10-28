@@ -570,20 +570,35 @@ export class DASHFaculty {
           let got = 0
           const h = (): void => { got += 1 }
           this.bus.on(chan, h)
-          await this.synapse.publish({
-            type: 'telemetry',
-            id: `dash.rt.${Date.now()}`,
-            selftest: true,
-            state: 'done',
-            reasoning_tokens: 0,
-            content_tokens: 0,
-            reasoning_frame: null,
-            content_frame: null,
-            content_tps: 0,
-            started_at: new Date().toISOString(),
-            last_tick_ms: 0,
-          }, chan)
-          await sleep(30)
+          // COMPLETION PASS (cap-recovery): the raw-bus subscribe is armed
+          // BEFORE the publish, but the in-process lane fan-out (synapse
+          // subscriber attach during boot) can lag the probe's publish so the
+          // one-shot round-trip frame dies in flight (0/1) while a standalone
+          // node test proves 1/1. The spec's single hidden retry per leg
+          // covers EXACTLY this: re-run the round-trip frame ONCE after the
+          // attach window settles (300ms — ns.telemetry is 10Hz, ≥3 ticks
+          // through by then). One retry, then the budget timer's final call.
+          const rtOnce = async (): Promise<void> => {
+            await this.synapse.publish({
+              type: 'telemetry',
+              id: `dash.rt.${Date.now()}`,
+              selftest: true,
+              state: 'done',
+              reasoning_tokens: 0,
+              content_tokens: 0,
+              reasoning_frame: null,
+              content_frame: null,
+              content_tps: 0,
+              started_at: new Date().toISOString(),
+              last_tick_ms: 0,
+            }, chan)
+            await sleep(30)
+          }
+          await rtOnce()
+          if (got !== 1) {
+            await sleep(300)
+            await rtOnce()
+          }
           this.bus.off(chan, h)
           if (got !== 1) return rep.fault('bus-rt', `bus round-trip ${got}/1 on llm.telemetry`)
           // (ii) log file: append + read back own bytes.
@@ -1111,6 +1126,12 @@ export class DASHFaculty {
     this.type(s, bannerStatsRow() + T_NL)
     this.type(s, T_NL)
     this.type(s, BANNER_READY_ROW + T_NL)
+    // Block cursor (U+2588) is the FINAL BYTES of the entire stream — no
+    // trailing CRLF, no ❯, no caret. Every row above ends with T_NL (CRLF),
+    // so the cursor lands on its own fresh line, byte-exact per the
+    // operator's spec decision 15: "the user prompt is not ❯, we just
+    // put a block cursor there."
+    this.type(s, T_PROMPT)
   }
 
   // --- session lifecycle -------------------------------------------------------
