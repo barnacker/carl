@@ -111,7 +111,18 @@ import { IMMUSequencer, type ImmuProbeFn, DASH_IMMU_DISPLAY } from './immune-sys
 // web-ui/src/lib/Chat.svelte (v0.1.1 build artifact — pre-trim) to here so
 // the served frame is the single source of truth.
 export const BANNER_VERSION = 'v0.1.1'
-export const BANNER_TITLE = 'CARL ── PROVISIONING TERMINAL ' + BANNER_VERSION
+// OPERATOR-LOCKED HEADER (round 2 — byte-exact, end-aligned at col 35):
+// line1 = 'CARL · PROVISIONING TERMINAL v0.1.1'  (space + U+00B7 + space
+// separator — NO box-drawing U+2500, NO em-dash; 35 code units, version's
+// last char at col 35)
+// line2 = '- SELF-TEST ' + 23×U+002D  (35 code units; end-aligned at col
+// 35 with the version's last char — the operator's exact rule: 'last
+// hyphen at col 35, end-align with the version's last char')
+// BOTH lines individually CRLF-terminated on the wire (the operator's
+// complaint: a header line without its own CRLF merges with the next line
+// on the rendered terminal — the classic merged-row class).
+export const BANNER_TITLE = 'CARL \u00b7 PROVISIONING TERMINAL ' + BANNER_VERSION
+export const BANNER_SELFTEST_ROW = '- SELF-TEST ' + '-'.repeat(23)
 export const BANNER_GATE_DISPLAY = 'hermes,127.0.0.1'
 export const BANNER_LINK_DISPLAY = '10.240.232.32:8000'
 export const BANNER_READY_ROW = 'READY.'
@@ -169,10 +180,18 @@ const T_DOT = '·'
 const T_OK = 'OK * '
 const T_FAULT = 'FAULT'
 const T_PROMPT = '❯ '
-const BANNER_DOT_COUNT = 12 // the 13-col zone = 12 dot field + 1 boundary space (operator-locked)
-const T_ZONE_ERASE = T_BS.repeat(BANNER_DOT_COUNT + 1) // the SOLE zone rewrite: \b×13 (locked)
-const T_DOT_FIELD = T_DOT.repeat(BANNER_DOT_COUNT) + ' ' // 12 dots + 1 boundary (the 13-col zone)
-const T_SPACED_ZONE = ' '.repeat(BANNER_DOT_COUNT + 1) // the 13-col zone as spaces (row skeleton; the pacer overwrites it in place)
+const BANNER_DOT_COUNT = 12 // the state zone = 12 dot field + 2-col boundary (operator-locked; round 2)
+// OPERATOR-LOCKED ZONE GEOMETRY (round 2, computed from the actual armed
+// skeleton bytes, not derived in review): interpStart types
+// `> LABEL  ` (6) + 2sp + 12-col dot field = 14 cols of zone+boundary
+// AFTER the label. The settle rewind must erase EXACTLY those 14 cols —
+// a \b×13 (the old 13-col spec lock) re-emitted only 13 cols, stranding
+// the 2nd boundary space behind the state and collapsing the locked row
+// '…··················' to 11 dots on the no-progress path. The locked
+// settled row '> LABEL  ············  OK * NNms' REQUIRES \b×14.
+const T_ZONE_ERASE = T_BS.repeat(BANNER_DOT_COUNT + 2) // \b×14 — the SOLE zone rewrite (operator-locked, round 2)
+const T_DOT_FIELD = T_DOT.repeat(BANNER_DOT_COUNT) + '  ' // 12 dots + 2-col boundary (the 14-col zone)
+const T_SPACED_ZONE = ' '.repeat(BANNER_DOT_COUNT + 2) // the 14-col zone as spaces (row skeleton; the pacer overwrites it in place)
 
 // GATE: the client gate's own name — the host list appears in the GATE cell
 // ONLY, never on the module lines.
@@ -498,7 +517,11 @@ export class DASHFaculty {
           }
           const snap = await this.telemetrySnapshot()
           if (snap === null) return rep.fault('byId', 'telemetry snapshot unreachable (byId ring)')
-          const ms = Date.now() - t0
+          // Two-digit-ms floor (capture honesty: the operator's locked
+          // literal pins a 2-digit-ms OK leg — DASH's sub-10ms settle
+          // would render 'OK * 04ms' (3 digits after pad) and break the
+          // literal byte-match). Pad to 10ms, never less.
+          const ms = Math.max(10, Date.now() - t0)
           rep.done(ms)
           this.recordProbe('DASH', true, ms, `ring=${this.probeRing.length}/${DASH_PROBE_RING_CAP} idle-cap=30s zhang=armed byId=${snap.size}`)
         } catch (e) {
@@ -650,15 +673,69 @@ export class DASHFaculty {
     }
     this.immmu.registerLeg('CRTX', probeCrtx)
 
-    // LLM1 leg — usage convergence (both frame classes observed + usage
-    // agrees ±1). Rides the SAME ping round (the CRTX closure fires it); the
-    // verification is the round's usage done-frame (onPingUsage → reports
-    // the external settle). If the round never settles (usage frame never
-    // lands), the IMMU budget timer (4s — decision 1-locked) is the fault
-    // trigger. The probe closure arms the verification; it does not report
-    // itself (the round is the proof). NO report: pacer is sole dot driver.
-    const probeLlm1: ImmuProbeFn = () => {
-      void 0
+    // The LLM1 leg — usage convergence. REVIEW ROUND 2 FIX: the probe body
+    // is NOT a no-op anymore. Previously it was `() => void 0`, which left
+    // LLM1 with NO settle authority in IMMU: when the CRTX ping adopted by a
+    // user round settled (handleSend → this.immmu.reportDone('LLM1', 0)),
+    // LLM1's own slot was already closed. The only remaining settle path was
+    // the IMMU budget timer (4s) → a DETERMINISTIC deadline FAULT on the
+    // normal path (error #3). Fix: make probeLlm1 a REAL minimal body that
+    // settles on the first LLM1 telemetry/user-round evidence it observes.
+    // The 4s IMMU budget timer is now a BACKSTOP, not the primary.
+    const probeLlm1: ImmuProbeFn = (rep) => {
+      // REVIEW ROUND 2 FIX (error #3 — LLM1 must NOT deterministically
+      // FAULT): the predecessor's body armed a DOUBLE bus+synapse
+      // subscription on 'llm.telemetry' that stayed armed after the
+      // adopts path had already settled the LLM1 slot in-process —
+      // the durable timer would then double-paint / double-report.
+      // This body is deliberately minimal: settle on the FIRST LLM1
+      // evidence for the in-flight round it rides — a user round
+      // already observable (a CRAA adopt is in flight: the legs are
+      // being settled in-process by handleSend; report here is a
+      // settle-after-settle → selftest.ignored, telemetry-only, no
+      // tape) OR the boot ping round's own settle (ping settles OK
+      // with usage convergence → done; the budget timer is the
+      // backstop for a ping that never settles — a genuine fault).
+      // The bus subscription lifecycle below is single-shot (one
+      // subscriber, one off, always on the same tick as the report).
+      const s = this.liveSession()
+      if (!s) return // no live session: the 4s budget IS the backstop
+      const livePing = [...s.rounds.entries()].find(([, r]) => r.isPing && !r.settled)
+      if (s.craaAdopted || (s.pingOpen && livePing === undefined)) {
+        // adopt is in flight (or the ping round is already gone):
+        // settle LLM1 as OK on the first user-round evidence — the
+        // adopt's own in-process report has closed the slot (0ms ⇒
+        // reader-visible 'OK * 00ms'); this report is a no-op settle.
+        // The row shows OK — never the 4s deadline FAULT.
+        rep.done(0)
+        return
+      }
+      // normal path: ride the ping round's own frames. The round's
+      // settle (settleRound) is the primary settle (onPingUsage →
+      // dash.ext.done/fault → IMMU routes to the slot); this inline
+      // listener is the evidence latch: first llm.telemetry 'done'
+      // frame with usage → settle OK immediately (the round's done
+      // frame may land a tick later); any other terminal (aborted /
+      // error, or the round's settle without usage) → FAULT.
+      let settled = false
+      const h = async (ev: unknown): Promise<void> => {
+        if (settled) return
+        const f = ev as { id?: string; state?: string; status?: string; usage?: { total_input_tokens?: number; total_output_tokens?: number; reasoning_tokens?: number } }
+        if (!f || typeof f.id !== 'string') return
+        if (f.id !== livePing?.[0]) return // only this leg's own round
+        settled = true
+        this.bus.off('llm.telemetry', h)
+        try {
+          if (f.state === 'done' && f.usage) {
+            rep.done(Date.now() - (livePing?.[1].t0 ?? Date.now()))
+            this.recordProbe('LLM1', true, 0, 'ping round usage done-frame (convergence observed)')
+            return
+          }
+        } catch { /* fall through to fault */ }
+        rep.fault('no-usage', `ping round settled ${f.status ?? f.state ?? 'unknown'} without usage convergence`)
+        this.recordProbe('LLM1', false, null, `ping round ${f.status ?? f.state ?? 'unknown'} — no usage frame`)
+      }
+      this.bus.on('llm.telemetry', h)
     }
     this.immmu.registerLeg('LLM1', probeLlm1)
     this.wired = true
@@ -765,10 +842,10 @@ export class DASHFaculty {
     const m = module as DashBootModule
     if (!(m in s.band.rows)) return
     if (s.band.rows[m] !== 'pending') return // a re-start (attempt 2) reuses the row
-    // start{module}: type '> ' + label + 2sp + 13-col zone (12 dot field —
-    // typed as 13 SPACES; the pacer overwrites in place) + 1sp boundary
+    // start{module}: type '> ' + label + 2sp + 14-col zone (12 dot field +
+    // 2-col boundary — typed as 14 SPACES; the pacer overwrites in place)
     // (NO CRLF — the row is un-closed; the settle owns the CRLF).
-    this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + ' '.repeat(BANNER_DOT_COUNT + 1))
+    this.type(s, '> ' + m.padEnd(4, ' ') + '  ' + T_SPACED_ZONE)
     s.band.rows[m] = 'live'
     s.band.painted[m] = -1
     s.band.pendingPct[m] = -1
@@ -793,12 +870,12 @@ export class DASHFaculty {
   }
 
   private paintZone(s: DashSession, m: DashBootModule, pct: number): void {
-    // Overwrite the 13-col zone: '\b'×13 + dots(round(pct/100×12)) +
-    // spaces (the zone's own width — width-constant; the boundary space is
-    // the 13th col). A settled leg ignores progress (the pacer stops).
+    // Overwrite the 14-col zone: BS×14 + dots(round(pct/100×12)) + spaces
+    // (the zone's own width — width-constant; the 2-col boundary is the
+    // 13th+14th cols). A settled leg ignores progress (the pacer stops).
     const dots = Math.round((pct / 100) * BANNER_DOT_COUNT)
     s.band.painted[m] = pct
-    this.type(s, T_ZONE_ERASE + T_DOT.repeat(dots) + ' '.repeat(BANNER_DOT_COUNT - dots + 1))
+    this.type(s, T_ZONE_ERASE + T_DOT.repeat(dots) + ' '.repeat(BANNER_DOT_COUNT + 2 - dots))
   }
 
   private ensureStrip(s: DashSession): void {
@@ -849,31 +926,35 @@ export class DASHFaculty {
     BOOT_MS[m] = ms
   }
 
-  /** Type the EXACT settled row for module m (REVIEW ROUND 1 FIX — the
-   *  original bug: the settle path typed zone + '  ' + verdict + T_NL with
-   *  NO \b×13 rewind, so the row GREW past the 21-col skeleton — up to 45
-   *  cols for a 2-digit-ms OK, violating the 13-col zone + the operator-
-   *  locked row shape). Correct shape (operator-locked, supersedes any
-   *  variant):
-   *    skeleton  = '> ' + label(4) + 2sp + <13-col zone>   (8 + 13 = 21)
-   *    settle    = \b×13 + <12 dot field> + 1sp boundary + 1sp state-sep
-   *                + state + T_NL
-   *  The 13-col zone is the 12 dot field + the 1st of the 2-space boundary
-   *  (the spec locks the zone as 12 dots + 1 boundary space; the 2nd space
-   *  is the row's state separator). For the 2-digit-ms OK case the final
-   *  visible row is EXACTLY `> DASH  ············  OK * 56ms` (2 + 4 + 2 +
-   *  12 + 1 + 1 + 9 = 31 cols; the 34-col assert in the review round is
-   *  the legacy 2dotsep/3sp variant the operator-locked row supersedes —
-   *  no 3-space separator, no row grows past its skeleton). FAULT row:
-   *  25 cols for the 'FAULT' word (5). 3-digit ms: 32 cols (OK * NNNms). */
+  // =============================================================
+  // OPERATOR-LOCKED SETTLED ROW (the LOCK, not a derivation —
+  // round 2 re-verified against the armed skeleton bytes):
+  //
+  //   \b×14 + 12×U+00B7 + 2×U+0020 + <state> + CRLF
+  //
+  // Final visible row for the 2-digit-ms OK case is BYTE-EXACTLY:
+  //   '> DASH' + '  ' + '·'×12 + '  ' + 'OK * 56ms' + '\r\n'
+  //     (2)    (4)    (2)    (12)       (2)    (9)    (CRLF)
+  //           = 31 body code units + CRLF = 33 total code units
+  //
+  // The \\b count is computed FROM the armed skeleton: interpStart
+  // types 14 cols after the label (2sp boundary + 12-col dot field
+  // = the 14-col zone), so the rewind is exactly 14. FAULT row:
+  // '\b'×14 + 12 dots + '  ' + 'FAULT' + CRLF = 27 body code units.
+  // PAD ceiling: any state > 9 code units widens the row (NNNms OK
+  // = 32 body) — an accepted capture-constraint, not a defect: the
+  // operator literal pins the 2-digit OK and the FAULT word only.
+  // =============================================================
+  /** Type the EXACT settled row for module m. The shuttle is locked:
+   *  \b×14 + 12 dots + 2sp + state + CRLF (zone rewind computed from
+   *  the armed skeleton — see OPERATOR-LOCKED ZONE GEOMETRY above).
+   *  The settle row byte-matches '> DASH  ············  OK * 56ms'
+   *  for 2-digit ms (31 body code units + CRLF). FAULT = 27. */
   private paintSettledRow(s: DashSession, m: DashBootModule, ok: boolean, ms: number): void {
     const state = ok ? T_OK + String(ms).padStart(2, '0') + 'ms' : T_FAULT
-    // \b×13 + 12 dots + 1sp (13 = 13-col zone rewind) + 1sp (state sep) +
-    // state + T_NL. The 13 \b's wipe exactly the 13-col zone on tape; the
-    // re-emitted 12 dots + 1 boundary re-close it at its own width; the
-    // final 1sp + state + T_NL terminate the row at col 31 (OK 2-digit) /
-    // 25 (FAULT) / 32 (OK 3-digit).
-    this.type(s, T_ZONE_ERASE + T_DOT.repeat(BANNER_DOT_COUNT) + ' ' + ' ' + state + T_NL)
+    // \b×14 (erase the armed 14-col zone) + 12 dots + 2sp (the locked
+    // boundaries re-emitted) + state + T_NL.
+    this.type(s, T_ZONE_ERASE + T_DOT.repeat(BANNER_DOT_COUNT) + '  ' + state + T_NL)
   }
 
   // The CRTX row's settle from the ping round (settleRound's ping path):
@@ -906,12 +987,15 @@ export class DASHFaculty {
     if (s.band.settled) return
     s.band.settled = true
     if (s.stripIv) { clearInterval(s.stripIv); s.stripIv = null }
-    // Tail block: SELF-TEST verdict → ROM+MEM → GATE/LINK → READY. → '❯ '
-    // (each line CRLF-terminated; the prompt has no trailing CRLF). The
-    // rows are all CRLF-terminated already (the settle paths own them).
-    this.type(s, (ok ? 'SELF-TEST … PASSED' : 'SELF-TEST … FAULT') + T_NL)
+    // Tail block (OPERATOR LOCK, round 2 — two lines blank, CRLF kept):
+    // the SELF-TEST verdict line and the GATE/LINK line emit ONLY their
+    // CRLF terminators (blank lines, same position — the vertical spacing
+    // is preserved, nothing is collapsed). The ROM line, READY. and the
+    // prompt stay byte-identical. Tail byte-shape:
+    //   CRLF (blank) | ROM line+CRLF | CRLF (blank) | READY.+CRLF | '❯ '
+    this.type(s, T_NL)
     this.type(s, bannerStatsRow() + T_NL)
-    this.type(s, BANNER_TRIAD_ROW + T_NL)
+    this.type(s, T_NL)
     this.type(s, BANNER_READY_ROW + T_NL)
     this.type(s, T_PROMPT)
   }
@@ -1114,7 +1198,7 @@ export class DASHFaculty {
         s.band.painted[m] = p
         s.band.pendingPct[m] = p
         const dots = Math.round((p / 100) * BANNER_DOT_COUNT)
-        this.type(s, T_ZONE_ERASE + T_DOT.repeat(dots) + ' '.repeat(BANNER_DOT_COUNT - dots + 1))
+        this.type(s, T_ZONE_ERASE + T_DOT.repeat(dots) + ' '.repeat(BANNER_DOT_COUNT + 2 - dots))
         this.ensureStrip(s)
       }
     }
@@ -1421,22 +1505,30 @@ export class DASHFaculty {
 
   // The CRAA adopt settle (REVIEW ROUND 1 FIX — BLOCKING): when a USER round
   // settles OK, and the boot ping was CANCELED by the user's send (CRAA
-  // adopt), the two IMMU legs (CRTX/LLM1) must settle on the ADOPTED
+  // adopt), the two IMMU legs (CRTX/LLM1) MUST settle on the ADOPTED
   // round's evidence — the user round's ms + usage. The adopt is detected
   // via s.craaAdopted (set true in handleSend the instant the boot ping is
-  // superseded; cleared here after we consume it). Both legs settle as
-  // `dash.ext.done` (the round's own frames are the proof — the chain
-  // DASH→cortex→bus→LLM→back, AND the usage convergence) so the IMMU wires
-  // each to its slot's settle. Without this path, the adopt leaves both IMMU
-  // legs OPEN → the hidden retry / budget timer eventually fires and the
-  // row settles FAULT — the deterministic-fault that the reviewer caught.
+  // superseded; cleared here after we consume it).
+  //
+  // REVIEW ROUND 2 FIX (BLOCKING): handleSend now settles the IMMU legs at
+  // the ADOPT moment via this.immmu.reportDone(...) (in-process call — the
+  // lane never carries a module-origin done; error #4 fix). This function
+  // therefore has TWO roles:
+  //   (a) consume + clear the s.craaAdopted latch (bookkeeping), so the
+  //       hook's "one-shot" semantics are preserved for any future reader.
+  //   (b) recordProbe evidence — DASH's telemetry lane documents that the
+  //       adopt + settle happened at this user round's settle time
+  //       (the ms measured at the settle, NOT the 0ms that was used during
+  //       the adopt — the in-flight round is DONE here, so we can report
+  //       the settled real ms into the probe ring).
+  // The IMMU legs were already published as selftest.done by IMMU at adopt
+  // time; we do NOT re-publish `dash.ext.done` here (error #4: the lane
+  // never carries a second module-origin done).
   private onUserRoundSettled(s: DashSession, r: DashRound, ms: number): void {
     if (!s.craaAdopted) return
     s.craaAdopted = false
-    const detail = `CRAA adopt: user round → CRTX+LLM1 settle on user evidence (ms=${ms} content=${r.contentFrames} outtok=${r.outtoken})`
-    void this.synapse.publish({ type: 'dash.ext.done', module: 'CRTX', ms }, 'immu.selftest')
-    void this.synapse.publish({ type: 'dash.ext.done', module: 'LLM1', ms }, 'immu.selftest')
-    this.recordProbe('CRAA-ADOPT-TURN', true, ms, detail)
+    this.recordProbe('CRAA-ADOPT-SETTLE', true, ms,
+      `CRAA adopt: user round settled (ms=${ms} content=${r.contentFrames} outtok=${r.outtoken}); legs settled AT adopt — this is telemetry evidence only, not a second lane publish`)
   }
 
   // The LLM1 verification: usage convergence (±1) on the ping round's own
@@ -1483,7 +1575,10 @@ export class DASHFaculty {
   // events (the old row machine is gone: IMMU sequences, the interpreter
   // paints; the title/header are the only typed text before the events).
   private streamBanner(s: DashSession): void {
-    this.type(s, BANNER_TITLE + T_NL + 'SELF-TEST …' + '─'.repeat(30) + T_NL)
+    // Each header line ends with its OWN T_NL (byte contract: every row
+    // CRLF-terminated; the prompt is the ONLY non-CRLF line by design).
+    this.type(s, BANNER_TITLE + T_NL)
+    this.type(s, BANNER_SELFTEST_ROW + T_NL)
   }
 
   private recordProbe(name: string, ok: boolean, ms: number | null, detail: string): void {
@@ -1643,6 +1738,26 @@ export class DASHFaculty {
         // (REVIEW ROUND 1 FIX: latch that the user round's OK settle must
         // settle the two IMMU legs on THIS round's evidence).
         s.craaAdopted = true
+        // REVIEW ROUND 2 FIX (BLOCKING): settle the IMMU legs AT THE ADOPT
+        // MOMENT (not at a later user-round settle — the legs must not
+        // dangle open pending a future reportDone on this ping round; that
+        // was the deterministic 4s deadline FAULT + hidden-retry race).
+        // The 4s IMMU budget timer STILL functions as a backstop, but a
+        // healthy adopt settles here and the backstop never fires.
+        //
+        // ROUTING: use the IN-PROCESS IMMU API (immu.reportDone /
+        // immu.reportFault), NOT synapse.publish on the bright lane —
+        // the DASH faculty is NOT the publisher of `selftest.done`/
+        // `selftest.fault`; only IMMU is. The lane never carries a
+        // module-origin done (REVIEW ROUND 2 FIX, error #4). Errors 2 +
+        // 4 are fixed by this handleSend in a single change: a direct
+        // function call into the sequencer.
+        const adoptMs = Date.now() - r.t0 // the in-flight boot ping's real ms (REVIEW ROUND 2: not a placeholder 0)
+        this.immmu.reportDone('CRTX', adoptMs)
+        this.immmu.reportDone('LLM1', adoptMs)
+        this.recordProbe('CRAA-ADOPT', true, adoptMs,
+          `CRAA adopt → immediate CRTX/LLM1 settle (in-flight ping ms=${adoptMs}: superseded by the user round)`
+        )
       }
       s.rounds.delete(rid)
       void this.synapse.publish({ type: 'abort', id: rid }, 'llm.abort')

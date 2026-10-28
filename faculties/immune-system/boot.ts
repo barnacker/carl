@@ -462,7 +462,10 @@ export class IMMUSequencer {
   // --- the in-process report API (DASH's probe closures call these) ----------
 
   /** reportProgress — a probe's 0-100 monotonic progress (the SOLE dot
-   *  driver). Coerced to the leg-budget domain; a settled leg is a no-op. */
+   *  driver). Coerced to the leg-budget domain; a settled leg is a no-op.
+   *  (Visible at module-internal level only — DASH's probe closures hold
+   *  the in-process `rep` object, so the method is never called cross-
+   *  module. The public API is reportDone / reportFault.) */
   private reportProgress(module: string, pct: number): void {
     const idx = IMMU_LEG_ORDER.indexOf(module)
     if (idx === -1) return
@@ -476,8 +479,11 @@ export class IMMUSequencer {
   }
 
   /** reportDone — the probe's OK settle. Sole authority: a report after
-   *  settle is `ignored` (telemetry only, no tape). */
-  private reportDone(module: string, ms: number): void {
+   *  settle is `ignored` (telemetry only, no tape).
+   *  PUBLIC: DASH calls it IN-PROCESS (in the CRAA adopt path, the handleSend
+   *  logic settles CRTX/LLM1 legs at the ADOPT moment — the lane never
+   *  carries a module-origin done; the in-process call IS the publish path). */
+  reportDone(module: string, ms: number): void {
     const idx = IMMU_LEG_ORDER.indexOf(module)
     if (idx === -1) return
     const slot = this.legs[idx] as ImmuLegSlot
@@ -492,8 +498,10 @@ export class IMMUSequencer {
 
   /** reportFault — the probe's fault (or the budget timer's 'deadline').
    *  IMMU is the SOLE settle authority; a hidden retry may follow on
-   *  attempt 1. A report after settle is `ignored`. */
-  private reportFault(module: string, reason: string, detail?: string): void {
+   *  attempt 1. A report after settle is `ignored`.
+   *  PUBLIC: DASH calls it IN-PROCESS for the same reason as reportDone —
+   *  the lane is sealed, the in-process call IS the publish path. */
+  reportFault(module: string, reason: string, detail?: string): void {
     const idx = IMMU_LEG_ORDER.indexOf(module)
     if (idx === -1) return
     const slot = this.legs[idx] as ImmuLegSlot
