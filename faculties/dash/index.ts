@@ -151,10 +151,11 @@ const READY = '  READY.';
  */
 function rungRow(i: number, fill: number, state: string, word: string): string {
   const dots = DOT.repeat(fill) + ' '.repeat(DOTS - fill);
-  // CANON §3, settled rung line (35 content units after the 2-cell gutter):
-  //   '  > DASH  ' + 12-dot field + ' ' + 'OK @ <n.n>ms'
-  // 2 spaces after the 4-char label, 1 space dot-field → 'OK @ …'.
-  const suffix = word === '' ? '' : ' ' + word;
+  // CANON §3 settled line, transcribed char-by-char from the LOCKED spec
+  // (2 spaces after the 4-char label, 12-dot field, 2 spaces, "OK @ <n.n>ms"):
+  //   '  > DASH  ············  OK @ 0.3ms'  = 35 content units (incl the
+  //   2-char left margin) after the 2-cell gutter.
+  const suffix = word === '' ? '' : '  ' + word;
   return row(state, '│', '  > ' + RUNGS[i].label + '  ' + dots + suffix);
 }
 
