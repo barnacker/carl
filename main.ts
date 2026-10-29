@@ -133,6 +133,22 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
   //     granted position and relays it to the client as {t:'flow'}).
   synapse.nsTelemetry(100)
 
+  // 4c'''' /start knob — the config carrier (config.json: auto_autostart
+  //     bool default false, autoMode string default 'sat', autoSender
+  //     string default 'ok'). The main.ts POST reads `auto_autostart`
+  //     (body override >> config >> false); DASH reads the same file via
+  //     `readStartKnobs`. Missing file → defaults; a malformed file →
+  //     defaults (log-free; the knob is cosmetic and must never fail
+  //     the boot gate).
+  const config: { auto_autostart?: boolean; autoMode?: string; autoSender?: string } = (() => {
+    try {
+      const raw = readFileSync(pathResolve(process.cwd(), 'config.json'), 'utf8')
+      return JSON.parse(raw) as typeof config
+    } catch {
+      return {}
+    }
+  })()
+
   // 5. HTTP server on port 3000 (dynamic: the actual bound port is captured
   //    in `actual` below and pinned on the DASH faculty via setListenPort
   //    after listen — the venue's internal control fetches (DASH's boot
@@ -205,14 +221,57 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
               /* not JSON / no body — fall through with whatever we have */
             }
             if (tag === '' && typeof body.session === 'string') tag = body.session
+            // Silent msg-drop guard (phase-2): the msg/text resolution
+            // runs BEFORE every boot branch (check-before-send), so a
+            // {msg, boot_status:true, dash_id} body is never answered by
+            // boot_status with the msg silently lost — the resolved text
+            // is re-sent inside the boot response (sent_msg) or falls
+            // through to the msg send path.
+            // /start knob (config-driven; config.json auto_autostart,
+            // default false — overridden per-POST by the body): the body
+            // may carry an explicit auto_autostart boolean; otherwise the
+            // config value (or false).
+            const auto_autostart = typeof body.auto_autostart === 'boolean' ? body.auto_autostart : (config?.auto_autostart ?? false)
+            // The message rides on `msg` (canonical) or `text` (the
+            // earlier client shape, kept for compat). Resolved BEFORE
+            // the boot branches so a compound body ({msg, boot_status,
+            // dash_id}) can never be answered by boot_status with the
+            // msg silently dropped — resolved text is re-sent after the
+            // boot response (the 202's `sent_msg` field; the live echo
+            // rides the SSE GET — the POST's res is a one-shot receipt).
+            let pendingMsg: string | null = null
+            if (typeof body.msg === 'string') {
+              text = body.msg
+              pendingMsg = text
+            } else if (typeof body.text === 'string') {
+              text = body.text
+              pendingMsg = text
+            }
+            const sendPendingMsg = (): boolean => {
+              if (pendingMsg !== null) {
+                const sentTag = dash.sessionByTagPublic(tag) ? tag : ''
+                if (sentTag !== '') {
+                  const r2 = dash.handleConn(sentTag, JSON.stringify({ msg: pendingMsg, session: sentTag }))
+                  if (!r2.ok) {
+                    return false
+                  }
+                }
+              }
+              return true
+            }
             // IMMU boot protocol (spec v5): the self-test sequencer's
             // control surface. The outer host gate already passed (above).
             if (body.boot_status === true && typeof body.dash_id === 'string') {
               const r = IMMU_BOOT.bootStatus(body.dash_id)
               res.writeHead(r.status === 'ok' ? 200 : 403, { 'content-type': 'application/json; charset=utf-8' })
-              res.end(JSON.stringify(r.status === 'ok'
-                ? { OK: true, snapshot: r.snapshot }
-                : { OK: false, refused: r.refused }))
+              res.end(JSON.stringify({
+                ...(r.status === 'ok'
+                  ? { OK: true, snapshot: r.snapshot }
+                  : { OK: false, refused: r.refused }),
+                ...(r.status === 'ok' && pendingMsg !== null && sendPendingMsg()
+                  ? { sent_msg: true, stream: '/dash' }
+                  : {}),
+              }))
               return
             }
             // REVIEW ROUND 1 (SECURITY-1): gate the boot_start body — the
@@ -269,22 +328,30 @@ function bootstrap(): { server: Server; address: { port: number }; listen: () =>
               res.end(JSON.stringify(snap))
               return
             }
-            // The message rides on `msg` (canonical) or `text` (the
-            // earlier client shape, kept for compat).
-            if (typeof body.msg === 'string') text = body.msg
-            else if (typeof body.text === 'string') text = body.text
-            const out: Record<string, unknown> = { ok: true, stream: '/dash' }
-            const r = dash.handleConn(tag, raw === '' ? JSON.stringify({ msg: text, session: tag }) : raw)
-            if (!r.ok) {
-              out.ok = false
-              out.msg = r.err ?? 'attach first'
-              res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify(out))
+            // Msg send (reached only when no boot branch matched): text
+            // was resolved above (before the boot checks), so a compound
+            // body that fell through here still sends. The `auto_autostart`
+            // knob opens the send path even with empty text (an empty
+            // round — the /start frame); with the knob off and no text
+            // at all, nothing is sent (the historic no-op 202).
+            if (auto_autostart || text !== '') {
+              const out: Record<string, unknown> = { ok: true, stream: '/dash' }
+              const r = dash.handleConn(tag, raw === '' ? JSON.stringify({ msg: text, session: tag }) : raw)
+              if (!r.ok) {
+                out.ok = false
+                out.msg = r.err ?? 'attach first'
+                res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify(out))
+                return
+              }
+              // the send rides the OPEN SSE stream (the 202 is a mere
+              // receipt; the frames actually live on the GET the tag
+              // points to):
+              res.writeHead(202, { 'content-type': 'application/json' })
+              res.end(JSON.stringify(out))
               return
             }
-            // the send rides the OPEN SSE stream (the 202 is a mere receipt;
-            // the frames actually live on the GET the tag points to):
             res.writeHead(202, { 'content-type': 'application/json' })
-            res.end(JSON.stringify(out))
+            res.end(JSON.stringify({ ok: true, stream: '/dash', sent_msg: false }))
             return
           })
           return

@@ -300,6 +300,26 @@ const PING_MAX_TOKENS = 16
 const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_MAX_TOKENS = 512
 const BIRTH_LINE_MAX = 64
+// --- /start knobs (config-driven; the /start integration the C72309F
+// / build was missing): read from <cwd>/config.json at each auto-trigger.
+// auto_autostart (bool, default false) gates bootStart on attach;
+// autoMode (string, default 'sat') / autoSender (string, default 'ok')
+// are carried alongside for the phase-3 surface. Missing/malformed file →
+// defaults (the knob is cosmetic and must never fail the boot gate).
+const START_KNOB_DEFAULTS = { auto_autostart: false, autoMode: 'sat', autoSender: 'ok' }
+const readStartKnobs = (): typeof START_KNOB_DEFAULTS => {
+  try {
+    const raw = readFileSync(join(process.cwd(), 'config.json'), 'utf8')
+    const c = JSON.parse(raw) as { auto_autostart?: boolean; autoMode?: string; autoSender?: string }
+    return {
+      auto_autostart: typeof c.auto_autostart === 'boolean' ? c.auto_autostart : START_KNOB_DEFAULTS.auto_autostart,
+      autoMode: typeof c.autoMode === 'string' ? c.autoMode : START_KNOB_DEFAULTS.autoMode,
+      autoSender: typeof c.autoSender === 'string' ? c.autoSender : START_KNOB_DEFAULTS.autoSender,
+    }
+  } catch {
+    return { ...START_KNOB_DEFAULTS }
+  }
+}
 
 export type DashBootModule = 'DASH' | 'TELE' | 'NERV' | 'CRTX' | 'LLM1'
 // Subject names for the 5 SEQUENCED beams (canonical dash census, and the
@@ -1330,6 +1350,12 @@ export class DASHFaculty {
 
   private autoTrigger(s: DashSession): void {
     if (!this.wired) return
+    // /start knob (config.json auto_autostart, default false): gate the
+    // auto-trigger bootStart — when false, the attach renders the band
+    // but does NOT start the sequencer (an explicit POST boot_start
+    // still starts it; IMMU's in-flight lock is unchanged).
+    const auto_autostart = readStartKnobs().auto_autostart
+    if (!auto_autostart) return
     const r = this.immmu.bootStart('dash', s.connTag)
     // busy → the in-flight lock is the gate (correct): this attach renders
     // the live band (the interpreter is subscribed module-wide). auth →

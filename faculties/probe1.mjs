@@ -1,1 +1,0 @@
-function processFrame(msg: any) { const t = {content_tokens:0, reasoning_tokens:0, sawCompleted:false, done_issued:false}; if (msg.type === PROBE_CONTENT_RENDER) { t.content_tokens += 1; sawCompleted = true; done_issued = true; publishTelemetry('x'); return NO_CONTENT } telemetryPayload(t); interface SseEventPayload {} interface SseUsage {} t.reasoning_tokens += 1 return null }
