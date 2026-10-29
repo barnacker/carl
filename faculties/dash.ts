@@ -702,7 +702,12 @@ export class DASHFaculty {
           const logRel = process.env.DASH_SELFTEST_LOG ?? 'logs/carl.log'
           const tag = `selftest.dash.${Date.now()}`
           try {
-            await appendFile(logRel, new Date().toISOString() + ' dash.selftest ' + tag + '\n', 'utf8' as never)
+            await new Promise<void>((resolve, reject) => {
+              // explicit promise wrap: the @types/node v20 typings expose no
+              // (path, data, options) appendFile overload that carries an
+              // encoding option — the callback form is the typed surface.
+              appendFile(logRel, new Date().toISOString() + ' dash.selftest ' + tag + '\n', 'utf8', (err) => { if (err !== null) reject(err); else resolve() })
+            })
           } catch (e) { return rep.fault('log', `log append: ${(e as Error).message}`) }
           await sleep(20)
           let last = ''
@@ -1590,9 +1595,7 @@ export class DASHFaculty {
     // MIGRATION (2026-10-28): the ping branch above RETURNS — the old
     // CRTX/LLM1 ping-observed settle (interpCrtxSettle / onPingUsage →
     // dash.ext.done/fault) is retired as the legs' settle source (both
-    // legs now self-test in their own faculties, settled DIRECT). The
-    // `sawContent` gate lives on for the USER round below.
-    const sawContent = r.contentFrames > 0
+    // legs now self-test in their own faculties, settled DIRECT).
     // USER round: the round's own frames settle it (the tell-skip, if any,
     // already told the story on the band).
     // CRAA (cancel-and-adopt): a user send that lands while the connect-time
@@ -1664,10 +1667,14 @@ export class DASHFaculty {
   // time; we do NOT re-publish `dash.ext.done` here (error #4: the lane
   // never carries a second module-origin done).
   private onUserRoundSettled(s: DashSession, r: DashRound, ms: number): void {
+    // `sawContent` gate (retained for user-round purposes per the 2026-10-28
+    // migration — a settled user round is OK only if it carried content):
+    // record the probe evidence from the round's own tallies.
+    const sawContent = r.contentFrames > 0
     if (!s.craaAdopted) return
     s.craaAdopted = false
-    this.recordProbe('CRAA-ADOPT-SETTLE', true, ms,
-      `CRAA adopt: user round settled (ms=${ms} content=${r.contentFrames} outtok=${r.outtoken}); legs settled AT adopt — this is telemetry evidence only, not a second lane publish`)
+    this.recordProbe('CRAA-ADOPT-SETTLE', sawContent, ms,
+      `CRAA adopt: user round settled (ms=${ms} content=${r.contentFrames} outtok=${r.outtoken} sawContent=${sawContent ? 'yes' : 'no'}) — legs settled AT adopt; telemetry evidence only`)
   }
 
   // The LLM1 verification: usage convergence (±1) on the ping round's own
