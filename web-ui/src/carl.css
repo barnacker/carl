@@ -1,0 +1,149 @@
+/* CARL-01 — Dark Studio palette + Glass TTY VT220 pixel face (CANON §1).
+   The screen is full-bleed; the terminal is a fixed 1-column grid so the
+   gutter cells and content column never break alignment. Font size is an
+   integer (16px) with line-height 1.0 — a pixel face + fractional CSS
+   shatters the grid (operator doctrine). */
+
+:root {
+  --bg: #00040b;
+  --text: #0981b4;
+  --fault: #db0000;
+  --dim: #682a00;
+}
+
+@font-face {
+  font-family: 'Glass';
+  src: url('/assets/Glass_TTY_VT220.woff2') format('woff2');
+  font-display: block;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.terminal {
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg);
+  font-family: 'Glass', 'Courier New', monospace;
+  font-size: 16px;
+  line-height: 1.0;
+  letter-spacing: 0;
+  color: var(--text);
+  /* VT220 pixel face: 8px advance at 16px → unified 1-column grid */
+  --col: 8px;
+  position: relative;
+}
+
+.screen {
+  padding: 24px 32px 40px 32px;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.screen::-webkit-scrollbar {
+  display: none;
+}
+
+.block {
+  display: block;
+}
+
+.row {
+  display: flex;
+  white-space: pre;
+  height: 16px;
+}
+
+/* the two coding cells: every row has both, so alignment never breaks */
+.cell {
+  display: inline-block;
+  width: var(--col);
+  flex: 0 0 var(--col);
+  overflow: visible;
+}
+.cell.state {
+  color: var(--text);
+}
+.cell.deco {
+  color: var(--dim);
+}
+
+/* gutter col 0: spinner / « / » — the state cell */
+.cell.state .spin {
+  color: var(--dim);
+}
+
+/* gutter col 1: the box frame during boot only (┌ │ └) */
+.cell.deco {
+  color: var(--dim);
+}
+
+.text {
+  color: var(--text);
+  white-space: pre;
+}
+
+.content {
+  display: inline-flex;
+  white-space: pre;
+  color: var(--text);
+}
+.c {
+  display: inline-block;
+  width: var(--col);
+  flex: 0 0 var(--col);
+  text-align: left;
+  overflow: visible;
+}
+
+/* a visible gap (in-flight (id,n)) — never hidden */
+.gapmark {
+  color: var(--dim);
+  opacity: 0.5;
+}
+
+/* the block caret: a block the width of one column, fast fade in/out.
+   Client-side presentation only — never a wire byte, never a gutter byte. */
+.caret-row {
+  position: relative;
+}
+.block-caret {
+  display: inline-block;
+  width: 1ch;
+  height: 16px;
+  background: var(--text);
+  vertical-align: top;
+  animation: carl-caret 620ms steps(1, end) infinite;
+}
+
+@keyframes carl-caret {
+  0% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+  }
+  56% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* fault text (the settle word carries FAULT @ n.nms) */
+.text:has(> .fault) {
+  color: var(--fault);
+}

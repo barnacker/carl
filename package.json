@@ -1,0 +1,17 @@
+{
+  "name": "carl",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CARL-01 v1.0 — proving-terminal harness: SSE wire (faculties/dash) + native Svelte terminal surface",
+  "scripts": {
+    "build:ui": "npm run build --prefix web-ui",
+    "dev": "node --env-file-if-exists=.env node --run tsx watch main.ts",
+    "start": "node dist/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
