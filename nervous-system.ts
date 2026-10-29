@@ -472,6 +472,13 @@ export class Bus {
   off(event: string, listener: (payload: unknown) => void): void {
     this.emitter.off(event, listener)
   }
+
+  removeAllListeners(event: string): void {
+    // channel-wide off (the synapse facade's `unsub` contract — the DASH
+    // self-test's probe RT counter drops its own channel on exit; durable
+    // subscribers must NOT sit on probe channels, or arrive before the off).
+    this.emitter.removeAllListeners(event)
+  }
 }
 
 // The raw bus (EventEmitter-backed) — a single instance for the process.

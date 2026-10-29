@@ -466,39 +466,13 @@ export class DASHFaculty {
     this.startVramPoll()
   }
 
-  // --- bus wiring (Law 2: all talk goes through the bus) ---------------------
-  private wire(): void {
-    // DASH IS the consumer of the request lifecycle; the old chat response
-    // relay is gone (the chat.* lanes are deleted from the bus contract).
-    this.synapse.subscribe('llm.content.token', async (ev: unknown) => {
-      const f = ev as { id?: string; text?: string }
-      if (!f || typeof f.id !== 'string') return
-      for (const s of this.sessions.values()) {
-        if (s.closed) continue
-        const r = s.rounds.get(f.id)
-        if (!r) continue
-        r.outtoken += 1
-        r.contentFrames += 1
-        s.tokenSparkline.push({ t: Date.now(), in: 0, out: 1 })
-        if (s.tokenSparkline.length > 60) s.tokenSparkline.shift()
-        // The ping's content is the round's PROOF — it stays dark on the
-        // band (its rows settle from the round, not from the token stream).
-        if (r.isPing) continue
-        // BOOT-DARK: a user round landing mid-boot must not type onto the
-        // module rows — the interpreter owns the tape until the tail. Its
-        // text and spin stay dark (settle-only). (Post-boot,
-        // s.band.settled === true: the user's response is typed verbatim.)
-        if (!s.band.settled) continue
-        // First user-round content: rewind the spinner ('\b'×k + ' » '),
-        // leave the guillemet head; later tokens land verbatim.
-        if (s.spinnerLen > 0) {
-          this.type(s, T_BS.repeat(s.spinnerLen) + ' » ')
-          s.spinnerLen = 0
-        }
-        this.type(s, typeof f.text === 'string' ? f.text : '')
-      }
-    }, 'dash')
-
+  // The DASH's durable llm.telemetry handler (the user-round content +
+  // usage + spinner tally). Registered under `teleArmed` so the probe's
+  // channel-wide off (W3: probeTele RT counter) cannot strand it.
+  private teleArmed = false
+  private wireTelemetry(): void {
+    if (this.teleArmed) return
+    this.teleArmed = true
     this.synapse.subscribe('llm.telemetry', async (ev: unknown) => {
       const f = ev as {
         id?: string
@@ -535,6 +509,41 @@ export class DASHFaculty {
         }
       }
     }, 'dash')
+  }
+  // --- bus wiring (Law 2: all talk goes through the bus) ---------------------
+  private wire(): void {
+    // DASH IS the consumer of the request lifecycle; the old chat response
+    // relay is gone (the chat.* lanes are deleted from the bus contract).
+    this.synapse.subscribe('llm.content.token', async (ev: unknown) => {
+      const f = ev as { id?: string; text?: string }
+      if (!f || typeof f.id !== 'string') return
+      for (const s of this.sessions.values()) {
+        if (s.closed) continue
+        const r = s.rounds.get(f.id)
+        if (!r) continue
+        r.outtoken += 1
+        r.contentFrames += 1
+        s.tokenSparkline.push({ t: Date.now(), in: 0, out: 1 })
+        if (s.tokenSparkline.length > 60) s.tokenSparkline.shift()
+        // The ping's content is the round's PROOF — it stays dark on the
+        // band (its rows settle from the round, not from the token stream).
+        if (r.isPing) continue
+        // BOOT-DARK: a user round landing mid-boot must not type onto the
+        // module rows — the interpreter owns the tape until the tail. Its
+        // text and spin stay dark (settle-only). (Post-boot,
+        // s.band.settled === true: the user's response is typed verbatim.)
+        if (!s.band.settled) continue
+        // First user-round content: rewind the spinner ('\b'×k + ' » '),
+        // leave the guillemet head; later tokens land verbatim.
+        if (s.spinnerLen > 0) {
+          this.type(s, T_BS.repeat(s.spinnerLen) + ' » ')
+          s.spinnerLen = 0
+        }
+        this.type(s, typeof f.text === 'string' ? f.text : '')
+      }
+    }, 'dash')
+
+    this.wireTelemetry()
 
     this.synapse.subscribe('llm.done', async (ev: unknown) => {
       const f = ev as { id?: string }
@@ -696,8 +705,8 @@ export class DASHFaculty {
             await sleep(300)
             await rtOnce()
           }
-          if (got !== 1) { this.synapse.unsub(chan); return rep.fault('bus-rt', `bus round-trip ${got}/1 on llm.telemetry`) }
-          this.synapse.unsub(chan)
+          if (got !== 1) { this.teleArmed = false; this.synapse.unsub(chan); this.wireTelemetry(); return rep.fault('bus-rt', `bus round-trip ${got}/1 on llm.telemetry`) }
+          this.teleArmed = false; this.synapse.unsub(chan); this.wireTelemetry()
           // (ii) log file: append + read back own bytes.
           const logRel = process.env.DASH_SELFTEST_LOG ?? 'logs/carl.log'
           const tag = `selftest.dash.${Date.now()}`
