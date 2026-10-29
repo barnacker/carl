@@ -111,11 +111,12 @@ body,
   white-space: pre;
 }
 
-/* F9: the committed Glass woff2 has ZERO coverage for the box-draw /
-   braille / ░ cells. Those fall back to the system face; rendered at ONE
-   column's metrics (font-size 8px, line-height the pitch) and clipped to
-   the cell, a wider fallback glyph can't bleed past its column (the "AO"
-   overflow). charCell marks each such cell with data-fallback="<char>". */
+/* the committed Glass woff2 has no coverage for the box-draw / braille / ░
+   cells, so they fall back to the system face. They render at the SAME
+   font-size as the content characters (16px from .terminal, inherited) —
+   one consistent glyph box across the line — and clip inside their cell
+   (overflow:hidden on .c / .cell) so a wider fallback glyph can't bleed
+   past its column. charCell marks each such cell with data-fallback="<char>". */
 .c[data-fallback="─"],
 .c[data-fallback="░"],
 .c[data-fallback="⣶"],
@@ -125,11 +126,7 @@ body,
 .c[data-fallback="⠿"],
 .c[data-fallback="⢻"],
 .c[data-fallback="⣹"],
-.c[data-fallback="⣼"],
-.cell.deco,
-.cell.state,
-.cell.margin {
-  font-size: var(--col);
+.c[data-fallback="⣼"] {
   line-height: var(--pitch);
 }
 

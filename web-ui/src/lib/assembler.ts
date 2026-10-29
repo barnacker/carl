@@ -128,9 +128,10 @@ export class Assembler {
         const b = this.byId.get(f.id ?? '');
         if (b) {
           b.closed = true;
-          if (b.id.startsWith('turn-')) {
-            this.sentState = 'edit'; // the line frees; caret returns to lead
-            this.sentText = '';
+          if (b.id.startsWith('turn-') || b.id === BOOT_ID) {
+            // turn close (reply streamed out) OR boot close (first prompt
+            // armed): the line frees; caret returns to the lead.
+            this.rearm();
           }
         }
         break;
@@ -179,6 +180,25 @@ export class Assembler {
     if (this.sentState === 'ack') this.sentState = 'done';
   }
 
+  /** re-arm the prompt line (sentState → 'edit'): called on the close of any
+   * turn-<N> or the boot block. 'done' means "a turn is in flight", never
+   * "permanently" — a missed close can't wedge the keyboard. */
+  private rearm(): void {
+    this.sentState = 'edit';
+    this.sentText = '';
+  }
+
+  /** safety net (B2): 'done' may only persist while a turn-<N> block is still
+   * open. If none is (a turn close was missed, or we're between turns), fall
+   * back to 'edit' so the keyboard and caret are always armed. */
+  private guardSentState(): void {
+    if (this.sentState !== 'done') return;
+    const turnOpen = this.blocks.some(
+      (b) => b.id.startsWith('turn-') && !b.closed
+    );
+    if (!turnOpen) this.sentState = 'edit';
+  }
+
   userRowHtml(spinGlyph: string): string {
     if (this.sentState === 'edit' && this.draft === '') return '';
     let stateCell = '«';
@@ -218,21 +238,28 @@ export class Assembler {
 
   blockHtml(b: Block, caretOnLead: boolean): string {
     let h = '<div class="block" data-block="' + esc(b.id) + '">';
+    const lastI = b.rows.length - 1;
     for (let i = 0; i < b.rows.length; i++) {
       if (b.rows[i] === null) {
+        // the trailing in-flight gap on the active lead line still gets the
+        // caret: it IS the next-available prompt line.
+        const isLead = caretOnLead && i === lastI;
         h +=
-          '<div class="row gap">' +
+          '<div class="row gap' + (isLead ? ' caret-row' : '') + '">' +
           cell(' ', 'state') +
           cell(' ', 'deco') +
           '<span class="cell margin"></span><span class="cell margin"></span>' +
           '<span class="content">' +
           charCell('◌', 'gapmark') +
+          (isLead ? '<span class="block-caret"></span>' : '') +
           '</span></div>';
         continue;
       }
       const r = b.rows[i];
-      const isLead =
-        caretOnLead && i === b.rows.length - 1 && r.state === '' && r.deco === '' && r.text === '';
+      // B1: the caret rides the active prompt line = the last/lead row while
+      // 'edit', regardless of whether that row is whitespace, so it is never
+      // lost to the old boot.closed && whitespace-only triple.
+      const isLead = caretOnLead && i === lastI;
       h += this.rowHtml(r, isLead);
     }
     h += '</div>';
@@ -240,9 +267,11 @@ export class Assembler {
   }
 
   render(spinGlyph: string): string {
+    this.guardSentState();
     let h = '';
+    const caretOnLead = this.sentState === 'edit';
     for (const b of this.blocks) {
-      h += this.blockHtml(b, b.id === BOOT_ID && b.closed && this.sentState === 'edit');
+      h += this.blockHtml(b, caretOnLead);
     }
     h += this.userRowHtml(spinGlyph);
     return h;
