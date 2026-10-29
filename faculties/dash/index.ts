@@ -29,6 +29,7 @@ export interface WireFrame {
 }
 
 export type Emit = (f: WireFrame) => void;
+import { carlDiskSizeKb, carlProcessMemMib } from './rom.js';
 
 // --- the flow counter (server-assigned, monotonic across the process)
 
@@ -150,8 +151,11 @@ const READY = '  READY.';
  */
 function rungRow(i: number, fill: number, state: string, word: string): string {
   const dots = DOT.repeat(fill) + ' '.repeat(DOTS - fill);
-  const suffix = word === '' ? '' : '  ' + word;
-  return row(state, '│', '  > ' + RUNGS[i].label + ' ' + dots + suffix);
+  // CANON §3, settled rung line (35 content units after the 2-cell gutter):
+  //   '  > DASH  ' + 12-dot field + ' ' + 'OK @ <n.n>ms'
+  // 2 spaces after the 4-char label, 1 space dot-field → 'OK @ …'.
+  const suffix = word === '' ? '' : ' ' + word;
+  return row(state, '│', '  > ' + RUNGS[i].label + '  ' + dots + suffix);
 }
 
 function realSettleCost(): number {
@@ -184,6 +188,11 @@ export async function runBoot(session: string, send: Emit): Promise<void> {
     send(f);
   };
   emit({ t: 'open', id: 'boot' });
+
+  // ROM = carl project DISK size (kB) at launch; MEM = live process RSS (MB)
+  // — F4-locked semantics; the walk is memoized, so re-boots reuse it.
+  const romK = await carlDiskSizeKb();
+  const memMib = carlProcessMemMib().toFixed(1);
 
   // the boot block is 13 line SLOTS (n=0..12) — the byte-exact banner.
   // A rung's dots fill by RE-emitting its own slot n (the client re-paints
@@ -228,25 +237,17 @@ export async function runBoot(session: string, send: Emit): Promise<void> {
   await sleep(520); // the settle/ROM-MEM hold (composes the total)
   reAt(9, row('', '│', RULE));
   await sleep(110);
-  reAt(10, row('', '│', ROM_MEM_ROW()));
+  reAt(10, row('', '│', `  ROM ${romK}k · MEM ${memMib}MB`));
   await sleep(160);
   reAt(11, row('', '└', READY));
   await sleep(100);
 
-  // the caret row (slot n=12): pure whitespace tape. The client's block
-  // caret fades at its content-column lead — a client presentation element;
-  // NEVER a wire byte, NEVER a gutter byte.
-  reAt(12, '   ');
+  // the caret row (slot n=12): 2 gutter space cells + the 2-char content
+  // margin, i.e. pure whitespace tape. The client's block caret fades at its
+  // content-column lead — a client presentation element; NEVER a wire byte,
+  // NEVER a gutter byte.
+  reAt(12, '    ');
   emit({ t: 'close', id: 'boot' });
-}
-
-// ROM = node process size at launch (k); MEM = live server RSS (MB).
-// Consistent units: ROM in KiB, MEM in MiB (same value, two magnitudes).
-function ROM_MEM_ROW(): string {
-  const m = process.memoryUsage();
-  const romKib = Math.max(1, Math.round(m.rss / 1024));
-  const memMib = (m.rss / (1024 * 1024)).toFixed(1);
-  return `  ROM ${romKib}k · MEM ${memMib}MB`;
 }
 
 // --- the turn block: mock brain → 'Hello! I'm CARL-01' (CANON §5)

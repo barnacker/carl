@@ -10,9 +10,11 @@
   --bg: #00040b;
   --text: #0981b4;
   --fault: #db0000;
-  --dim: #682a00;
+  --dim: #682a00; /* border-only palette entry (F5); NO painted text ever */
   --col: 8px;
   --pitch: 16px;
+  /* the spec's only non-content border: a literal 1px page edge (F5) */
+  --page-edge: #682a00;
 }
 
 @font-face {
@@ -35,6 +37,12 @@ body,
   overflow: hidden;
 }
 
+/* F5: the banner's ┌│└ box and the ──…── dash rule are CONTENT glyphs
+   painted text-colored (.cell.deco / .c). --dim is NOT applied to any text.
+   Border choice (the one line the fix round asked for): NONE — no page
+   border, no CSS border anywhere; the palette's #682A00 stays reserved for
+   a literal 1px page border only (available via --page-edge; not drawn). */
+
 .terminal {
   height: 100vh;
   width: 100vw;
@@ -48,7 +56,9 @@ body,
 }
 
 .screen {
-  padding: 24px 32px 48px 32px;
+  /* F6: operator-locked page padding — left 4px, top 20px (4px right/bottom
+  symmetric per the plain reading; the lock fixes left + top) */
+  padding: 20px 4px 4px 4px;
   max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
@@ -69,20 +79,18 @@ body,
   white-space: pre;
 }
 
-/* the two coding cells: every row has both, so alignment never breaks */
+/* the gutter cells (state col 0, deco col 1) + the 2 CHAR content margin
+   cells (CANON §2: content begins at col 3): every row has all four, so
+   alignment never breaks. All four paint the single locked text color
+   (F5: no dim anywhere). */
 .cell {
   display: inline-block;
   width: var(--col);
   flex: 0 0 var(--col);
   text-align: left;
-  overflow: visible;
+  overflow: hidden;
   white-space: pre;
-}
-.cell.state {
   color: var(--text);
-}
-.cell.deco {
-  color: var(--dim);
 }
 
 /* content field: a flex row of fixed-width glyph cells */
@@ -99,19 +107,42 @@ body,
   height: var(--pitch);
   line-height: var(--pitch);
   text-align: left;
-  overflow: visible;
+  overflow: hidden; /* F9: fallback glyphs clip inside their 8px cell */
   white-space: pre;
 }
 
-/* a visible gap (in-flight (id,n)) — never hidden */
+/* F9: the committed Glass woff2 has ZERO coverage for the box-draw /
+   braille / ░ cells. Those fall back to the system face; rendered at ONE
+   column's metrics (font-size 8px, line-height the pitch) and clipped to
+   the cell, a wider fallback glyph can't bleed past its column (the "AO"
+   overflow). charCell marks each such cell with data-fallback="<char>". */
+.c[data-fallback="─"],
+.c[data-fallback="░"],
+.c[data-fallback="⣶"],
+.c[data-fallback="⣧"],
+.c[data-fallback="⣏"],
+.c[data-fallback="⡟"],
+.c[data-fallback="⠿"],
+.c[data-fallback="⢻"],
+.c[data-fallback="⣹"],
+.c[data-fallback="⣼"],
+.cell.deco,
+.cell.state,
+.cell.margin {
+  font-size: var(--col);
+  line-height: var(--pitch);
+}
+
+/* a visible gap (in-flight (id,n)) — never hidden (F5: text color, not dim
+   — opacity carries the "gap" read, color carries the palette) */
 .gapmark {
-  color: var(--dim);
+  color: var(--text);
   opacity: 0.55;
 }
 
 /* the block caret: one column wide (= a content cell), fast fade in/out.
    A client presentation element only — never a wire byte, never a gutter
-   byte. Fast pace ≈ 240ms on / 400ms off. */
+   byte. Fast pace ≈ 240ms on / 400ms off (CANON §8b). */
 .block-caret {
   display: inline-block;
   width: var(--col);

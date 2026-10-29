@@ -48,9 +48,16 @@ function cell(ch: string, cls: string): string {
 
 /** one content char → a fixed-width cell (the pixel face's advances are NOT
  * uniformly equal, so each glyph is drawn in its own 8px cell — the terminal
- * grid, not the face's natural spacing) */
+ * grid, not the face's natural spacing). isFallback marks a char the Glass
+ * woff2 will not cover (┌│└ box-draw, braille spinner, ░) — that cell
+ * renders one column's metrics and clips, so the system fallback can't
+ * bleed past the column (F9). */
 function charCell(ch: string, extra: string): string {
-  return '<span class="c' + (extra ? ' ' + extra : '') + '">' + (ch === ' ' ? '' : esc(ch)) + '</span>';
+  return (
+    '<span class="c' + (extra ? ' ' + extra : '') + ' data-fallback="' + (ch === '' ? '0' : ch) + '">' +
+    (ch === ' ' ? '' : esc(ch)) +
+    '</span>'
+  );
 }
 
 export class Assembler {
@@ -138,8 +145,12 @@ export class Assembler {
     b.rows[n] = {
       state: c.length >= 1 ? c[0] : '',
       deco: c.length >= 2 ? c.slice(1, 2) : '',
-      // tape = [state][deco][text] — the 2-char content margin is in the tape
-      text: c.length > 2 ? c.slice(2) : '',
+      // tape = [state][deco][text] — the CANON says content starts at col 3
+      // (2-char margin). The first TWO text chars are that margin: they are
+      // not glyphed (no leading empty .c spans — the gutter cells are the
+      // only of-line elements); the content grid starts at col 3 with the
+      // first real char.
+      text: c.length > 2 ? c.slice(2).replace(/^ {2}/, '') : '',
     };
   }
 
@@ -182,6 +193,7 @@ export class Assembler {
       '<div class="row user-row">' +
       cell(stateCell, 'state') +
       cell(' ', 'deco') +
+      '<span class="cell margin"></span><span class="cell margin"></span>' +
       '<span class="content">' + cells + '</span></div>'
     );
   }
@@ -193,6 +205,10 @@ export class Assembler {
       '<div class="row' + (isLead ? ' caret-row' : '') + '">' +
       cell(r.state, 'state') +
       cell(r.deco, 'deco') +
+      /* the 2-char content margin (CANON §2: content begins at col 3) — two
+       * EMPTY margin cells (no glyph): the gutter+margin positions, not
+       * leading empty content spans. */
+      '<span class="cell margin"></span><span class="cell margin"></span>' +
       '<span class="content">' +
       (cells || '&nbsp;') +
       (isLead ? '<span class="block-caret"></span>' : '') +
@@ -208,6 +224,7 @@ export class Assembler {
           '<div class="row gap">' +
           cell(' ', 'state') +
           cell(' ', 'deco') +
+          '<span class="cell margin"></span><span class="cell margin"></span>' +
           '<span class="content">' +
           charCell('◌', 'gapmark') +
           '</span></div>';
