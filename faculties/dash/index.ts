@@ -184,55 +184,59 @@ export async function runBoot(session: string, send: Emit): Promise<void> {
     send(f);
   };
   emit({ t: 'open', id: 'boot' });
-  let n = 0;
-  const re = (c: string) => emit({ t: 're', id: 'boot', F: nextF(), n: n++, tr: 0, c });
 
-  re(row('', '┌', HEADER));
+  // the boot block is 13 line SLOTS (n=0..12) — the byte-exact banner.
+  // A rung's dots fill by RE-emitting its own slot n (the client re-paints
+  // that row in place, ripple-down); the settled word lands on the same n.
+  const R0 = 3; // first rung slot
+  const reAt = (n: number, c: string) => emit({ t: 're', id: 'boot', F: nextF(), n, tr: 0, c });
+
+  reAt(0, row('', '┌', HEADER));
   await sleep(90);
-  re(row('', '│', '')); // blank row (decoration │ only — 2 chars of tape)
+  reAt(1, row('', '│', '')); // blank row (decoration │ only)
   await sleep(20);
-  re(row('', '│', SELFTEST));
+  reAt(2, row('', '│', SELFTEST));
   await sleep(100);
 
-  // draw each rung's window ONCE from its range (fixed for the duration of
-  // that boot); the six windows + the settle/ROM-MEM hold compose ~3 s total
+  // draw each rung's window ONCE from its range (fixed for this boot); the
+  // six windows + the settle/ROM-MEM hold compose the mock total
   const windows = RUNGS.map((r) =>
     Math.round(r.window[0] + Math.random() * (r.window[1] - r.window[0])),
   );
 
   for (let i = 0; i < RUNGS.length; i++) {
+    const n = R0 + i; // the rung's fixed line slot
     const windowMs = windows[i];
-    // ~12 ticks per rung. The sleep is window/12 minus the event-loop cost a
-    // frame itself costs, so the rung's WALL time ≈ its mock window (the
-    // pacing dials are mock constants — tune without re-architecting).
+    // ~12 ticks per rung; sleep = window/12 minus a frame's event-loop cost,
+    // so the rung's WALL time ≈ its mock window (dials are mock constants)
     const tick = Math.max(3, Math.floor(windowMs / DOTS) - 5);
 
-    re(rungRow(i, 0, SPIN[0], '')); // armed: spinner col 0, zero dots
+    reAt(n, rungRow(i, 0, SPIN[0], '')); // armed: spinner col 0, zero dots
     for (let d = 1; d <= DOTS; d++) {
       await sleep(tick);
-      re(rungRow(i, d, SPIN[d % 8], '')); // live dot fill
+      reAt(n, rungRow(i, d, SPIN[d % 8], '')); // live dot fill, same row
     }
 
-    // settle: word @ n.nms where n.nms is the REAL measured settle cost;
+    // settle: word @ n.nms (n.nms = the REAL measured settle cost);
     // FAULT/DEGRADED would carry the dot-field as full (12/12) first —
     // same shape, the register keeps a failure visible.
     const cost = realSettleCost();
-    re(rungRow(i, DOTS, '', RUNGS[i].word + ' @ ' + cost.toFixed(1) + 'ms'));
+    reAt(n, rungRow(i, DOTS, '', RUNGS[i].word + ' @ ' + cost.toFixed(1) + 'ms'));
     await sleep(50);
   }
 
-  await sleep(520); // the settle/ROM-MEM hold (composes the ~3 s total)
-  re(row('', '│', RULE));
+  await sleep(520); // the settle/ROM-MEM hold (composes the total)
+  reAt(9, row('', '│', RULE));
   await sleep(110);
-  re(row('', '│', ROM_MEM_ROW()));
+  reAt(10, row('', '│', ROM_MEM_ROW()));
   await sleep(160);
-  re(row('', '└', READY));
+  reAt(11, row('', '└', READY));
   await sleep(100);
 
-  // the caret row: pure whitespace tape. The client's block caret fades at
-  // its content-column lead — a client presentation element; NEVER a wire
-  // byte, NEVER a gutter byte.
-  re('   ');
+  // the caret row (slot n=12): pure whitespace tape. The client's block
+  // caret fades at its content-column lead — a client presentation element;
+  // NEVER a wire byte, NEVER a gutter byte.
+  reAt(12, '   ');
   emit({ t: 'close', id: 'boot' });
 }
 

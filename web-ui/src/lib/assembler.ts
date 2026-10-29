@@ -1,12 +1,12 @@
 // CARL-01 — the wire (CANON §4). One connection. Attach framing, then blocks:
 //   {t:'sseinit', session, tag} → {t:'ready', ok:true}
 //   {t:'open', id} / {t:'re', id, F, n, tr, c} / {t:'close', id}
-// Row tape: [state cell][decoration cell][2 padding][text]; \n and \b in-band.
-// PASS-FIRST: the server's pace is the actual pace — this client is the
-// assembler: per-id frame buffer keyed by n, ripple-insert at n (a late
-// frame lands on its own n, bumps nothing ahead), re-paint from the drip
-// point downward only — upstream rows are never touched. Gaps are marked
-// visibly (◌), never hidden.
+// Row tape: [state cell][decoration cell][text]; \n and \b in-band; the
+// 2-char content margin rides in the tape. PASS-FIRST: the server's pace is
+// the actual pace — this client is the assembler: per-id frame buffer keyed
+// by n, ripple-insert at n (a late frame lands on its own n, bumps nothing
+// ahead), re-paint from the drip point downward only — upstream rows are
+// never touched. Gaps are marked visibly (◌), never hidden.
 
 export interface WireFrame {
   t: 'sseinit' | 'ready' | 'open' | 're' | 'close';
@@ -41,6 +41,18 @@ function esc(s: string): string {
 
 export type SentState = 'edit' | 'sending' | 'ack' | 'done';
 
+/** gutter cell: empty → a space (pre-wrap keeps the uniform column grid) */
+function cell(ch: string, cls: string): string {
+  return '<span class="cell ' + cls + '">' + (ch === '' ? ' ' : esc(ch)) + '</span>';
+}
+
+/** one content char → a fixed-width cell (the pixel face's advances are NOT
+ * uniformly equal, so each glyph is drawn in its own 8px cell — the terminal
+ * grid, not the face's natural spacing) */
+function charCell(ch: string, extra: string): string {
+  return '<span class="c' + (extra ? ' ' + extra : '') + '">' + (ch === ' ' ? '' : esc(ch)) + '</span>';
+}
+
 export class Assembler {
   // (id) → (n) → raw tape c — the per-id frame buffer keyed by n
   private tape = new Map<string, Map<number, string>>();
@@ -55,8 +67,6 @@ export class Assembler {
   draft = '';
   sentText = '';
   sentState: SentState = 'edit';
-
-  phase: 'idle' | 'waiting' | 'working' | 'waiting2' = 'idle'; // emits on change
 
   apply(f: WireFrame): void {
     switch (f.t) {
@@ -93,15 +103,16 @@ export class Assembler {
           m = new Map();
           this.tape.set(id, m);
         }
-        const fresh = !m.has(n); // (id,n) dedup: replays are no-ops
+        const fresh = !m.has(n); // (id,n) dedup: a byte-identical replay is a no-op
+        const prev = m.get(n);
         m.set(n, f.c ?? '');
-        while (b!.rows.length <= n) b!.rows.push(null);
-        if (fresh) {
-          this.paintRow(b!, n);
-          // ripple: fill the slots below n (known → paint, else a visible
-          // gap); everything above n stays exactly as painted
-          for (let i = n + 1; i < b!.rows.length; i++) {
-            if (!b!.rows[i] && m.has(i)) this.paintRow(b!, i);
+        while (b.rows.length <= n) b.rows.push(null);
+        if (fresh || prev !== (f.c ?? '')) {
+          // paint n, and ensure slots below n are filled (known → paint,
+          // else a visible gap); everything above n stays exactly as painted
+          this.paintRow(b, n);
+          for (let i = n + 1; i < b.rows.length; i++) {
+            if (!b.rows[i] && m.has(i)) this.paintRow(b, i);
           }
         }
         break;
@@ -149,7 +160,7 @@ export class Assembler {
 
   /** POST /sse returned the 202 ack — the possibility is visible */
   ack(): void {
-    if (this.sentState === 'sending') this.sentState = 'ack'; // @ '202 ack'
+    if (this.sentState === 'sending') this.sentState = 'ack';
   }
 
   /** the reply block opened — the reply's gutter owns the state from here */
@@ -163,38 +174,29 @@ export class Assembler {
     let text = this.sentText;
     if (this.sentState === 'edit') {
       text = this.draft;
-      stateCell = '«';
     } else if (this.sentState === 'sending') {
       stateCell = spinGlyph;
-      text = this.sentText;
     }
-    const cells =
-      text
-        .split('')
-        .map((ch) => '<span class="c">' + (ch === ' ' ? '' : esc(ch)) + '</span>')
-        .join('') ||
-      '&nbsp;';
+    const cells = text.split('').map((ch) => charCell(ch)).join('');
     return (
       '<div class="row user-row">' +
-      '<span class="cell state">' + (stateCell === '' ? '&nbsp;' : esc(stateCell)) + '</span>' +
-      '<span class="cell deco">&nbsp;</span>' +
-      '<span class="content">' + cells + '</span>' +
-      '</div>'
+      cell(stateCell, 'state') +
+      cell(' ', 'deco') +
+      '<span class="content">' + cells + '</span></div>'
     );
   }
 
-  /** full screen HTML; the boot block's terminal blank row is the caret row */
+  /** one wire row → HTML; isLead marks the boot block's caret row */
   private rowHtml(r: Row, isLead: boolean): string {
-    const cells = r.text.split('').map((ch) => {
-      const s = ch === ' ' ? '&nbsp;' : esc(ch);
-      return '<span class="c">' + (ch === ' ' ? '' : s) + '</span>';
-    }).join('');
+    const cells = r.text.split('').map((ch) => charCell(ch)).join('');
     return (
       '<div class="row' + (isLead ? ' caret-row' : '') + '">' +
-      '<span class="cell state">' + (r.state === '' ? '&nbsp;' : esc(r.state)) + '</span>' +
-      '<span class="cell deco">' + (r.deco === '' ? '&nbsp;' : esc(r.deco)) + '</span>' +
-      '<span class="content">' + (cells === '' ? (isLead ? '' : '&nbsp;') : cells) + '</span>' +
-      '</div>'
+      cell(r.state, 'state') +
+      cell(r.deco, 'deco') +
+      '<span class="content">' +
+      (cells || '&nbsp;') +
+      (isLead ? '<span class="block-caret"></span>' : '') +
+      '</span></div>'
     );
   }
 
@@ -203,7 +205,12 @@ export class Assembler {
     for (let i = 0; i < b.rows.length; i++) {
       if (b.rows[i] === null) {
         h +=
-          '<div class="row gap"><span class="cell state">&nbsp;</span><span class="cell deco">&nbsp;</span><span class="content"><span class="c gapmark">◌</span></span></div>';
+          '<div class="row gap">' +
+          cell(' ', 'state') +
+          cell(' ', 'deco') +
+          '<span class="content">' +
+          charCell('◌', 'gapmark') +
+          '</span></div>';
         continue;
       }
       const r = b.rows[i];
@@ -218,19 +225,9 @@ export class Assembler {
   render(spinGlyph: string): string {
     let h = '';
     for (const b of this.blocks) {
-      const caretOn = b.id === BOOT_ID && b.closed && this.sentState === 'edit';
-      h += this.blockHtml(b, caretOn);
+      h += this.blockHtml(b, b.id === BOOT_ID && b.closed && this.sentState === 'edit');
     }
-    // the user's row (local paint from its own keystrokes)
     h += this.userRowHtml(spinGlyph);
-    if (this.sentState === 'edit' && this.draft === '') {
-      // the idle caret: a block at the content-column lead, fast fade in/out
-      // — a client presentation element, NEVER a wire byte, NEVER a gutter byte
-      h +=
-        '<div class="row caret-row"><span class="cell state">&nbsp;</span>' +
-        '<span class="cell deco">&nbsp;</span>' +
-        '<span class="content"><span class="c"><span class="block-caret"></span></span></span></div>';
-    }
     return h;
   }
 

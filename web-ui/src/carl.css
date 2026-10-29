@@ -1,14 +1,18 @@
 /* CARL-01 — Dark Studio palette + Glass TTY VT220 pixel face (CANON §1).
-   The screen is full-bleed; the terminal is a fixed 1-column grid so the
-   gutter cells and content column never break alignment. Font size is an
-   integer (16px) with line-height 1.0 — a pixel face + fractional CSS
-   shatters the grid (operator doctrine). */
+   Full-bleed dark terminal, no chrome. The terminal is a fixed 8px column
+   grid: the two gutter cells and every content glyph sit in equal 8px cells
+   (the face's ink advances are not uniformly equal, so each glyph is drawn
+   in its own cell — the terminal grid, not the font's natural spacing).
+   Integer font-size 16px, line-height 1.0 (16px pitch) — a pixel face +
+   fractional CSS shatters the grid (operator doctrine). */
 
 :root {
   --bg: #00040b;
   --text: #0981b4;
   --fault: #db0000;
   --dim: #682a00;
+  --col: 8px;
+  --pitch: 16px;
 }
 
 @font-face {
@@ -37,16 +41,14 @@ body,
   background: var(--bg);
   font-family: 'Glass', 'Courier New', monospace;
   font-size: 16px;
-  line-height: 1.0;
+  line-height: var(--pitch);
   letter-spacing: 0;
   color: var(--text);
-  /* VT220 pixel face: 8px advance at 16px → unified 1-column grid */
-  --col: 8px;
   position: relative;
 }
 
 .screen {
-  padding: 24px 32px 40px 32px;
+  padding: 24px 32px 48px 32px;
   max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
@@ -62,8 +64,9 @@ body,
 
 .row {
   display: flex;
+  align-items: flex-start;
+  height: var(--pitch);
   white-space: pre;
-  height: 16px;
 }
 
 /* the two coding cells: every row has both, so alignment never breaks */
@@ -71,7 +74,9 @@ body,
   display: inline-block;
   width: var(--col);
   flex: 0 0 var(--col);
+  text-align: left;
   overflow: visible;
+  white-space: pre;
 }
 .cell.state {
   color: var(--text);
@@ -80,70 +85,53 @@ body,
   color: var(--dim);
 }
 
-/* gutter col 0: spinner / « / » — the state cell */
-.cell.state .spin {
-  color: var(--dim);
-}
-
-/* gutter col 1: the box frame during boot only (┌ │ └) */
-.cell.deco {
-  color: var(--dim);
-}
-
-.text {
-  color: var(--text);
-  white-space: pre;
-}
-
+/* content field: a flex row of fixed-width glyph cells */
 .content {
   display: inline-flex;
   white-space: pre;
   color: var(--text);
+  min-height: var(--pitch);
 }
 .c {
   display: inline-block;
   width: var(--col);
   flex: 0 0 var(--col);
+  height: var(--pitch);
+  line-height: var(--pitch);
   text-align: left;
   overflow: visible;
+  white-space: pre;
 }
 
 /* a visible gap (in-flight (id,n)) — never hidden */
 .gapmark {
   color: var(--dim);
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
-/* the block caret: a block the width of one column, fast fade in/out.
-   Client-side presentation only — never a wire byte, never a gutter byte. */
-.caret-row {
-  position: relative;
-}
+/* the block caret: one column wide (= a content cell), fast fade in/out.
+   A client presentation element only — never a wire byte, never a gutter
+   byte. Fast pace ≈ 240ms on / 400ms off. */
 .block-caret {
   display: inline-block;
-  width: 1ch;
-  height: 16px;
+  width: var(--col);
+  height: var(--pitch);
   background: var(--text);
   vertical-align: top;
-  animation: carl-caret 620ms steps(1, end) infinite;
+  animation: carl-caret 640ms steps(1, end) infinite;
 }
 
 @keyframes carl-caret {
   0% {
     opacity: 1;
   }
-  55% {
+  38% {
     opacity: 1;
   }
-  56% {
+  39% {
     opacity: 0;
   }
   100% {
     opacity: 0;
   }
-}
-
-/* fault text (the settle word carries FAULT @ n.nms) */
-.text:has(> .fault) {
-  color: var(--fault);
 }
