@@ -28,13 +28,16 @@ const MIME: Record<string, string> = {
 async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   let file = url.pathname === '/' ? '/index.html' : url.pathname;
-  let body: string;
+  // binary-safe: woff2 must round-trip as a Buffer (a utf-8 read mangles it)
+  let body: Buffer;
+  let fellBack = false;
   try {
-    body = await readFile(path.join(WEB_BUILD, file), 'utf-8');
+    body = await readFile(path.join(WEB_BUILD, file));
   } catch {
-    body = await readFile(path.join(WEB_BUILD, 'index.html'), 'utf-8'); // SPA fallback
+    body = await readFile(path.join(WEB_BUILD, 'index.html')); // SPA fallback
+    fellBack = true;
   }
-  const ext = path.extname(file.toLowerCase());
+  const ext = path.extname((fellBack ? 'index.html' : file).toLowerCase());
   res.writeHead(200, {
     'content-type': MIME[ext] ?? 'application/octet-stream',
     'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=300',
