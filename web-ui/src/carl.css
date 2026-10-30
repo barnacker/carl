@@ -1,24 +1,31 @@
-/* CARL-01 v0.1.2 — v3 renderer (lock 2026-10-30).
-   Full-bleed dark terminal. The ONE scroll container is .screen; every
-   line is div.row = span.gutter (pure-CSS ::before, class-driven) +
-   span.content (white-space:pre, the server's c byte-for-byte).
-   Gutter = TEXT color (F5 refusal: the dim #682A00 is NEVER painted here).
-   The old 8px per-char cell grid is GONE (the wire is content-only; the
-   face's advances ARE the grid — the width gate G1 is the safety net). */
+/* CARL-01 v0.1.3 — Form C (lock 2026-10-30, spec-of-record §5/§8).
+   Full-bleed dark terminal. .screen = 100vw x 100vh, overflow hidden, flex
+   column. .history = ONE read-only <pre>, white-space:pre, the ONLY
+   scroller (flex 1 1 auto, min-height 0, overflow-y auto); the 2-char
+   gutter is IN THE TEXT STREAM (col0 = state/classifier, col1 =
+   decorator), NOT a CSS cell and NOT a per-line DOM cell. .input = the
+   ONE writable node below the pre (the native caret; NO duplicate
+   block-cursor div). The ONE live cell (.livecell, absolutely-positioned,
+   one gutter column wide) rides the pre and carries the CSS 8-braille
+   @keyframes spinner (steps(8) 640ms) — NO JS timer.
+   Gutter = TEXT color (F5: the dim #682A00 is NEVER painted here — it
+   exists in the palette as border-only, never-typography).
+   The old 8px per-char cell grid and the per-row div/span DMT are GONE:
+   the face's advances ARE the grid; G1 is the safety net. */
 
 :root {
-  --fh: 20px;   /* per-row line height */
-  --gc: #682a00; /* border-only palette entry (F5); NO painted text ever */
-  --tx: #0981b4; /* gutter = text color (operator F5: the dim is never painted) */
+  --fh: 20px;   /* per-row line pitch (G2 + the live cell's y) */
+  --gc: #682a00; /* F5: border-only palette entry; NEVER painted as text */
+  --tx: #0981b4; /* all text + gutter = the operator's text color */
   --bg: #00040b;
 }
 
 @font-face {
   font-family: 'Glass';
   src: url('/assets/Glass_TTY_VT220.woff2') format('woff2');
-  /* G4: font-display block (NOT swap) — kill the mid-boot metric shift that
-     would break the guillemet/rung alignment. The post-load width assert
-     (G1 in App.svelte) measures the gutter only after this gate. */
+  /* G4: font-display block (NOT swap) — no mid-boot metric shift. The
+     G1 post-load width assert (App.svelte) measures the gutter after
+     this gate. */
   font-display: block;
 }
 
@@ -33,90 +40,90 @@ html, body, #app {
   line-height: var(--fh);
 }
 
-/* THE ONE scroll container (O(rows), appends only) */
+/* THE SCREEN: full-bleed, flex column, NEVER scrolls */
 .screen {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;                 /* the container NEVER scrolls */
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
   font-family: 'Glass', monospace;
   font-size: 16px;
   line-height: var(--fh);
-  white-space: pre;
-  overflow: auto;
-  background: var(--bg);
-  position: absolute;
-  inset: 0;
+  color: var(--tx);
+  position: relative;
+}
+
+/* THE ONE READ-ONLY TEXT CONTROL: the sole scroller */
+.history {
+  flex: 1 1 auto;                   /* grows; yields to the input's cap */
+  min-height: 0;                    /* the flex floor (shrink allowed) */
+  overflow-y: auto;                 /* the ONLY scroller in the tree */
+  position: relative;               /* .livecell is positioned over the pre */
   scrollbar-width: none;
 }
-.screen::-webkit-scrollbar { display: none; }
-
-/* one line = a flex row with the gutter as its first cell */
-.row {
-  display: flex;
-  align-items: flex-start;
-  line-height: var(--fh);
-}
-
-/* Gutter cell: first flex cell, class-driven ::before. NO gutter byte in
-   the content node — the glyph is 100% CSS. spin = one braille glyph,
-   animated by @keyframes (8 frames, 640ms, steps(8), infinite). */
-.gutter {
-  flex: 0 0 var(--fh);
-  color: var(--tx);        /* TEXT color (F5: the dim #682A00 is never painted) */
-  white-space: pre;
-  line-height: var(--fh);
-}
-.gutter::before {
-  content: '';
-  display: inline-block;
-  width: var(--fh);
-  white-space: pre;
-}
-.gutter.frame-top::before { content: '\250C'; }  /* ┌ */
-.gutter.frame-mid::before { content: '\2502'; }  /* │ */
-.gutter.frame-bot::before { content: '\2514'; }  /* └ */
-/** The rung row: the frame bar AND the spinner share the gutter cell — the
-    spin dots ride over the bar (the bar is the fallback glyph the spinner
-    cycles through). */
-.gutter.frame-mid.spin::before {
-  content: '\2502';
-  animation: spin 640ms steps(8) infinite;
-}
-.gutter.usr::before       { content: '\00AB '; } /* « + space */
-.gutter.ans::before       { content: '\00BB '; } /* » + space */
-.gutter.spin::before {
-  content: '\2801';
-  animation: spin 640ms steps(8) infinite;
-}
-
-/* THE 8-BRAILLE CYCLE (no JS timer — CSS only) */
-@keyframes spin {
-  0%   { content: '\2801'; }
-  12.5%{ content: '\2802'; }
-  25%  { content: '\2804'; }
-  37.5%{ content: '\2808'; }
-  50%  { content: '\2810'; }
-  62.5%{ content: '\2820'; }
-  75%  { content: '\2840'; }
-  87.5%{ content: '\2880'; }
-  100% { content: '\2801'; }
-}
-
-/* Content cell: white-space:pre, the server's c byte-for-byte. Shrink-only
-   (never stretch) so a short line left-aligns at the gutter and never owns
-   the row (a content span must be exactly its c's width, not the full row). */
-.content {
-  white-space: pre;
+.history::-webkit-scrollbar { display: none; }
+pre.tapes {
+  display: block;
+  white-space: pre;                 /* spaces + LF byte-exact (R4) */
   color: var(--tx);
-  flex: 0 1 auto;
-  min-width: 0;
+  font-family: inherit;
+  font-size: 16px;
   line-height: var(--fh);
+  font-variant-ligatures: none;
 }
 
-/* The ACTIVE TAIL: the single-line textarea (the only writable node).
-   Native block caret (caret-shape block, fallback I-beam) — NOT a synced
-   block-cursor div. */
+/* THE ONE LIVE CELL: absolutely-positioned, one gutter column wide, at
+   column 0 of the active row. Carries the 8-braille CSS spinner (NO JS
+   timer). .spin is appended while a selftest .mode=='active' (a boot rung
+   or a turn's THRU window) and dies on pass OR first reply char. */
+.livecell {
+  position: absolute;
+  left: 0;
+  top: 0;                          /* y set inline = row * --fh */
+  width: var(--fh);                 /* exactly one grid column (16px face) */
+  height: var(--fh);
+  display: none;
+  pointer-events: none;
+  color: var(--tx);                 /* F5: TEXT color, never the dim */
+  white-space: pre;
+  line-height: var(--fh);
+  z-index: 2;
+}
+.livecell.spin::after {
+  content: '\2801';
+  display: block;
+  width: var(--fh);
+  height: var(--fh);
+  line-height: var(--fh);
+  text-align: left;
+  animation: spin 640ms steps(8) infinite;   /* THE 8-BRAILLE CYCLE */
+}
+@keyframes spin {
+  0%    { content: '\2801'; }
+  12.5% { content: '\2802'; }
+  25%   { content: '\2804'; }
+  37.5% { content: '\2808'; }
+  50%   { content: '\2810'; }
+  62.5% { content: '\2820'; }
+  75%   { content: '\2840'; }
+  87.5% { content: '\2880'; }
+  100%  { content: '\2801'; }
+}
+
+/* THE INPUT: the ONLY writable node (flex 0 0 auto), below the history,
+   in normal flow — NOT sticky, NOT fixed. Variable height capped ~40vh
+   with its own overflow-y above the cap; the history yields (flex
+   shrink) and the input never scrolls the container. Native caret
+   (caret-shape block, fallback I-beam) in the text color. */
 .input {
+  flex: 0 0 auto;
   display: block;
   width: 100%;
   height: var(--fh);
+  max-height: 40vh;
+  overflow-y: auto;
   line-height: var(--fh);
   font-family: inherit;
   font-size: 16px;
@@ -127,10 +134,11 @@ html, body, #app {
   resize: none;
   background: transparent;
   color: var(--tx);
-  caret-color: var(--tx);
-  caret-shape: block;   /* fallback: I-beam where unsupported */
+  caret-color: var(--tx);            /* the native block caret's color */
+  caret-shape: block;                /* fallback: I-beam where unsupported */
   outline: 0;
   white-space: pre;
-  overflow: hidden;
+  scrollbar-width: none;
   border: 0;
 }
+.input::-webkit-scrollbar { display: none; }

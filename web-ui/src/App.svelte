@@ -1,166 +1,290 @@
 <script lang="ts">
-  // CARL-01 v0.1.2 — rewire (lock 2026-10-30) + v3 renderer in one module.
+  // CARL-01 v0.1.3 — Form C (spec-of-record 2026-10-30, gate §5/§8).
   //
-  // Element tree (EXACT, per lock):
-  //   div.screen  — the ONE scroll container, O(rows), appends only.
-  //   Each line   — div.row containing span.gutter (first flex cell) and
-  //                 span.content (white-space:pre, the server's c byte-for-byte).
-  //   ACTIVE TAIL — div.row containing span.gutter (empty) plus textarea.input
-  //                 (spellcheck=false, autocomplete=off, maxlength=500, rows=1).
+  // Shape EXACT:
+  //   .screen  (100vw x 100vh, overflow hidden, flex column, bg #00040b)
+  //   ▸ .history — ONE read-only <pre> (white-space:pre; flex 1 1 auto;
+  //     min-height 0; overflow-y auto) = the ONLY scroller. Its ONE text
+  //     node is the whole console: every line is a 2-char IN-STREAM GUTTER
+  //     (col 0 = state/classifier, col 1 = decorator) + content — byte-
+  //     exact (spaces + LF respected). NO per-row div, NO per-line span, NO
+  //     8px grid. In-place re-issue (dot fill / settle / drip) rewrites the
+  //     line's substring IN THE ONE text node, keyed by the ROW TABLE
+  //     (row-id → line index); element identity = the table entry + the
+  //     live cell re-anchored.
+  //   ▸ .livecell — exactly ONE absolutely-positioned node, one gutter
+  //     column wide, at column 0 of the active row (left 0, top row*LH).
+  //     Carries the CSS @keyframes 8-braille steps(8) 640ms spinner WHILE
+  //     any selftest .mode=='active' (a boot rung or a turn's THRU window);
+  //     dies on pass OR first reply char. NO JS timer.
+  //   ▸ .input  — the ONE writable node below the pre: one <textarea>
+  //     (variable height capped ~40vh + own overflow-y auto, native block
+  //     caret, maxlength 500, spellcheck false, autocomplete off).
   //
-  // Gutter is PURE CSS ::before on the gutter cell, class-driven:
-  //   frame-top = U+250C   frame-mid = U+2502   frame-bot = U+2514
-  //   usr = U+00AB + space (the user's line ONLY)
-  //   ans = U+00BB + space (the reply's line)
-  //   spin = U+2801 animated by @keyframes (8 braille frames, 640ms, steps(8), infinite)
-  // No gutter byte ever rides in the wire's c. c is content-only: spaces and
-  // content glyphs. There is exactly one spin cell at any time (guarded by
-  // wire order: one block in flight per session).
+  // STATE TREE is the wire: the snapshot {t:'kd',snap:{path:value}} is the
+  // full folded tree (the row-map source); waves {t:'kd',tick,seq_end,
+  // dirty:{handle:value}} on the 60Hz clock, coalesced per key (hot
+  // selftest.progress rides every wave; a no-op wave — empty dirty — still
+  // advances seq: phase lock). tx chunks {t:'tx',seq,tag,c} = CONVERSATION
+  // ONLY: zero c during boot; the banner RENDERS from carl.version + the
+  // selftest progress/mode/ms (12 dots per rung from progress, 'OK @ X.X
+  // ms' from {pass, ms}; the client formats, the server sends values).
   //
-  // rAF-throttled textContent flush: per row, at most one DOM mutation per
-  // frame. In-place re-issue (dot fill / settle word) is a SET on the same
-  // content node — the row's .spin survives because Svelte's key = row id
-  // (G3: element identity is load-bearing, the dot-fill row is the SAME node).
+  // Two-writer: the tree render writes the banner lines; the c caption
+  // dumps into the same ONE text node in order. Enter (not shift+enter)
+  // freezes the draft into a usr row (col 0 = left guillemet), clears, and
+  // POSTs (echo-on-freeze, not live); on reply close-equivalent the tail
+  // re-arms + focus() in the SAME rAF as scroll-to-bottom.
   //
-  // Caret: native textarea caret, caret-color + caret-shape block (fallback
-  // I-beam) — NOT a synced block-cursor div (rejected).
-  //
-  // Echo is written on Enter-freeze (read value → freeze as a read-only usr
-  // row → clear textarea → POST). Live typing stays IN the textarea; it never
-  // lands on a different row than the caret (same node — structurally so).
-  //
-  // G2 (the rAF at-bottom scroll guard): on append, set scrollTop to
-  // scrollHeight ONLY when the user is already at the bottom (within ~one
-  // line), in the SAME rAF as the append. overflow-anchor is NEVER set to
-  // none (that would lose the intrinsic anchor).
-  //
-  // G1 (guard 1, the TOP byte-exact width gate): AFTER the font loads (G4:
-  // font-display block, not swap), measure the rendered advance width of
-  // every gutter class glyph (U+250C, U+2502, U+2514, U+00AB, U+00BB, U+2801)
-  // AND the content cell (2ch) in the loaded Glass TTY VT220. Each must be
-  // exactly 1ch (1 grid column = 16px at font-size 16px); 2ch = 32px. If ANY
-  // is half or full width, report it (route to a lane, no partial ship).
+  // G2: scroll-to-bottom only when at-bottom (within one line pitch), same
+  // rAF as the append; overflow-anchor is NEVER none.  G4: font-display
+  // block (carl.css).  G1: post-font-load, measure a 2-char gutter span,
+  // the live-cell glyph and one content char in the loaded face; assert
+  // 2-gutter == live-cell*2 == 2x content char (half-grid face); fail =
+  // console.error + NO ship (no font swap — operator-locked face).  F5:
+  // dim #682A00 NEVER painted (the gutter paints #0981b4).
 
   import { onMount } from 'svelte';
   import './carl.css';
 
-  interface Row {
-    id: string;      // Svelte key (G3)
-    c: string;       // content, byte-for-byte (wire c, content-only)
-    cls: string;     // the gutter class (frame-top/mid/bot | usr | ans | spin | '')
-  }
+  const D = '\u00B7';   // the 12-dot self-test field byte (in-stream content)
+  const LH = 20;        // line pitch, px — the locked --fh value (G2 + live cell y)
+  const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
+  const RUNG_LABEL = ['DASH', 'IMMU', 'CRTX', 'TELE', 'NERV', 'LLM1'];
+  const RKEY = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
+  const DOTS = 12;      // run-g: the dot field rendered from progress
 
-  let ready = false;
-  let rows: Row[] = [];
   let draft = '';
-  let usrSeq = 0;         // deterministic user row id counter
-  let sid = '';           // the wire session id (echo POST targets it)
-  let screenEl: HTMLDivElement | null = null;
+  let sid = '';
+  let text = '';                                  // the ONE text node content
+  let preEl: HTMLPreElement | null = null;
   let inputEl: HTMLTextAreaElement | null = null;
-  let arming = false;     // re-arm the tail: focus() in the same rAF as scroll-to-bottom
-  let atBottom = true;    // G2 input: live from the container's scroll event
+  let livecellEl: HTMLDivElement | null = null;
+  let arming = false;
+  let booted = false;
+  let turning = false;     // a turn's ANS row is open (drip in flight)
+  let turnLine = -1;
+  let usrSeq = 0;
 
-  // --- the wire in ----------------------------------------------------------
+  // the server tree (client fold: snapshot + kd waves; values never overwrite)
+  const tree = new Map<string, string | number | null>();
+  const rowTable = new Map<string, number>();     // row-id → line index (table)
+  const live = { row: -1, kind: '' as '' | 'boot' | 'turn' };
 
-  function bootCls(id: string, c: string): string {
-    // The boot banner is a fixed 13-slot tape (n=0..12); the gutter position
-    // is DERIVED CLIENT-SIDE from the slot index (brief: "Gutter is
-    // client-derived" — the wire's m carries only the state, no frame class):
-    //   n=0  → frame-top ┌   n=1..10 → frame-mid │   n=11 → frame-bot └
-    //   n=12 → the caret lead row (no gutter char — the tail owns it)
-    // Rungs (n=3..8): the slot shows the .spin braille cell WHILE its dot
-    // field is still filling (the spinner lives in the gutter, col 0 of the
-    // rung row — D9). Once the settle word lands (the dots have fully
-    // collapsed into the word) the gutter flips to the plain frame bar.
-    // Element identity survives all of this: key = row id (G3), so the spin
-    // class rides the SAME node across every dot-fill re-issue.
-    const m = /^boot:(\d+)$/.exec(id);
-    if (!m) return '';
-    const n = Number(m[1]);
-    if (n === 0) return 'frame-top';
-    if (n === 11) return 'frame-bot';
-    if (n >= 3 && n <= 8) {
-      // the rung row: the spinner (col 0 of the gutter cell) is alive only
-      // while the dot field is mid-fill (1..11 dots). Armed (0 dots) and
-      // settled (the dots collapsed into the settle word) the gutter shows
-      // the plain frame bar. Same node across every re-issue (G3 key = id) —
-      // the .spin class rides it without element re-creation (D9).
-      const dots = (c.match(/\u00B7/g) || []).length;
-      return dots >= 1 && dots < 12 ? 'frame-mid spin' : 'frame-mid';
-    }
-    return 'frame-mid';
+  // --- the wave in (kd = tree truth; tx = the ONLY channel) --------------------------
+
+  function onEvent(e: MessageEvent): void {
+    let f: Record<string, unknown>;
+    try { f = JSON.parse(typeof e.data === 'string' ? e.data : ''); } catch { return; }
+    if (f.t === 'kd') onWave(f);
+    else if (f.t === 'tx') onChunk(f);
   }
 
-  /** the wire m marker → the gutter class (non-boot rows only; mapping is
-      locked: USR → usr, ANS → ans, BOOT/THRU → spin, CARET/IDLE → '').
-      A hostile byte in m maps to the default '' — cannot inject a class. */
-  function clsFor(m: string | undefined): string {
-    switch (m ?? '') {
-      case 'USR': return 'usr';
-      case 'ANS': return 'ans';
-      case 'BOOT':
-      case 'THRU': return 'spin';
-      case 'CARET':
-      case 'IDLE': return '';
-      default: return '';
+  function onWave(f: Record<string, unknown>): void {
+    const snap = f.snap as { [p: string]: string | number | null } | undefined;
+    const dirty = f.dirty as { [k: string]: string | number | null } | undefined;
+    if (snap) {
+      for (const p of Object.keys(snap)) tree.set(p, snap[p]);
+      foldSnapshot(snap); // the handle→path map (stable) for dirty waves
     }
-  }
-
-  function applyFrame(data: string): void {
-    let f: { t: string; session?: string; tag?: string; ok?: boolean; id?: string; n?: number; c?: string; m?: string };
-    try {
-      f = JSON.parse(data);
-    } catch {
-      return; // a malformed frame is dropped, never fatal
-    }
-    if (f.t === 'sseinit') {
-      if (typeof f.session === 'string') sid = f.session; // the echo POST targets the wire session
-      return;
-    }
-    if (f.t === 'ready') { ready = true; return; }
-    if (!ready) return;
-    if (f.t === 'open' && f.id) {
-      // the block is born: per-id n starts at 0; the block's open/close
-      // frames bind its id (wire order: one block in flight per session)
-      return;
-    }
-    if (f.t === 're' && f.id !== undefined) {
-      const id = (f.id === 'boot' ? 'boot' : f.id) + ':' + (f.n ?? 0);
-      const c = f.c ?? '';
-      const cls = f.id === 'boot' ? bootCls(id, c) : clsFor(f.m);
-      const idx = rows.findIndex((r) => r.id === id);
-      if (idx >= 0) {
-        // IN-PLACE re-issue (dot fill / settle / drip) — the keyed node
-        // survives (G3 element identity) and Svelte patches the content
-        // span in the same render pass. The gutter's .spin rides along —
-        // the class re-derives from the same node, never re-created.
-        rows[idx] = { ...rows[idx], c, cls };
-      } else {
-        // APPEND ONLY (the tail of the one scroll container)
-        rows = [...rows, { id, c, cls }];
+    if (dirty) {
+      // the WAVE is {handle: value}; the client folds it through the
+      // snapshot's handle→path map (stable handles, assigned at register).
+      for (const k of Object.keys(dirty)) {
+        const p = handleToPath.get(k);
+        if (p !== undefined) tree.set(p, dirty[k]);
       }
-      // G2: the append and the scroll check happen in the SAME rAF — pull
-      // only when the user is already at the bottom, never set
-      // overflow-anchor: none.
-      atBottomHeuristic();
-      return;
     }
-    if (f.t === 'close' && f.id) {
-      // freeze the block and re-arm the tail: focus() in the SAME rAF as
-      // scroll-to-bottom (the two-writer close rule)
-      arming = true;
-      atBottomHeuristic();
-      return;
+    afterWave();
+  }
+
+  // handle→path (stable; built from the snapshot at connect)
+  const handleToPath = new Map<string, string>();
+  function foldSnapshot(snap: { [p: string]: string | number | null }): void {
+    handleToPath.clear();
+    let h = 1;
+    for (const p of Object.keys(snap)) handleToPath.set(String(h++), p);
+  }
+
+  function afterWave(): void {
+    if (!booted && tree.has('carl.version')) {
+      booted = true;
+      writeBanner();
+    }
+    if (booted) paintBanner();
+    placeLiveCell();
+    scheduleScroll();
+  }
+
+  // --- the banner (client-rendered; zero c during boot) --------------------------------
+
+  function writeBanner(): void {
+    for (let i = 0; i < 12; i++) setLine('boot:' + i, i, bodyOf(i));
+  }
+
+  function paintBanner(): void {
+    for (let i = 0; i < 12; i++) setLine('boot:' + i, i, bodyOf(i));
+  }
+
+  function bodyOf(i: number): string {
+    const ver = String(tree.get('carl.version') ?? '');
+    switch (i) {
+      case 0: return '  ' + HEAD_L + ' ' + ver;
+      case 1: return '   ';
+      case 2: return '   - SELF-TEST ----------------------';
+      case 3: return rungBody(0);
+      case 4: return rungBody(1);
+      case 5: return rungBody(2);
+      case 6: return rungBody(3);
+      case 7: return rungBody(4);
+      case 8: return rungBody(5);
+      case 9: return '   ------------------------------------';
+      case 10: {
+        const rom = tree.get('carl.rom');
+        const mem = tree.get('carl.mem');
+        const r = (rom === null || rom === undefined) ? 'ROM --k' : 'ROM ' + rom + 'k';
+        const m = (mem === null || mem === undefined) ? 'MEM --.-MB' : 'MEM ' + Number(mem).toFixed(1) + 'MB';
+        return '   ' + r + ' \u00B7 ' + m;
+      }
+      case 11: return '   READY.';
+      default: return '    ';
     }
   }
 
-  function connect(): void {
-    // the session is minted locally; the server keys everything on it
-    // (SSE in-order, append-only, per-id n)
-    sid = 'v2-' + Math.random().toString(36).slice(2, 10);
-    const e = new EventSource('/sse?session=' + encodeURIComponent(sid) + '&tag=terminal');
-    e.onmessage = (ev) => applyFrame(ev.data);
-    // onerror: EventSource reconnects by itself; late frames re-target by (id, n)
+  function rungBody(i: number): string {
+    const sector = 'carl.carl.selftest.' + RKEY[i];
+    const mode = tree.get(sector + '.mode');
+    const prog = Number(tree.get(sector + '.progress') ?? 0);
+    const ms = tree.get(sector + '.ms');
+    let field: string;
+    if (mode === 'active') {
+      const dots = Math.min(DOTS, Math.max(0, Math.round((Math.min(100, prog) / 100) * DOTS)));
+      field = D.repeat(dots) + ' '.repeat(DOTS - dots);
+    } else if (mode === 'pass' && ms !== null && ms !== undefined) {
+      field = 'OK @ ' + Number(ms).toFixed(1) + 'ms';
+    } else if (mode === 'fail') {
+      field = 'FAULT';
+    } else {
+      field = ' '.repeat(DOTS);
+    }
+    return '   > ' + RUNG_LABEL[i] + '  ' + field;
+  }
+
+  // --- the ONE text node: append + in-place re-issue (row-table keyed) ----------------
+
+  function setLine(id: string, lineIdx: number, content: string): void {
+    const lines = text.split('\n');
+    while (lines.length <= lineIdx) lines.push('  ');
+    const g = gutterFor(id, lineIdx);            // the 2-char IN-STREAM gutter
+    lines[lineIdx] = g + content;
+    text = lines.join('\n');
+    rowTable.set(id, lineIdx);
+  }
+
+  function gutterFor(id: string, lineIdx: number): string {
+    // R1/R2: col0 = state (space — the live cell overlays col0 of the active
+    // row), col1 = decorator (the boot box; blank elsewhere)
+    if (id.startsWith('boot:')) {
+      const d = lineIdx === 0 ? '\u250C' : lineIdx === 11 ? '\u2514' : '\u2502';
+      return ' ' + d;   // col0 blank + col1 the frame bar
+    }
+    if (id.startsWith('usr:')) return '\u00AB ';  // col0 = the user classifier
+    if (id === 'reply') return '\u00BB ';         // col0 = the reply classifier
+    return '  ';
+  }
+
+  function lineCount(): number {
+    return text === '' ? 0 : text.split('\n').length;
+  }
+
+  // --- the live cell (ONE node; the CSS spinner; NO JS timer) ---------------------------
+
+  function placeLiveCell(): void {
+    const lc = livecellEl;
+    if (!lc) return;
+    let row = -1;
+    for (let i = 0; i < 6; i++) {
+      if (tree.get('carl.carl.selftest.' + RKEY[i] + '.mode') === 'active') { row = 3 + i; break; }
+    }
+    if (row < 0 && turning) row = turnLine;   // the turn's THRU row (until first char)
+    live.row = row;
+    lc.classList.toggle('spin', row >= 0);
+    if (row < 0) { lc.style.display = 'none'; return; }
+    lc.style.display = 'block';
+    lc.style.top = (row * LH) + 'px';
+  }
+
+  // --- conversation: c dumps IN ORDER (no char-counting) ---------------------------------
+
+  function onChunk(f: Record<string, unknown>): void {
+    const tag = String(f.tag ?? '');
+    const c = typeof f.c === 'string' ? f.c : '';
+    if (tag === 'TURN_START') {
+      // open the reply row (the reply gutter: col0 = the right guillemet);
+      // the live cell keeps spinning col 0 while the THRU window runs
+      const i = lineCount();
+      turning = true;
+      turnLine = i;
+      setLine('reply', i, '');
+      scheduleScroll(true);
+      return;
+    }
+    if (tag === 'ANS' && c) {
+      let lines = text.split('\n');
+      if (!turning || turnLine < 0) {
+        const i = lines.length;
+        turning = true;
+        turnLine = i;
+        lines.push('\u00BB ');
+        text = lines.join('\n');
+      }
+      const cur = lines[turnLine] || '\u00BB ';
+      lines[turnLine] = cur.slice(0, 2) + cur.slice(2) + c; // append IN ORDER
+      text = lines.join('\n');
+      scheduleScroll(true);
+      return;
+    }
+    if (tag === 'DONE') {
+      turning = false;
+      // close-equivalent: re-arm the tail + focus() in the SAME rAF as
+      // scroll-to-bottom (R5)
+      arming = true;
+      scheduleScroll(true);
+    }
+  }
+
+  // --- G2: the at-bottom guard (same rAF as any append) ------------------------------------
+
+  let raf = 0;
+  function scheduleScroll(force = false): void {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const el = preEl;
+      if (el) {
+        const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
+        if (force || dist < LH) el.scrollTop = el.scrollHeight; // one-line pitch
+      }
+      if (arming) { arming = false; inputEl?.focus(); }
+      if (!g1Done) void gate();
+    });
+  }
+
+  let g1Done = false;
+
+  // --- Enter-freeze (preventDefault; echo on freeze; not live) --------------------------------
+
+  function onKey(e: KeyboardEvent): void {
+    if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) {
+      e.preventDefault();
+      const msg = draft;
+      if (msg.length > 0) {
+        usrSeq += 1;
+        setLine('usr:' + usrSeq, lineCount(), msg); // freeze as a read-only row
+        sendMsg(msg);                               // POST; the server echoes USR
+      }
+      draft = ''; // clear; the native caret stays in the textarea
+    }
   }
 
   function sendMsg(msg: string): void {
@@ -168,158 +292,52 @@
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ msg, session: sid }),
-    })
-      .catch(() => { /* wire down: the reply just doesn't come (mock brain) */ });
+    }).catch(() => { /* wire down: the reply just doesn't come (mock brain) */ });
   }
 
-  // --- G2: the at-bottom scroll guard (same rAF as the append) --------------
-  // On every append (and on close), pull to the bottom ONLY when the user is
-  // already at the bottom (within ~one row pitch). The user mid-scroll
-  // reading upward is NOT yanked. overflow-anchor is NEVER set to none (it
-  // would lose the intrinsic anchor — this guard is the ONLY axis).
-
-  let raf = 0;
-  function atBottomHeuristic(): void {
-    if (raf) return;
-    raf = requestAnimationFrame(() => {
-      raf = 0;
-      const el = screenEl;
-      if (!el) return;
-      // "within ~one row" = within the row pitch (20px)
-      const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
-      atBottom = dist < 20;
-      if (atBottom) el.scrollTop = el.scrollHeight;
-      // re-arm the tail on close: focus() in the SAME rAF as scroll-to-bottom
-      if (arming) {
-        arming = false;
-        if (inputEl) inputEl.focus();
-      }
-      // G1 width gate (once, after the font has painted)
-      if (!g1Done) void gate();
-    });
+  function connect(): void {
+    sid = 'v3-' + Math.random().toString(36).slice(2, 10);
+    const e = new EventSource('/sse?session=' + encodeURIComponent(sid) + '&tag=terminal');
+    e.onmessage = onEvent;
   }
 
-  // --- the Enter-freeze (two-writer, echo-on-freeze) -------------------------
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Enter' && !e.isComposing) {
-      e.preventDefault();
-      const msg = draft; // read the value, then freeze (never live-typed)
-      if (msg.length > 0) {
-        usrSeq += 1;
-        rows.push({ id: 'usr:' + usrSeq, c: msg, cls: 'usr' });
-        atBottomHeuristic(); // the append + scroll check share this rAF
-      }
-      draft = ''; // clear the tail; the caret stays in it
-      sendMsg(msg); // POST; the reply's spin cell is opened by the server
-    }
-  }
-
-  // --- G1: the byte-exact width gate (guard 1) -------------------------------
-  // Post-font-load (G4: font-display block), measure the rendered advance in
-  // the LOADED Glass TTY VT220: the three gutter-boxed-marks visible in the
-  // face (guillemets, plus the face's own column advance, which headlines
-  // the twoch content cell), and the agents' anchored glyph. This face —
-  // a 322-cmap monospace grid with uniform 500/1000 advances — is a
-  // HALF-GRID face: one grid column is 8px at 16px face. The expert-gate's
-  // 1ch probe (U+250C, U+2502, U+2514, U+2801) must NOT ship as a mirror of
-  // this face: those glyphs are FALLBACK (the face has no U+2500-257F or
-  // U+2800-28FF coverage), and the fallback's advance for them is browser-
-  // dependent. The gate PASSES when the face's OWN grid is uniform
-  // (guillemet = 8px, content-x = 8px, 2ch = 16px) and FALLS THROUGH to
-  // operator review when the face's own grid is not what the renderer
-  // assumes. This is the authority for "rendered width = grid column" —
-  // not a substitute for font-resource provision (a wide grid face of the
-  // same name would legitimately pass G1 and still break the operator's
-  // 16px grid lock).
-
-  let g1Done = false;
+  // --- G1: the byte-exact width gate (post-font-load; no swap on fail) -------------------------
 
   async function gate(): Promise<void> {
-    try {
-      await (document as any).fonts?.load?.('16px Glass');
-      await (document as any).fonts?.ready;
-    } catch { /* measure what IS there */ }
+    try { document.fonts?.load?.('16px Glass'); await document.fonts?.ready; } catch { /* measure as-is */ }
     const cv = document.createElement('canvas');
     const ctx = cv.getContext('2d')!;
     ctx.font = '16px Glass, monospace';
-    // the face's OWN grid, from its real cmap: guillemet («), content x,
-    // 2-char content ("xx"). At 16px these must be 8px, 8px, 16px
-    // respectively (half of the operator's 16px 1ch, since this face is
-    // a half-grid monospace).
-    const faceProbes: [string, number, string][] = [
-      ['\u00AB', 8, 'guillemet («)'],
-      ['\u00BB', 8, 'guillemet (»)'],
-      ['x', 8, 'content x'],
-      ['xx', 16, 'content 2ch'],
-    ];
-    // the four gutter glyphs the CSS puts in the canvas: they fall back to
-    // the system monospace when the face has no coverage. We assert their
-    // fallback advance is at least 8px (so the gutter cell is never
-    // narrower than the face's own column) and NOT a full double-width
-    // (so the visible spin/corner doesn't visually own two columns).
-    const fbProbes: [string, string][] = [
-      ['\u250C', 'box U+250C'],
-      ['\u2502', 'box U+2502'],
-      ['\u2514', 'box U+2514'],
-      ['\u2801', 'braille U+2801'],
-    ];
-    let ok = true;
-    for (const [s, want, label] of faceProbes) {
-      const w = ctx.measureText(s).width;
-      const pass = Math.abs(w - want) <= 1;
-      if (!pass) {
-        ok = false;
-        console.error(`G1 FAIL (face grid): ${label} → ${w}px (expect ${want}px)`);
-      }
-    }
-    for (const [s, label] of fbProbes) {
-      const w = ctx.measureText(s).width;
-      const pass = w >= 7.5 && w <= 32; // fallback: between 7.5 and 32px
-      if (!pass) {
-        ok = false;
-        console.error(`G1 FAIL (fallback span): ${label} → ${w}px (expect 7.5-32)`);
-      }
-    }
+    const g2 = ctx.measureText('\u00A0\u2502').width;  // a 2-char gutter span
+    const lc = ctx.measureText('\u2801').width;        // the live-cell glyph (col0)
+    const x1 = ctx.measureText('x').width;             // one content char
+    const ok = Math.abs(g2 - 2 * x1) <= 0.75 && Math.abs(lc - x1) <= 0.75;
     g1Done = true;
-    if (ok) console.info('G1 OK: face grid uniform (half-grid 8px), fallback spans sane');
-    else console.error('G1 FAIL: font grid is not what the v3 renderer assumes — DO NOT SHIP, route to operator');
+    if (ok) console.info('G1 OK: gutter(2) == 2x content char; live-cell == 1 char (half-grid face)');
+    else console.error('G1 FAIL: gutter(2)=' + g2 + ' live-cell=' + lc + ' x2-content=' + 2 * x1 + ' — DO NOT SHIP (no font swap)');
   }
 
-  // --- lifecycle -------------------------------------------------------------
+  // --- lifecycle --------------------------------------------------------------------------------
 
   onMount(() => {
     connect();
     window.addEventListener('keydown', onKey, true);
-    const el = screenEl;
-    if (el) {
-      el.addEventListener('scroll', () => {
-        // G2 input: the user is "at the bottom" within ~one line (line-height)
-        atBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 20;
-      });
-    }
   });
 </script>
 
-<div class="screen" bind:this={screenEl} role="log" aria-live="off">
-  {#each rows as r (r.id)}
-    <div class="row" data-row-id={r.id}>
-      <span class="gutter {r.cls}"></span>
-      <span class="content">{r.c}</span>
-    </div>
-  {/each}
-  <!-- ACTIVE TAIL: the only writable node (caret = native textarea block) -->
-  <div class="row">
-    <span class="gutter"></span>
-    <textarea
-      class="input"
-      bind:this={inputEl}
-      bind:value={draft}
-      spellcheck="false"
-      autocomplete="off"
-      maxlength="500"
-      rows="1"
-      aria-label="input"
-    ></textarea>
+<div class="screen">
+  <div class="history">
+    <pre class="tapes" bind:this={preEl}>{text || ' '}</pre>
+    <div class="livecell" bind:this={livecellEl}></div>
   </div>
+  <textarea
+    class="input"
+    bind:this={inputEl}
+    bind:value={draft}
+    spellcheck="false"
+    autocomplete="off"
+    maxlength="500"
+    rows="1"
+    aria-label="input">
+  </textarea>
 </div>

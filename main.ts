@@ -2,13 +2,16 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dashboard, startTurn } from './faculties/dash/index.js';
-import type { Emit } from './faculties/dash/index.js';
+import { attach, detach, startTurn, bootIfNot } from './faculties/dash/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.CARL_PORT ?? 3000);
 const HOST = process.env.CARL_HOST ?? '0.0.0.0';
 const WEB_BUILD = path.resolve(__dirname, '..', 'web-ui', 'build');
+
+// round 3: the state tree boots at process start (the tree is the single
+// writer; the banner renders client-side from it — zero c during boot).
+bootIfNot();
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -86,23 +89,20 @@ const server = http.createServer(async (req, res) => {
     });
     res.write('retry: 1500\n\n');
     let closed = false;
-    const send: Emit = (f) => {
-      if (closed) return;
-      try {
-        res.write('data: ' + JSON.stringify(f) + '\n\n');
-      } catch {
-        closed = true;
-      }
-    };
     const cleanup = () => {
       closed = true;
-      dashboard.detach(session, tag);
+      detach(session, tag);
     };
     req.on('close', cleanup);
     req.on('error', cleanup);
-    // attach is synchronous framing; the boot block is born at the system's
-    // pace (timers) and delivers frame by frame through the same send fn
-    dashboard.attach(session, tag, send);
+    // the tree sends: a snapshot (first connect) or a fold (reconnect), then
+    // live kd waves at 60Hz + the seq-ordered tx chunk stream — one stream,
+    // tagged events. attach is synchronous: the subscriber is in the table
+    // before the first wave tick (never a full re-ship).
+    attach(session, tag, { send: (f) => {
+      if (closed) return;
+      try { res.write('data: ' + JSON.stringify(f) + '\n\n'); } catch { closed = true; }
+    } });
     return;
   }
 
@@ -110,17 +110,11 @@ const server = http.createServer(async (req, res) => {
     const body = (await parseBody(req)) as { msg?: unknown; session?: unknown } | null;
     const session = typeof body?.session === 'string' ? body.session : '';
     const msg = typeof body?.msg === 'string' ? body.msg : '';
-    // the 202 ack is the door the client's spinner→« flip waits on
     res.writeHead(202, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
     if (!session || !msg) return;
-    // brief settle after the ack (server-side thought time is real time),
-    // then the turn block opens and streams the reply row
-    const t = setTimeout(() => {
-      const emit: Emit = (f) => dashboard.emit(session, 'turn', f);
-      void startTurn(session, emit);
-    }, 350 + Math.floor(Math.random() * 400));
-    t.unref?.();
+    // mock brain: THRU window (mode=active) then ANS drip, byte-for-byte
+    void startTurn(session, msg);
     return;
   }
 
