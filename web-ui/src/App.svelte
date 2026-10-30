@@ -53,11 +53,11 @@
   const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
   const RUNG_LABEL = ['DASH', 'IMMU', 'CRTX', 'TELE', 'NERV', 'LLM1'];
   const RKEY = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
-  const FIELD_WDTS = 13; // dot field width (v0.1.3.8): 13 in-stream `·` chars,
-                         // = the operator's target width; dotField(progress) =
-                         // Math.round(progress/100 * 13) dots (7 at 50%, 13 at 100%).
-                         // The live-cell spinner (braille) is a separate col0
-                         // node and is unchanged.
+  const FIELD_WDTS = 12; // dot field width (v0.1.3.9): 12 in-stream `·` chars,
+                         // = the operator's canonical count (always 12);
+                         // dotField(progress) = Math.round(progress/100 * 12)
+                         // dots (6 at 50%, 12 at 100%). The live-cell spinner
+                         // (braille) is a separate col0 node and is unchanged.
   const ROWS = 14;      // the fixed console: title, 8 box rows, separator,
                         // blank, ROM, blank, READY — each row its own table
                         // entry (row-id boot:0..boot:13). v0.1.3.7: the v0.1.3.6
