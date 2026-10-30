@@ -47,13 +47,14 @@ interface Sub {
   session: string;
   tag: string;
   send: (f: unknown) => void;
-  cursor: number;    // last seq this client has been given
+  cursor: number;    // last seq this client has been given (= its wave seq_end)
+  seqEnd: number;    // the previous wave's seq_end (the delta window's floor)
 }
 
 interface LogEntry {
   seq: number;
   kind: 'kd' | 'tx';
-  dirty?: { [handle: number]: LeafValue };
+  dirty?: { [key: string]: LeafValue };
   tag?: TxTag;
   c?: string;
 }
@@ -94,11 +95,12 @@ function appendLog(e: Omit<LogEntry, 'seq'>): number {
 
 // --- tree writes ----------------------------------------------------------------
 
-/** write one leaf (sets dirty; appended to the log). */
+/** write one leaf (value change only: no-change writes are dropped — the
+    log is never-overwrite, so a same-value re-write is a protocol no-op). */
 export function treeSet(path: string, value: LeafValue): void {
   const handle = ensureLeaf(path);
   const leaf = leaves.get(handle)!;
-  if (leaf.value === value) return; // no-op write: no seq churn
+  if (leaf.value === value) return; // no change: no log entry, no dirty
   leaf.value = value;
   leaf.dirty = true;
   appendLog({ kind: 'kd', dirty: { [handle]: value } });
@@ -136,6 +138,20 @@ export function snapshotTree(): { [path: string]: LeafValue } {
   return out;
 }
 
+/** the DEV client's handle→path table (stable; the snapshot's twin; the
+    wire's `hp` field is this table keyed by string handles). */
+export function pathOf(handle: number): string | undefined {
+  for (const [path, h] of handleByPath) if (h === handle) return path;
+  return undefined;
+}
+
+/** handle→path (flat, for the snapshot frame's hp field). */
+function handleTable(): { [handle: string]: string } {
+  const out: { [handle: string]: string } = {};
+  for (const [path, h] of handleByPath) out[String(h)] = path;
+  return out;
+}
+
 /** fold of the log after `cursor` — reconnect is a fold, not a re-ship. */
 export function fold(cursor: number): { entries: LogEntry[]; snapshot: boolean } {
   if (cursor <= 0) return { entries: [], snapshot: true };
@@ -161,16 +177,18 @@ function sendEntry(s: Sub, e: LogEntry): void {
   }
 }
 
-/** attach: a snapshot (first connect) or a fold (reconnect), then live waves. */
+/** attach: a snapshot (first connect: the full folded tree + the
+    handle→path table, `hp`) or a fold (warm reconnect: the log tail),
+    then live waves — a fold, never a full re-ship. */
 export function attach(session: string, tag: string, a: { send: (f: unknown) => void; lastSeq?: number }): Sub {
   let byTag = subs.get(session);
   if (!byTag) { byTag = new Map(); subs.set(session, byTag); }
-  const s: Sub = { session, tag, send: a.send, cursor: a.lastSeq ?? 0 };
+  const s: Sub = { session, tag, send: a.send, cursor: a.lastSeq ?? 0, seqEnd: a.lastSeq ?? 0 };
   byTag.set(tag, s);
 
   const f = fold(s.cursor);
   if (f.snapshot) {
-    sendFrame(s, { t: 'kd', tick, seq_end: seq, snap: snapshotTree() });
+    s.send({ t: 'kd', tick, seq_end: seq, snap: snapshotTree(), hp: handleTable() });
   } else {
     for (const e of f.entries) sendEntry(s, e);
   }
@@ -184,24 +202,37 @@ export function detach(session: string, tag: string): void {
 
 function flushWave(): void {
   tick += 1;
-  // fold lag: any sub whose cursor lags (attached mid-flight) gets the tail
+  // one WAVE per subscribed client: the DELTA since its last wave — the log's
+  // kd entries with seq > (previous seq_end), latest value per key. The hot
+  // selftest progress fields carry their CURRENT value on every wave (the
+  // client observes them continuously); cold fields ride only when written.
+  // A no-op window (no writes) settles to an empty dirty — still a wave,
+  // still seq_end+1 (phase lock across silence). The log keeps every seq
+  // (durability): the wave is a fold over a window, the tree a fold of the log.
   for (const byTag of subs.values()) {
     for (const s of byTag.values()) {
-      if (s.cursor < seq) {
-        for (const e of log) if (e.seq > s.cursor) sendEntry(s, e);
-        s.cursor = seq;
+      const since = s.seqEnd ?? 0;
+      // the WAVE = the DELTA since this client's last seq_end: every key
+      // written in (since, seq] carries its latest value, coalesced per key
+      // (the log keeps all intermediate seqs for durability; the wave folds
+      // them). The hot .progress fields ride their writes live (dot-fill is
+      // continuous for the client); a settled tree — nothing written — yields
+      // an EMPTY dirty, which still advances seq (phase lock across silence).
+      const dirty: { [key: string]: LeafValue } = {};
+      for (const e of log) {
+        if (e.seq <= since || !e.dirty) continue;
+        for (const k of Object.keys(e.dirty)) {
+          if (!leaves.has(Number(k))) continue;
+          dirty[k] = e.dirty[k]; // log is seq-ordered: latest wins
+        }
       }
-    }
-  }
-  // coalesce: latest value per handle; hot fields ride every wave
-  const dirty: { [handle: number]: LeafValue } = {};
-  for (const [handle, leaf] of leaves) {
-    if (leaf.dirty || leaf.hot) dirty[handle] = leaf.value;
-  }
-  for (const leaf of leaves.values()) if (!leaf.hot) leaf.dirty = false;
-  // one WAVE per subscribed client, scoped to its subscribed key set
-  for (const byTag of subs.values()) {
-    for (const s of byTag.values()) {
+      // the ONE hot field (selftest .progress) rides EVERY wave — its value
+      // is re-read from the live tree state, so a no-op window (nothing cold
+      // changed) is a phase-locked frame carrying only the hot fields; seq
+      // still advances (across silence)
+      for (const [h, leaf] of leaves) if (leaf.hot) dirty[String(h)] = leaf.value;
+      s.seqEnd = seq;
+      s.cursor = seq;
       sendFrame(s, { t: 'kd', tick, seq_end: seq, dirty });
     }
   }
@@ -213,15 +244,16 @@ iv.unref?.();
 // --- boot: the state tree is the single writer -------------------------------------
 
 const HEAD = '0.1.3';
-const RUNGS = ['dash', 'immu', 'nerv', 'crtx', 'llm1', 'teleg'];
+const RUNGS = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * Boot self-test: the brief's six named components, each progress 0..100
- * over ~3 s total (randomized per-component distribution), then mode pass +
- * ms (client renders 12 dots per rung from progress, 'OK @ X.X ms' from
- * {pass, ms}). Driver owns run: the sweep runs under carl.<short>.selftest
- * keys (short-shorthand; the client discovers branches by appearance).
+ * Boot self-test: the six named components, each progress 0..100 over
+ * ~3 s total (randomized per-component distribution), then mode pass + ms.
+ * The client renders 12 dots per rung from progress and 'OK @ X.X ms' from
+ * {pass, ms}; the server sends values only. Driver owns run: the sweep runs
+ * under carl.<short>.selftest keys (short-shorthand; the client discovers
+ * branches by appearance — presence of the key = a new branch).
  */
 export async function bootTree(): Promise<void> {
   treeSet('carl.version', HEAD);
@@ -241,7 +273,7 @@ export async function bootTree(): Promise<void> {
     const target = RUNGS[i];
     const w = windows[i];
     selftestBegin('carl', target);
-    const cost = 0.2 + Math.random() * 2.1; // mock settle cost, ms (1 decimal)
+    const cost = 0.2 + Math.random() * 2.1; // mock settle cost, ms (one decimal)
     const steps = 24; // progress granularity (the client draws 12 dots)
     for (let k = 1; k <= steps; k++) {
       await sleep(Math.max(2, (w / steps) - 4));

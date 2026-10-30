@@ -73,37 +73,37 @@
 
   // --- the wave in (kd = tree truth; tx = the ONLY channel) --------------------------
 
+  let lastSeq = 0;
   function onEvent(e: MessageEvent): void {
     let f: Record<string, unknown>;
     try { f = JSON.parse(typeof e.data === 'string' ? e.data : ''); } catch { return; }
-    if (f.t === 'kd') onWave(f);
-    else if (f.t === 'tx') onChunk(f);
-  }
-
-  function onWave(f: Record<string, unknown>): void {
-    const snap = f.snap as { [p: string]: string | number | null } | undefined;
-    const dirty = f.dirty as { [k: string]: string | number | null } | undefined;
-    if (snap) {
-      for (const p of Object.keys(snap)) tree.set(p, snap[p]);
-      foldSnapshot(snap); // the handle→path map (stable) for dirty waves
-    }
-    if (dirty) {
-      // the WAVE is {handle: value}; the client folds it through the
-      // snapshot's handle→path map (stable handles, assigned at register).
-      for (const k of Object.keys(dirty)) {
-        const p = handleToPath.get(k);
-        if (p !== undefined) tree.set(p, dirty[k]);
+    if (f.t === 'kd') {
+      const seq = Number(f.seq_end ?? 0);
+      if (seq <= lastSeq) return; // never-overwrite
+      lastSeq = seq;
+      const snap = f.snap as { [p: string]: string | number | null } | undefined;
+      const dirty = f.dirty as { [k: string]: string | number | null } | undefined;
+      if (snap) {
+        for (const p of Object.keys(snap)) tree.set(p, snap[p]);
+        const hp = f.hp as { [k: string]: string } | undefined;
+        if (hp) foldHandleTable(hp); // the handle→path table (waves map by handle)
+      } else if (dirty) {
+        for (const k of Object.keys(dirty)) {
+          const p = handleToPath.get(k);
+          if (p !== undefined) tree.set(p, dirty[k]);
+        }
       }
+      afterWave();
+      return;
     }
-    afterWave();
+    if (f.t === 'tx') onChunk(f);
   }
 
-  // handle→path (stable; built from the snapshot at connect)
+  // handle→path (the snapshot's hp field; stable — a changed handle = protocol break)
   const handleToPath = new Map<string, string>();
-  function foldSnapshot(snap: { [p: string]: string | number | null }): void {
+  function foldHandleTable(hp: { [k: string]: string }): void {
     handleToPath.clear();
-    let h = 1;
-    for (const p of Object.keys(snap)) handleToPath.set(String(h++), p);
+    for (const k of Object.keys(hp)) handleToPath.set(k, hp[k]);
   }
 
   function afterWave(): void {
@@ -112,6 +112,7 @@
       writeBanner();
     }
     if (booted) paintBanner();
+    if (turnLine >= 0) settleReplyRow();
     placeLiveCell();
     scheduleScroll();
   }
@@ -255,6 +256,19 @@
 
   // --- G2: the at-bottom guard (same rAF as any append) ------------------------------------
 
+  function settleReplyRow(): void {
+    // the close-equivalent gutter re-issue: once the THRU window closes and
+    // the reply row holds its text, rewrite the line's 2-char in-stream
+    // gutter (» → the reply classifier) IN THE ONE text node, keyed by the
+    // row table (row-id → line index) — element identity survives
+    const lines = text.split('\n');
+    if (turnLine < 0 || turnLine >= lines.length) return;
+    const cur = lines[turnLine];
+    if (cur.slice(0, 2) === '\u00BB ' && cur.slice(2).length > 0) {
+      lines[turnLine] = '\u00BB ' + cur.slice(2);
+      text = lines.join('\n');
+    }
+  }
   let raf = 0;
   function scheduleScroll(force = false): void {
     if (raf) return;
