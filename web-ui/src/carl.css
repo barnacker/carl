@@ -14,7 +14,7 @@
    the face's advances ARE the grid; G1 is the safety net. */
 
 :root {
-  --fh: 20px;   /* per-row line pitch (G2 + the live cell's y) */
+  --fh: 18px;   /* per-row line pitch (G2 + the live cell's y) */
   --gc: #682a00; /* F5: border-only palette entry; NEVER painted as text */
   --tx: #0981b4; /* all text + gutter = the operator's text color */
   --bg: #00040b;
