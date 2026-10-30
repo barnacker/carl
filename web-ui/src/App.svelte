@@ -27,8 +27,9 @@
   // selftest.progress rides every wave; a no-op wave — empty dirty — still
   // advances seq: phase lock). tx chunks {t:'tx',seq,tag,c} = CONVERSATION
   // ONLY: zero c during boot; the banner RENDERS from carl.version + the
-  // selftest progress/mode/ms (12 dots per rung from progress, 'OK @ X.X
-  // ms' from {pass, ms}; the client formats, the server sends values).
+  // selftest progress/mode/ms (the 13-wide dot field per rung from progress —
+  // 13 in-stream `·`, 'OK @ X.X ms' from {pass, ms}; the client formats, the
+  // server sends values).
   //
   // Two-writer: the tree render writes the banner lines; the c caption
   // dumps into the same ONE text node in order. Enter (not shift+enter)
@@ -52,7 +53,11 @@
   const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
   const RUNG_LABEL = ['DASH', 'IMMU', 'CRTX', 'TELE', 'NERV', 'LLM1'];
   const RKEY = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
-  const DOTS = 12;      // run-g: the dot field rendered from progress
+  const FIELD_WDTS = 13; // dot field width (v0.1.3.8): 13 in-stream `·` chars,
+                         // = the operator's target width; dotField(progress) =
+                         // Math.round(progress/100 * 13) dots (7 at 50%, 13 at 100%).
+                         // The live-cell spinner (braille) is a separate col0
+                         // node and is unchanged.
   const ROWS = 14;      // the fixed console: title, 8 box rows, separator,
                         // blank, ROM, blank, READY — each row its own table
                         // entry (row-id boot:0..boot:13). v0.1.3.7: the v0.1.3.6
@@ -164,23 +169,37 @@
     }
   }
 
+  // dotField(progress) — the self-test progress indicator: 0..100% maps to
+  // 0..FIELD_WDTS in-stream `·` (the R3 field byte) padded to a fixed
+  // FIELD_WDTS gap, so the dot field is a PROGRESS indicator, not static
+  // filler. v0.1.3.8: the field is WIDE (13) to fill the label→status gap, so
+  // the settled (pass, 100%) rung shows the full 13-dot line
+  // «> DASH ············· OK @ 0.4ms» (the operator's target width) and
+  // 'OK @' aligns across rungs. A settle re-issue caught at partial progress
+  // draws the partial fill; the live-cell braille spinner (active phase) is
+  // unchanged — it sits in col0 and is a separate node.
+  function dotField(progress: number): string {
+    const n = Math.min(FIELD_WDTS, Math.max(0, Math.round((Math.min(100, progress) / 100) * FIELD_WDTS)));
+    return D.repeat(n) + ' '.repeat(FIELD_WDTS - n);
+  }
+
   function rungBody(i: number): string {
     const sector = 'carl.carl.selftest.' + RKEY[i];
     const mode = tree.get(sector + '.mode');
     const prog = Number(tree.get(sector + '.progress') ?? 0);
     const ms = tree.get(sector + '.ms');
-    let field: string;
-    if (mode === 'active') {
-      const dots = Math.min(DOTS, Math.max(0, Math.round((Math.min(100, prog) / 100) * DOTS)));
-      field = D.repeat(dots) + ' '.repeat(DOTS - dots);
-    } else if (mode === 'pass' && ms !== null && ms !== undefined) {
-      field = 'OK @ ' + Number(ms).toFixed(1) + 'ms';
+    if (mode === 'pass' && ms !== null && ms !== undefined) {
+      // SETTLED row: the dot field filled to 100% (13 dots) + 'OK @ X.Xms'
+      return '> ' + RUNG_LABEL[i] + ' ' + dotField(100) + ' ' + 'OK @ ' + Number(ms).toFixed(1) + 'ms';
     } else if (mode === 'fail') {
-      field = 'FAULT';
+      return '> ' + RUNG_LABEL[i] + ' ' + dotField(prog) + ' ' + 'FAULT';
+    } else if (mode === 'active') {
+      // IN-FLIGHT row: 13-wide field filled by progress (braille in col0)
+      return '> ' + RUNG_LABEL[i] + ' ' + dotField(prog);
     } else {
-      field = ' '.repeat(DOTS);
+      // not started: the 13-wide field, empty
+      return '> ' + RUNG_LABEL[i] + ' ' + dotField(0);
     }
-    return '> ' + RUNG_LABEL[i] + '  ' + field;
   }
 
   // --- the ONE text node: append + in-place re-issue (row-table keyed) ----------------
