@@ -139,13 +139,13 @@
       case 6: return rungBody(3);
       case 7: return rungBody(4);
       case 8: return rungBody(5);
-      case 9: return '----------------------------------\r\n';
+      case 9: return '----------------------------------' + '\r\n\r\n';
       case 10: {
         const rom = tree.get('carl.rom');
         const mem = tree.get('carl.mem');
         const r = (rom === null || rom === undefined) ? 'ROM --k' : 'ROM ' + rom + 'k';
         const m = (mem === null || mem === undefined) ? 'MEM --.-MB' : 'MEM ' + Number(mem).toFixed(1) + 'MB';
-        return r + ' \u00B7 ' + m + '\r\n';
+        return r + ' \u00B7 ' + m + '\r\n\r\n';
       }
       case 11: return 'READY.';
       default: return '   ';
