@@ -130,7 +130,7 @@
   function bodyOf(i: number): string {
     const ver = String(tree.get('carl.version') ?? '');
     switch (i) {
-      case 0: return '  ' + HEAD_L + ' ' + ver;
+      case 0: return HEAD_L + ' ' + ver;
       case 1: return '   ';
       case 2: return '   - SELF-TEST ----------------------';
       case 3: return rungBody(0);
