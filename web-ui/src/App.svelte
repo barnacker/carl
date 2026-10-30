@@ -131,24 +131,24 @@
     const ver = String(tree.get('carl.version') ?? '');
     switch (i) {
       case 0: return HEAD_L + ' ' + ver;
-      case 1: return '   ';
-      case 2: return '   - SELF-TEST ----------------------';
+      case 1: return '  ';
+      case 2: return '- SELF-TEST ----------------------';
       case 3: return rungBody(0);
       case 4: return rungBody(1);
       case 5: return rungBody(2);
       case 6: return rungBody(3);
       case 7: return rungBody(4);
       case 8: return rungBody(5);
-      case 9: return '   ------------------------------------';
+      case 9: return '------------------------------------';
       case 10: {
         const rom = tree.get('carl.rom');
         const mem = tree.get('carl.mem');
         const r = (rom === null || rom === undefined) ? 'ROM --k' : 'ROM ' + rom + 'k';
         const m = (mem === null || mem === undefined) ? 'MEM --.-MB' : 'MEM ' + Number(mem).toFixed(1) + 'MB';
-        return '   ' + r + ' \u00B7 ' + m;
+        return r + ' \u00B7 ' + m;
       }
-      case 11: return '   READY.';
-      default: return '    ';
+      case 11: return 'READY.';
+      default: return '   ';
     }
   }
 
@@ -168,7 +168,7 @@
     } else {
       field = ' '.repeat(DOTS);
     }
-    return '   > ' + RUNG_LABEL[i] + '  ' + field;
+    return '> ' + RUNG_LABEL[i] + '  ' + field;
   }
 
   // --- the ONE text node: append + in-place re-issue (row-table keyed) ----------------
