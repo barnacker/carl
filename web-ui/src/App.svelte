@@ -53,6 +53,16 @@
   const RUNG_LABEL = ['DASH', 'IMMU', 'CRTX', 'TELE', 'NERV', 'LLM1'];
   const RKEY = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
   const DOTS = 12;      // run-g: the dot field rendered from progress
+  const ROWS = 14;      // the fixed console: title, 8 box rows, separator,
+                        // blank, ROM, blank, READY — each row its own table
+                        // entry (row-id boot:0..boot:13). v0.1.3.7: the v0.1.3.6
+                        // blank rows were literal CRLFs EMBEDDED in the case 9
+                        // (separator) + case 10 (ROM) bodies — the embedded
+                        // breaks desynced the row table, and the per-wave
+                        // setLine re-issue re-emitted ROM + READY under the
+                        // CRLF-inserted copies (duplicates). The blanks are now
+                        // first-class rows, every line's content carries no
+                        // control chars: the banner is a pure 14-line string.
 
   let draft = '';
   let sid = '';
@@ -120,18 +130,18 @@
   // --- the banner (client-rendered; zero c during boot) --------------------------------
 
   function writeBanner(): void {
-    for (let i = 0; i < 12; i++) setLine('boot:' + i, i, bodyOf(i));
+    for (let i = 0; i < ROWS; i++) setLine('boot:' + i, i, bodyOf(i));
   }
 
   function paintBanner(): void {
-    for (let i = 0; i < 12; i++) setLine('boot:' + i, i, bodyOf(i));
+    for (let i = 0; i < ROWS; i++) setLine('boot:' + i, i, bodyOf(i));
   }
 
   function bodyOf(i: number): string {
     const ver = String(tree.get('carl.version') ?? '');
     switch (i) {
       case 0: return HEAD_L + ' ' + ver;
-      case 1: return '  ';
+      case 1: return '';             // the box's blank top row
       case 2: return '- SELF-TEST ----------------------';
       case 3: return rungBody(0);
       case 4: return rungBody(1);
@@ -139,15 +149,17 @@
       case 6: return rungBody(3);
       case 7: return rungBody(4);
       case 8: return rungBody(5);
-      case 9: return '----------------------------------' + '\r\n\r\n';
-      case 10: {
+      case 9: return '----------------------------------';
+      case 10: return '';            // blank row after the separator
+      case 11: {
         const rom = tree.get('carl.rom');
         const mem = tree.get('carl.mem');
         const r = (rom === null || rom === undefined) ? 'ROM --k' : 'ROM ' + rom + 'k';
         const m = (mem === null || mem === undefined) ? 'MEM --.-MB' : 'MEM ' + Number(mem).toFixed(1) + 'MB';
-        return r + ' \u00B7 ' + m + '\r\n\r\n';
+        return r + ' \u00B7 ' + m;
       }
-      case 11: return 'READY.';
+      case 12: return '';            // blank row after the ROM row
+      case 13: return 'READY.';
       default: return '   ';
     }
   }
@@ -184,9 +196,10 @@
 
   function gutterFor(id: string, lineIdx: number): string {
     // R1/R2: col0 = state (space — the live cell overlays col0 of the active
-    // row), col1 = decorator (the boot box; blank elsewhere)
+    // row), col1 = decorator (the boot box; blank elsewhere) — the frame bar
+    // spans the whole 14-row box, READY (row 13) closes it with └
     if (id.startsWith('boot:')) {
-      const d = lineIdx === 0 ? '\u250C' : lineIdx === 11 ? '\u2514' : '\u2502';
+      const d = lineIdx === 0 ? '\u250C' : lineIdx === ROWS - 1 ? '\u2514' : '\u2502';
       return ' ' + d;   // col0 blank + col1 the frame bar
     }
     if (id.startsWith('usr:')) return '\u00AB ';  // col0 = the user classifier
