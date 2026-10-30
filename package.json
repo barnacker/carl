@@ -6,6 +6,8 @@
   "description": "CARL-01 v1.0 — proving-terminal harness: SSE wire (faculties/dash) + native Svelte terminal surface",
   "scripts": {
     "build:ui": "npm run build --prefix web-ui",
+    "build:server": "tsc -p tsconfig.json",
+    "build": "npm run build:server && npm run build:ui",
     "dev": "node --env-file-if-exists=.env node --run tsx watch main.ts",
     "start": "node dist/main.js"
   },

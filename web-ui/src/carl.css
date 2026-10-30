@@ -1,165 +1,136 @@
-/* CARL-01 — Dark Studio palette + Glass TTY VT220 pixel face (CANON §1).
-   Full-bleed dark terminal, no chrome. The terminal is a fixed 8px column
-   grid: the two gutter cells and every content glyph sit in equal 8px cells
-   (the face's ink advances are not uniformly equal, so each glyph is drawn
-   in its own cell — the terminal grid, not the font's natural spacing).
-   Integer font-size 16px, line-height 1.0 (16px pitch) — a pixel face +
-   fractional CSS shatters the grid (operator doctrine). */
+/* CARL-01 v0.1.2 — v3 renderer (lock 2026-10-30).
+   Full-bleed dark terminal. The ONE scroll container is .screen; every
+   line is div.row = span.gutter (pure-CSS ::before, class-driven) +
+   span.content (white-space:pre, the server's c byte-for-byte).
+   Gutter = TEXT color (F5 refusal: the dim #682A00 is NEVER painted here).
+   The old 8px per-char cell grid is GONE (the wire is content-only; the
+   face's advances ARE the grid — the width gate G1 is the safety net). */
 
 :root {
+  --fh: 20px;   /* per-row line height */
+  --gc: #682a00; /* border-only palette entry (F5); NO painted text ever */
+  --tx: #0981b4; /* gutter = text color (operator F5: the dim is never painted) */
   --bg: #00040b;
-  --text: #0981b4;
-  --fault: #db0000;
-  --dim: #682a00; /* border-only palette entry (F5); NO painted text ever */
-  --col: 8px;
-  --pitch: 16px;
-  /* the spec's only non-content border: a literal 1px page edge (F5) */
-  --page-edge: #682a00;
 }
 
 @font-face {
   font-family: 'Glass';
   src: url('/assets/Glass_TTY_VT220.woff2') format('woff2');
+  /* G4: font-display block (NOT swap) — kill the mid-boot metric shift that
+     would break the guillemet/rung alignment. The post-load width assert
+     (G1 in App.svelte) measures the gutter only after this gate. */
   font-display: block;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-html,
-body,
-#app {
+html, body, #app {
   height: 100%;
   background: var(--bg);
   overflow: hidden;
-}
-
-/* F5: the banner's ┌│└ box and the ──…── dash rule are CONTENT glyphs
-   painted text-colored (.cell.deco / .c). --dim is NOT applied to any text.
-   Border choice (the one line the fix round asked for): NONE — no page
-   border, no CSS border anywhere; the palette's #682A00 stays reserved for
-   a literal 1px page border only (available via --page-edge; not drawn). */
-
-.terminal {
-  height: 100vh;
-  width: 100vw;
-  background: var(--bg);
-  font-family: 'Glass', 'Courier New', monospace;
+  font-family: 'Glass', monospace;
   font-size: 16px;
-  line-height: var(--pitch);
-  letter-spacing: 0;
-  color: var(--text);
-  position: relative;
+  line-height: var(--fh);
 }
 
+/* THE ONE scroll container (O(rows), appends only) */
 .screen {
-  /* F6: operator-locked page padding — left 4px, top 20px (4px right/bottom
-  symmetric per the plain reading; the lock fixes left + top) */
-  padding: 20px 4px 4px 4px;
-  max-height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  font-family: 'Glass', monospace;
+  font-size: 16px;
+  line-height: var(--fh);
+  white-space: pre;
+  overflow: auto;
+  background: var(--bg);
+  position: absolute;
+  inset: 0;
   scrollbar-width: none;
 }
-.screen::-webkit-scrollbar {
-  display: none;
-}
+.screen::-webkit-scrollbar { display: none; }
 
-.block {
-  display: block;
-}
-
+/* one line = a flex row with the gutter as its first cell */
 .row {
   display: flex;
   align-items: flex-start;
-  height: var(--pitch);
-  white-space: pre;
+  line-height: var(--fh);
 }
 
-/* the gutter cells (state col 0, deco col 1) + the 2 CHAR content margin
-   cells (CANON §2: content begins at col 3): every row has all four, so
-   alignment never breaks. All four paint the single locked text color
-   (F5: no dim anywhere). */
-.cell {
+/* Gutter cell: first flex cell, class-driven ::before. NO gutter byte in
+   the content node — the glyph is 100% CSS. spin = one braille glyph,
+   animated by @keyframes (8 frames, 640ms, steps(8), infinite). */
+.gutter {
+  flex: 0 0 var(--fh);
+  color: var(--tx);        /* TEXT color (F5: the dim #682A00 is never painted) */
+  white-space: pre;
+  line-height: var(--fh);
+}
+.gutter::before {
+  content: '';
   display: inline-block;
-  width: var(--col);
-  flex: 0 0 var(--col);
-  text-align: left;
-  overflow: hidden;
+  width: var(--fh);
   white-space: pre;
-  color: var(--text);
+}
+.gutter.frame-top::before { content: '\250C'; }  /* ┌ */
+.gutter.frame-mid::before { content: '\2502'; }  /* │ */
+.gutter.frame-bot::before { content: '\2514'; }  /* └ */
+/** The rung row: the frame bar AND the spinner share the gutter cell — the
+    spin dots ride over the bar (the bar is the fallback glyph the spinner
+    cycles through). */
+.gutter.frame-mid.spin::before {
+  content: '\2502';
+  animation: spin 640ms steps(8) infinite;
+}
+.gutter.usr::before       { content: '\00AB '; } /* « + space */
+.gutter.ans::before       { content: '\00BB '; } /* » + space */
+.gutter.spin::before {
+  content: '\2801';
+  animation: spin 640ms steps(8) infinite;
 }
 
-/* content field: a flex row of fixed-width glyph cells */
+/* THE 8-BRAILLE CYCLE (no JS timer — CSS only) */
+@keyframes spin {
+  0%   { content: '\2801'; }
+  12.5%{ content: '\2802'; }
+  25%  { content: '\2804'; }
+  37.5%{ content: '\2808'; }
+  50%  { content: '\2810'; }
+  62.5%{ content: '\2820'; }
+  75%  { content: '\2840'; }
+  87.5%{ content: '\2880'; }
+  100% { content: '\2801'; }
+}
+
+/* Content cell: white-space:pre, the server's c byte-for-byte. Shrink-only
+   (never stretch) so a short line left-aligns at the gutter and never owns
+   the row (a content span must be exactly its c's width, not the full row). */
 .content {
-  display: inline-flex;
   white-space: pre;
-  color: var(--text);
-  min-height: var(--pitch);
+  color: var(--tx);
+  flex: 0 1 auto;
+  min-width: 0;
+  line-height: var(--fh);
 }
-.c {
-  display: inline-block;
-  width: var(--col);
-  flex: 0 0 var(--col);
-  height: var(--pitch);
-  line-height: var(--pitch);
-  text-align: left;
-  overflow: hidden; /* F9: fallback glyphs clip inside their 8px cell */
+
+/* The ACTIVE TAIL: the single-line textarea (the only writable node).
+   Native block caret (caret-shape block, fallback I-beam) — NOT a synced
+   block-cursor div. */
+.input {
+  display: block;
+  width: 100%;
+  height: var(--fh);
+  line-height: var(--fh);
+  font-family: inherit;
+  font-size: 16px;
+  font-variant-ligatures: none;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: var(--tx);
+  caret-color: var(--tx);
+  caret-shape: block;   /* fallback: I-beam where unsupported */
+  outline: 0;
   white-space: pre;
-}
-
-/* the committed Glass woff2 has no coverage for the box-draw / braille / ░
-   cells, so they fall back to the system face. They render at the SAME
-   font-size as the content characters (16px from .terminal, inherited) —
-   one consistent glyph box across the line — and clip inside their cell
-   (overflow:hidden on .c / .cell) so a wider fallback glyph can't bleed
-   past its column. charCell marks each such cell with data-fallback="<char>". */
-.c[data-fallback="─"],
-.c[data-fallback="░"],
-.c[data-fallback="⣶"],
-.c[data-fallback="⣧"],
-.c[data-fallback="⣏"],
-.c[data-fallback="⡟"],
-.c[data-fallback="⠿"],
-.c[data-fallback="⢻"],
-.c[data-fallback="⣹"],
-.c[data-fallback="⣼"] {
-  line-height: var(--pitch);
-}
-
-/* a visible gap (in-flight (id,n)) — never hidden (F5: text color, not dim
-   — opacity carries the "gap" read, color carries the palette) */
-.gapmark {
-  color: var(--text);
-  opacity: 0.55;
-}
-
-/* the block caret: one column wide (= a content cell), fast fade in/out.
-   A client presentation element only — never a wire byte, never a gutter
-   byte. Fast pace ≈ 240ms on / 400ms off (CANON §8b). */
-.block-caret {
-  display: inline-block;
-  width: var(--col);
-  height: var(--pitch);
-  background: var(--text);
-  vertical-align: top;
-  animation: carl-caret 640ms steps(1, end) infinite;
-}
-
-@keyframes carl-caret {
-  0% {
-    opacity: 1;
-  }
-  38% {
-    opacity: 1;
-  }
-  39% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 0;
-  }
+  overflow: hidden;
+  border: 0;
 }
