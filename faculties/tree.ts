@@ -266,7 +266,7 @@ export async function runSelftest(): Promise<void> {
 
 // --- boot: the tree IS the wire -------------------------------------------------------
 
-const HEAD = '0.2.0';
+const HEAD = '0.2.1';
 
 export async function bootTree(): Promise<void> {
   booting = true;

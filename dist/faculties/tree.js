@@ -226,7 +226,7 @@ export async function runSelftest() {
     }
 }
 // --- boot: the tree IS the wire -------------------------------------------------------
-const HEAD = '0.2.0';
+const HEAD = '0.2.1';
 export async function bootTree() {
     booting = true;
     treeSet('carl.version', HEAD);
