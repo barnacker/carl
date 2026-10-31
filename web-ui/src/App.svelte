@@ -61,6 +61,9 @@
   let livecellEl: HTMLDivElement | null = null;
   let arming = false;
   let booted = false;
+  let selftestWaved = false; // the 6 rung rows RENDER once a selftest WAVE (dirty handles
+                             // at carl.immu.selftest. paths) arrives; NEVER painted on
+                             // boot from the entry frame's data
   let crtxActive = false;  // crtx mode == 'active' (the live cell's window)
 
   // the client fold of the server tree (entry data + kd waves; never overwrite)
@@ -83,14 +86,27 @@
     if (to && !to.startsWith('oper-')) return; // not this session (broadcasts route per id)
     const data = f.data as { [p: string]: string | number | boolean | object | null } | undefined;
     const dirty = f.dirty as { [h: string]: string | number | boolean | object | null } | undefined;
+    if (dirty) {
+      // a selftest WAVE (dirty handles at carl.immu.selftest. paths) UNLOCKS the
+      // 6 rung rows: from this wave on, the rungs render (paintAll below).
+      for (const h of Object.keys(dirty)) {
+        const p = handleToPath.get(h);
+        if (p && p.includes('.selftest.')) { selftestWaved = true; break; }
+      }
+    }
     if (data !== undefined && f.from === 'carl') {
       // ENTRY (also the V1 reconnect re-snapshot): full tree + fresh hp,
-      // the oper-id in 'to'. Re-arm cold on every entry (reconnect = re-render)
+      // the oper-id in 'to'. Re-arm cold on every entry (reconnect = re-render).
+      // The entry's selftest data arrives READ-only (handles get recorded); the
+      // rung rows stay BLANK until a selftest WAVE lands (reset here so a
+      // mid-sweep reconnect doesn't paint stale rungs either — they recount
+      // once the live waves resume).
       sid = to;
       for (const p of Object.keys(data)) tree.set(p, data[p]);
       const hp = f.hp as { [k: string]: string } | undefined;
       if (hp) { handleToPath.clear(); for (const k of Object.keys(hp)) handleToPath.set(k, hp[k]); }
       booted = false;
+      selftestWaved = false;
       paintAll();
       return;
     }
@@ -185,12 +201,14 @@
       case 0: return HEAD_L + ' ' + ver;
       case 1: return '';
       case 2: return '- SELF-TEST ----------------------';
-      case 3: return rungBody(0);
-      case 4: return rungBody(1);
-      case 5: return rungBody(2);
-      case 6: return rungBody(3);
-      case 7: return rungBody(4);
-      case 8: return rungBody(5);
+      // rung rows 3..8: blank on boot; render only after a selftest WAVE has
+      // arrived (entry-frame selftest data is read-only, never painted)
+      case 3: return selftestWaved ? rungBody(0) : '';
+      case 4: return selftestWaved ? rungBody(1) : '';
+      case 5: return selftestWaved ? rungBody(2) : '';
+      case 6: return selftestWaved ? rungBody(3) : '';
+      case 7: return selftestWaved ? rungBody(4) : '';
+      case 8: return selftestWaved ? rungBody(5) : '';
       case 9: return '----------------------------------';
       case 10: return '';
       case 11: {
