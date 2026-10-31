@@ -234,7 +234,7 @@ iv.unref?.();
 
 // --- the selftest sweep (driven by immu; ~3 s; progress changes per write) ---------
 
-const RUNGS = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
+const RUNGS = ['dash', 'immu', 'crtx', 'tele', 'nerv', 'llm1'];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**

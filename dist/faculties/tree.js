@@ -197,7 +197,7 @@ function leafClear(dirty) {
 const iv = setInterval(flush, Math.ceil(1000 / 60));
 iv.unref?.();
 // --- the selftest sweep (driven by immu; ~3 s; progress changes per write) ---------
-const RUNGS = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
+const RUNGS = ['dash', 'immu', 'crtx', 'tele', 'nerv', 'llm1'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * immu's sweep: six named components, each progress 0..100 — the server

@@ -48,7 +48,7 @@
   const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
   const RUNG_LABEL = ['DASH', 'IMMU', 'CRTX', 'TELE', 'NERV', 'LLM1'];
   // target order (tree keys are under the DRIVER, carl.immu.selftest.<short>):
-  const RKEY = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
+  const RKEY = ['dash', 'immu', 'crtx', 'tele', 'nerv', 'llm1'];
   const FIELD_WDTS = 12; // the 12-dot field (dotField(p) = round(p/100*12), 12 at 100)
   const ROWS = 14;       // the fixed console: title, 8 box rows, separator,
                         // blank, ROM, blank, READY (row-ids boot:0..boot:13).
