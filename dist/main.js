@@ -115,8 +115,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/sse' && req.method === 'POST') {
         // THE op/echo path (reused): the client POSTs tx frames (kind usr / op).
         //   usr (from:oper-id, to:crtx): mock brain turn — crtx active (kd),
-        //        tx ans chunks in-order, crtx service (kd).
-        //   op  (from:oper-id, to:<faculty>): data.op dispatch (selftest -> immu).
+        //        tx ans chunks in-order, crtx service (kd). LOCKED frame:
+        //        { t:'tx', from, to, kind:'usr', text } — `text` TOP-LEVEL.
+        //   op  (from:oper-id, to:<faculty>): { t:'tx', from, to, kind:'op',
+        //        data:{op:token} } — dispatch (selftest -> immu). `data` is the
         let body = null;
         try {
             body = JSON.parse((await parseBody(req)).toString('utf-8'));
@@ -127,14 +129,17 @@ const server = http.createServer(async (req, res) => {
         const from = typeof body?.from === 'string' ? body.from : '';
         const to = typeof body?.to === 'string' ? body.to : '';
         const kind = typeof body?.kind === 'string' ? body.kind : '';
-        const data = (typeof body?.data === 'object' && body.data !== null) ? body.data : {};
+        const data = ((typeof body?.data === 'object' && body.data !== null)
+            ? body.data
+            : (typeof body?.data === 'string' ? { op: body.data } : {}));
         const session = from ? sessionsGet(from) : undefined;
         res.writeHead(202, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
         if (!session)
             return; // unknown oper-id: the wire is live, the frame is dropped
+        const textTop = (typeof body?.text === 'string') ? body.text : '';
         if (kind === 'usr' && to === 'crtx') {
-            void startTurn(session, data.text ?? '');
+            void startTurn(session, textTop || (data.text ?? ''));
         }
         else if (kind === 'op') {
             dispatchOp(session, to, data);

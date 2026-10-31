@@ -15,7 +15,7 @@
 // Symlink guard (defensive; dist/ on this host has no symlinks): a
 // cross-root symlinked DIR is NOT walked (it would ride to another
 // mount); a cross-root symlinked FILE counts the link's own size only.
-import { lstat, readdir, realpath } from 'node:fs/promises';
+import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 // the walk root: <root>/dist only (v0.1.3.5 pin; single dir, so the sum
 // below never double-counts).
@@ -83,11 +83,10 @@ export const CARL_RUNTIME_SET = [
     path.join(CARL_ROOT, 'dist'),
 ];
 let romWalk = null;
-/**
- * ROM in KiB (int): the <root>/dist launch-time walk, started the first
+/** ROM in KiB (int): the <root>/dist launch-time walk, started the first
  * time it is awaited and memoized (one promise, one settle) — recomputes
- * NOTHING for the rest of the process.
- */
+ * NOTHING for the rest of the process. (Boot line only; superseded by
+ * carlRomFileKib for the per-rung re-evaluation.) */
 export function carlRomKib() {
     if (romWalk)
         return romWalk;
@@ -95,6 +94,22 @@ export function carlRomKib() {
         .then((sizes) => sizes.reduce((a, b) => a + b, 0))
         .catch(() => 0);
     return romWalk;
+}
+/**
+ * ROM in KiB (int), re-measured LIVE each call: the byte size of
+ * <root>/dist/main.js (the client's single rotor — the entrypoint the
+ * harness serves) / 1024, floor. A fresh os.stat per call: no memo.
+ * This is the value the per-rung re-evaluation waves carry — a faculty
+ * may have grown between boots, so the number re-reads each time.
+ */
+export async function carlRomFileKib() {
+    try {
+        const st = await stat(path.join(CARL_ROOT, 'dist', 'main.js'));
+        return Math.floor(st.size / 1024);
+    }
+    catch {
+        return 0;
+    }
 }
 /** MEM in MB (live process RSS). Caller formats decimals. */
 export function carlProcessMemMib() {

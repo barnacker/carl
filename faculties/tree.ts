@@ -233,6 +233,10 @@ const iv = setInterval(flush, Math.ceil(1000 / 60));
 iv.unref?.();
 
 // --- the selftest sweep (driven by immu; ~3 s; progress changes per write) ---------
+// LOCKED V1 lifecycle (boot→selftest): the server is the ONLY writer of the selftest
+// keys; after each rung it re-measures ROM (dist/main.js, fresh stat) + MEM (live RSS)
+// and writes them back — the dirty flag (new != old) decides whether they ride a wave.
+// A faculty may have grown between boots → the numbers may change rung-to-rung.
 
 const RUNGS = ['dash', 'immu', 'crtx', 'tele', 'nerv', 'llm1'];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -242,8 +246,9 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * sleeps between increments (the 60Hz clock is fixed; the DATA changes
  * slower — a progress delta rides a wave only when it actually changes),
  * ~3 s total, distributed per component (randomized). Then mode pass + ms
- * (or mode fault, progress 100, no ms). Concurrent selftests: one at a time
- * (an op while one is active is queued, not run).
+ * (or mode fault, progress 100, no ms). After EACH rung: a rom + mem
+ * re-evaluation (fresh write; dirty-only if changed). Concurrent
+ * selftests: one at a time (an op while one is active is queued, not run).
  */
 export async function runSelftest(): Promise<void> {
   const weights = RUNGS.map(() => 200 + Math.floor(Math.random() * 700));
@@ -254,13 +259,17 @@ export async function runSelftest(): Promise<void> {
     const w = windows[i];
     selftestBegin('immu', target);
     const cost = 0.2 + Math.random() * 2.1; // mock settle cost, ms (one decimal)
-    const steps = 12; // the client draws 12 dots: dotField(p) = round(p/100*12)
+    const steps = 12; // the client's 12-cell dot field: one write per step
     for (let k = 1; k <= steps; k++) {
       await sleep(Math.max(2, w / steps - 2));
       selftestProgress('immu', target, Math.round((k / steps) * 100));
     }
     await sleep(20);
     selftestPass('immu', target, cost);
+    // the per-rung re-evaluation: ROM = dist/main.js (live stat), MEM = live RSS.
+    const { carlRomFileKib, carlProcessMemMib } = await import('./dash/rom.js');
+    treeSet('carl.rom', await carlRomFileKib());
+    treeSet('carl.mem', Math.round(carlProcessMemMib() * 10) / 10);
   }
 }
 
@@ -272,6 +281,10 @@ export async function bootTree(): Promise<void> {
   booting = true;
   treeSet('carl.version', HEAD);
   for (const s of RUNGS) facultyRegister(s, 'selftest');
+  // V1: the ENTRY carries carl.rom/carl.mem (shape unchanged) — the CLIENT
+  // IGNORES them at boot (it paints ROM/MEM only after the 6th rung settles,
+  // from the per-rung re-evaluation waves). The entry values stay here for
+  // the wire shape; the first op-driven sweep overwrites them (dirty-only).
   const { carlRomKib, carlProcessMemMib } = await import('./dash/rom.js');
   treeSet('carl.rom', await carlRomKib());          // dist-only, KiB
   treeSet('carl.mem', Math.round(carlProcessMemMib() * 10) / 10); // live RSS (MiB)
@@ -289,11 +302,15 @@ export async function bootTree(): Promise<void> {
 
 // --- the ops (tx kind:'op': data.op, executed by the named faculty) -------------------
 
-/** data.op dispatch. V1: op:'selftest' (run all) — to = immu. While a sweep
-    is active, the op is QUEUED (one at a time), not run in parallel; the
-    queue is served the moment the RUNNING sweep settles. */
+/** data.op dispatch. V1: op:'selftest' (run all) — to = immu. The wire
+    shape (LOCKED): the client sends { t:'tx', from, to, kind:'op',
+    data:{ op:<token> } } — `data` is the object. While a sweep is active,
+    the op is QUEUED (one at a time), not run in parallel; the queue is
+    served the moment the RUNNING sweep settles. */
 export function dispatchOp(s: Session, to: string, data: { [k: string]: unknown }): boolean {
-  const op = typeof data?.op === 'string' ? data.op : '';
+  const opToken = (typeof data === 'object' && data !== null && typeof data.op === 'string') ? (data as { op: string }).op
+    : (typeof data === 'string' ? data : '');
+  const op = opToken || (typeof (data as { op?: unknown })?.op === 'string' ? (data as { op: string }).op : '');
   if (op === 'selftest' && (to === 'immu' || to === '')) {
     if (selftestBusy || booting) {
       // rejected/queued: remember it; serve once the live sweep settles.
