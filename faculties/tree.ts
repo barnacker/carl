@@ -289,13 +289,31 @@ export async function bootTree(): Promise<void> {
 
 // --- the ops (tx kind:'op': data.op, executed by the named faculty) -------------------
 
-/** data.op dispatch. V1: op:'selftest' (run all) — to = immu. While a sweep is
-    active, the op is QUEUED (one at a time), not run in parallel. */
+/** data.op dispatch. V1: op:'selftest' (run all) — to = immu. While a sweep
+    is active, the op is QUEUED (one at a time), not run in parallel; the
+    queue is served the moment the RUNNING sweep settles. */
 export function dispatchOp(s: Session, to: string, data: { [k: string]: unknown }): boolean {
   const op = typeof data?.op === 'string' ? data.op : '';
   if (op === 'selftest' && (to === 'immu' || to === '')) {
-    if (selftestBusy || booting) { selftestQueue.push(op); return true; } // rejected/queued
-    selftestBusy = true; void runSelftest(); return true;
+    if (selftestBusy || booting) {
+      // rejected/queued: remember it; serve once the live sweep settles.
+      // (idempotent guard: if two ops land while one runs, one sweep is enough)
+      if (!selftestQueue.includes(op)) selftestQueue.push(op);
+      return true;
+    }
+    selftestBusy = true;
+    void (async () => {
+      await runSelftest();
+      selftestBusy = false;
+      while (selftestQueue.length) {
+        // serve queued ops one at a time, in order, as the sweep settles
+        selftestQueue.shift();
+        selftestBusy = true;
+        await runSelftest();
+        selftestBusy = false;
+      }
+    })();
+    return true;
   }
   return false; // unknown op: not executed (the 202 stays — the wire is live)
 }
