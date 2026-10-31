@@ -1,152 +1,189 @@
 <script lang="ts">
-  // CARL-01 v0.1.3 — Form C (spec-of-record 2026-10-30, gate §5/§8).
+  // CARL-01 v0.2.0 — wire protocol V1 (envelope from/to, kd dirty-only,
+  // tx from/to/kind). Form-C renderer (the 5 rules) is UNCHANGED — only the
+  // wire source changed: the R2 frame machine (t:sseinit/ready/open/re/close,
+  // F/n/m) and the R3 fold/seq reader are DEAD.
   //
-  // Shape EXACT:
+  // SHAPE EXACT (Form C, spec-of-record 2026-10-30):
   //   .screen  (100vw x 100vh, overflow hidden, flex column, bg #00040b)
   //   ▸ .history — ONE read-only <pre> (white-space:pre; flex 1 1 auto;
   //     min-height 0; overflow-y auto) = the ONLY scroller. Its ONE text
   //     node is the whole console: every line is a 2-char IN-STREAM GUTTER
   //     (col 0 = state/classifier, col 1 = decorator) + content — byte-
-  //     exact (spaces + LF respected). NO per-row div, NO per-line span, NO
-  //     8px grid. In-place re-issue (dot fill / settle / drip) rewrites the
-  //     line's substring IN THE ONE text node, keyed by the ROW TABLE
-  //     (row-id → line index); element identity = the table entry + the
-  //     live cell re-anchored.
+  //     exact. NO per-row div, NO per-line span, NO 8px grid. In-place
+  //     re-issue (dot fill / settle) rewrites the line's substring IN THE
+  //     ONE text node, keyed by the ROW TABLE (row-id → line index).
   //   ▸ .livecell — exactly ONE absolutely-positioned node, one gutter
-  //     column wide, at column 0 of the active row (left 0, top row*LH).
-  //     Carries the CSS @keyframes 8-braille steps(8) 640ms spinner WHILE
-  //     any selftest .mode=='active' (a boot rung or a turn's THRU window);
-  //     dies on pass OR first reply char. NO JS timer.
-  //   ▸ .input  — the ONE writable node below the pre: one <textarea>
-  //     (variable height capped ~40vh + own overflow-y auto, native block
-  //     caret, maxlength 500, spellcheck false, autocomplete off).
+  //     column wide, at column 0 of the active row. CSS @keyframes 8-
+  //     braille steps(8) 640ms spinner while crtx mode == 'active'; dies
+  //     on the service flip. NO JS timer.
+  //   ▸ .input  — the ONE writable node below the pre (one <textarea>,
+  //     native block caret, maxlength 500, spellcheck false).
   //
-  // STATE TREE is the wire: the snapshot {t:'kd',snap:{path:value}} is the
-  // full folded tree (the row-map source); waves {t:'kd',tick,seq_end,
-  // dirty:{handle:value}} on the 60Hz clock, coalesced per key (hot
-  // selftest.progress rides every wave; a no-op wave — empty dirty — still
-  // advances seq: phase lock). tx chunks {t:'tx',seq,tag,c} = CONVERSATION
-  // ONLY: zero c during boot; the banner RENDERS from carl.version + the
-  // selftest progress/mode/ms (the 13-wide dot field per rung from progress —
-  // 13 in-stream `·`, 'OK @ X.X ms' from {pass, ms}; the client formats, the
-  // server sends values).
-  //
-  // Two-writer: the tree render writes the banner lines; the c caption
-  // dumps into the same ONE text node in order. Enter (not shift+enter)
-  // freezes the draft into a usr row (col 0 = left guillemet), clears, and
-  // POSTs (echo-on-freeze, not live); on reply close-equivalent the tail
-  // re-arms + focus() in the SAME rAF as scroll-to-bottom.
+  // WIRE V1:
+  //   ENTRY  t=kd from=carl to=oper-<id> data={path:value}+hp={handle:path}
+  //     → read oper-id from 'to', fold data, build the handle decoder from
+  //       hp, paint the banner. Then SILENCE (no frames until a change).
+  //   WAVE   t=kd from=<faculty> tick/seq_end dirty={handle:value}
+  //     → decode handle via hp, apply to the local tree, re-render the
+  //       affected row(s). dirty-only (a settled handle is never re-sent).
+  //   tx usr → (operator side: freeze + clear + POST)
+  //   tx ans → seq 1..N within the reply (a seq reset or a crtx active flip
+  //     opens a new reply); drop the chunk bytes in order.
+  //   kd crtx mode active → live cell spins on the crtx row (col 0).
+  //   kd crtx mode service → live cell dies, focus returns to the input.
+  //   kd immu selftest progress → dotField(progress) = round(p/100*12) dots.
+  //   kd immu selftest pass → 12 dots + 'OK @ X.Xms'; fault → 12 dots + 'FAULT'.
   //
   // G2: scroll-to-bottom only when at-bottom (within one line pitch), same
-  // rAF as the append; overflow-anchor is NEVER none.  G4: font-display
-  // block (carl.css).  G1: post-font-load, measure a 2-char gutter span,
-  // the live-cell glyph and one content char in the loaded face; assert
-  // 2-gutter == live-cell*2 == 2x content char (half-grid face); fail =
-  // console.error + NO ship (no font swap — operator-locked face).  F5:
+  // rAF as the append.  G4: font-display block (carl.css).  G1: post-font-
+  // load width assert (2-gutter == live-cell*2 == 2x content char).  F5:
   // dim #682A00 NEVER painted (the gutter paints #0981b4).
 
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import './carl.css';
 
   const D = '\u00B7';   // the 12-dot self-test field byte (in-stream content)
   const LH = 20;        // line pitch, px — the locked --fh value (G2 + live cell y)
   const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
   const RUNG_LABEL = ['DASH', 'IMMU', 'CRTX', 'TELE', 'NERV', 'LLM1'];
+  // target order (tree keys are under the DRIVER, carl.immu.selftest.<short>):
   const RKEY = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
-  const FIELD_WDTS = 12; // dot field width (v0.1.3.9): 12 in-stream `·` chars,
-                         // = the operator's canonical count (always 12);
-                         // dotField(progress) = Math.round(progress/100 * 12)
-                         // dots (6 at 50%, 12 at 100%). The live-cell spinner
-                         // (braille) is a separate col0 node and is unchanged.
-  const ROWS = 14;      // the fixed console: title, 8 box rows, separator,
-                        // blank, ROM, blank, READY — each row its own table
-                        // entry (row-id boot:0..boot:13). v0.1.3.7: the v0.1.3.6
-                        // blank rows were literal CRLFs EMBEDDED in the case 9
-                        // (separator) + case 10 (ROM) bodies — the embedded
-                        // breaks desynced the row table, and the per-wave
-                        // setLine re-issue re-emitted ROM + READY under the
-                        // CRLF-inserted copies (duplicates). The blanks are now
-                        // first-class rows, every line's content carries no
-                        // control chars: the banner is a pure 14-line string.
+  const FIELD_WDTS = 12; // the 12-dot field (dotField(p) = round(p/100*12), 12 at 100)
+  const ROWS = 14;       // the fixed console: title, 8 box rows, separator,
+                        // blank, ROM, blank, READY (row-ids boot:0..boot:13).
 
   let draft = '';
-  let sid = '';
-  let text = '';                                  // the ONE text node content
+  let sid = '';            // OPER-<random> — read from the entry frame's 'to'
+  let text = '';           // the ONE text node content
   let preEl: HTMLPreElement | null = null;
   let inputEl: HTMLTextAreaElement | null = null;
   let livecellEl: HTMLDivElement | null = null;
   let arming = false;
   let booted = false;
-  let turning = false;     // a turn's ANS row is open (drip in flight)
-  let turnLine = -1;
-  let usrSeq = 0;
+  let crtxActive = false;  // crtx mode == 'active' (the live cell's window)
 
-  // the server tree (client fold: snapshot + kd waves; values never overwrite)
-  const tree = new Map<string, string | number | null>();
-  const rowTable = new Map<string, number>();     // row-id → line index (table)
-  const live = { row: -1, kind: '' as '' | 'boot' | 'turn' };
+  // the client fold of the server tree (entry data + kd waves; never overwrite)
+  const tree = new Map<string, string | number | boolean | object | null>();
+  const rowTable = new Map<string, number>();     // row-id → line index
+  const handleToPath = new Map<string, string>(); // hp: handle → dotted path
+  const live = { row: -1 };
 
-  // --- the wave in (kd = tree truth; tx = the ONLY channel) --------------------------
+  // --- the wire V1: entry + waves (kd) / conversation (tx) ----------------------
 
-  let lastSeq = 0;
   function onEvent(e: MessageEvent): void {
     let f: Record<string, unknown>;
     try { f = JSON.parse(typeof e.data === 'string' ? e.data : ''); } catch { return; }
-    if (f.t === 'kd') {
-      const seq = Number(f.seq_end ?? 0);
-      if (seq <= lastSeq) return; // never-overwrite
-      lastSeq = seq;
-      const snap = f.snap as { [p: string]: string | number | null } | undefined;
-      const dirty = f.dirty as { [k: string]: string | number | null } | undefined;
-      if (snap) {
-        for (const p of Object.keys(snap)) tree.set(p, snap[p]);
-        const hp = f.hp as { [k: string]: string } | undefined;
-        if (hp) foldHandleTable(hp); // the handle→path table (waves map by handle)
-      } else if (dirty) {
-        for (const k of Object.keys(dirty)) {
-          const p = handleToPath.get(k);
-          if (p !== undefined) tree.set(p, dirty[k]);
-        }
-      }
-      afterWave();
+    if (f.t !== 'kd' && f.t !== 'tx') return;
+    if (f.t === 'kd') onKd(f); else onTx(f);
+  }
+
+  function onKd(f: Record<string, unknown>): void {
+    const to = typeof f.to === 'string' ? f.to : '';
+    if (to && !to.startsWith('oper-')) return; // not this session (broadcasts route per id)
+    const data = f.data as { [p: string]: string | number | boolean | object | null } | undefined;
+    const dirty = f.dirty as { [h: string]: string | number | boolean | object | null } | undefined;
+    if (data !== undefined && f.from === 'carl') {
+      // ENTRY (also the V1 reconnect re-snapshot): full tree + fresh hp,
+      // the oper-id in 'to'. Re-arm cold on every entry (reconnect = re-render)
+      sid = to;
+      for (const p of Object.keys(data)) tree.set(p, data[p]);
+      const hp = f.hp as { [k: string]: string } | undefined;
+      if (hp) { handleToPath.clear(); for (const k of Object.keys(hp)) handleToPath.set(k, hp[k]); }
+      booted = false;
+      paintAll();
       return;
     }
-    if (f.t === 'tx') onChunk(f);
-  }
-
-  // handle→path (the snapshot's hp field; stable — a changed handle = protocol break)
-  const handleToPath = new Map<string, string>();
-  function foldHandleTable(hp: { [k: string]: string }): void {
-    handleToPath.clear();
-    for (const k of Object.keys(hp)) handleToPath.set(k, hp[k]);
-  }
-
-  function afterWave(): void {
-    if (!booted && tree.has('carl.version')) {
-      booted = true;
-      writeBanner();
+    if (dirty !== undefined) {
+      // WAVE: decode handles via hp, apply to the tree (latest value), re-render
+      for (const h of Object.keys(dirty)) {
+        const p = handleToPath.get(h);
+        if (p !== undefined) tree.set(p, dirty[h]);
+      }
+      paintAll();
     }
-    if (booted) paintBanner();
-    if (turnLine >= 0) settleReplyRow();
+  }
+
+  // the crtx mode flip: active = spin up the live cell on the crtx row + open
+  // the reply row; service = the cell dies and focus returns to the input.
+  let replyOpen = false;
+  let replyLine = -1;
+  let seq = 0;
+
+  function crtxMode(): unknown {
+    const v = tree.get('carl.faculties.crtx');
+    return (typeof v === 'object' && v !== null) ? (v as { mode?: unknown }).mode : null;
+  }
+
+  function onTx(f: Record<string, unknown>): void {
+    const kind = String(f.kind ?? '');
+    const to = String(f.to ?? '');
+    if (to && sid && to !== sid) return; // crtx chat routes to the specific session that asked
+    if (kind === 'ans') {
+      const n = Number(f.seq ?? 0);
+      const c = typeof f.text === 'string' ? f.text : '';
+      if (!c) return;
+      if (!replyOpen || n < seq) {
+        // a NEW reply: the crtx active flip (or a seq reset) is the opener
+        if (!replyOpen) {
+          replyLine = lineCount();
+          replyOpen = true;
+          seq = 1;
+          setLine('reply', replyLine, '');
+        }
+        if (n < seq) seq = 1; // the seq reset within a new reply
+      }
+      seq = Math.max(seq, n);
+      appendReplyChunk(c);
+      scheduleScroll(true);
+    }
+  }
+
+  function appendReplyChunk(c: string): void {
+    const lines = text.split('\n');
+    const cur = lines[replyLine] || '\u00BB ';
+    lines[replyLine] = cur.slice(0, 2) + cur.slice(2) + c; // dump IN ORDER
+    text = lines.join('\n');
+  }
+
+  function settleReplyRow(): void {
+    // the close-equivalent re-issue: once crtx is back to service and the
+    // reply row holds its text, re-issue the line's 2-char gutter (» ) IN
+    // THE ONE text node, keyed by the row table (element identity survives)
+    const lines = text.split('\n');
+    if (replyLine < 0 || replyLine >= lines.length) return;
+    const cur = lines[replyLine];
+    if (cur.slice(0, 2) === '\u00BB ' && cur.slice(2).length > 0) {
+      lines[replyLine] = '\u00BB ' + cur.slice(2);
+      text = lines.join('\n');
+    }
+  }
+
+  // --- the banner (client-rendered from the entry tree + waves) -------------------
+
+  function paintAll(): void {
+    if (!booted && tree.has('carl.version')) { booted = true; }
+    for (let i = 0; i < ROWS; i++) setLine('boot:' + i, i, bodyOf(i));
+    if (crtxMode() === 'active' && !replyOpen && tree.get('carl.faculties.crtx')) {
+      // the crtx active flip: open the reply row (the live cell spins col 0)
+      if (!replyOpen) {
+        replyLine = lineCount();
+        replyOpen = true;
+        seq = 1;
+        setLine('reply', replyLine, '');
+      }
+    }
+    crtxActive = crtxMode() === 'active';
+    if (!crtxActive && replyOpen) { settleReplyRow(); replyOpen = false; arming = true; }
     placeLiveCell();
     scheduleScroll();
-  }
-
-  // --- the banner (client-rendered; zero c during boot) --------------------------------
-
-  function writeBanner(): void {
-    for (let i = 0; i < ROWS; i++) setLine('boot:' + i, i, bodyOf(i));
-  }
-
-  function paintBanner(): void {
-    for (let i = 0; i < ROWS; i++) setLine('boot:' + i, i, bodyOf(i));
   }
 
   function bodyOf(i: number): string {
     const ver = String(tree.get('carl.version') ?? '');
     switch (i) {
       case 0: return HEAD_L + ' ' + ver;
-      case 1: return '';             // the box's blank top row
+      case 1: return '';
       case 2: return '- SELF-TEST ----------------------';
       case 3: return rungBody(0);
       case 4: return rungBody(1);
@@ -155,7 +192,7 @@
       case 7: return rungBody(4);
       case 8: return rungBody(5);
       case 9: return '----------------------------------';
-      case 10: return '';            // blank row after the separator
+      case 10: return '';
       case 11: {
         const rom = tree.get('carl.rom');
         const mem = tree.get('carl.mem');
@@ -163,63 +200,50 @@
         const m = (mem === null || mem === undefined) ? 'MEM --.-MB' : 'MEM ' + Number(mem).toFixed(1) + 'MB';
         return r + ' \u00B7 ' + m;
       }
-      case 12: return '';            // blank row after the ROM row
+      case 12: return '';
       case 13: return 'READY.';
       default: return '   ';
     }
   }
 
-  // dotField(progress) — the self-test progress indicator: 0..100% maps to
-  // 0..FIELD_WDTS in-stream `·` (the R3 field byte) padded to a fixed
-  // FIELD_WDTS gap, so the dot field is a PROGRESS indicator, not static
-  // filler. v0.1.3.8: the field is WIDE (13) to fill the label→status gap, so
-  // the settled (pass, 100%) rung shows the full 13-dot line
-  // «> DASH ············· OK @ 0.4ms» (the operator's target width) and
-  // 'OK @' aligns across rungs. A settle re-issue caught at partial progress
-  // draws the partial fill; the live-cell braille spinner (active phase) is
-  // unchanged — it sits in col0 and is a separate node.
+  // dotField(progress) — 0..100% → 0..12 in-stream `·`, fixed 12-wide gap
   function dotField(progress: number): string {
     const n = Math.min(FIELD_WDTS, Math.max(0, Math.round((Math.min(100, progress) / 100) * FIELD_WDTS)));
     return D.repeat(n) + ' '.repeat(FIELD_WDTS - n);
   }
 
+  // the selftest keys are under the DRIVER (V1 key shape): carl.immu.selftest.<short>.
   function rungBody(i: number): string {
-    const sector = 'carl.carl.selftest.' + RKEY[i];
+    const sector = 'carl.immu.selftest.' + RKEY[i];
     const mode = tree.get(sector + '.mode');
     const prog = Number(tree.get(sector + '.progress') ?? 0);
     const ms = tree.get(sector + '.ms');
     if (mode === 'pass' && ms !== null && ms !== undefined) {
-      // SETTLED row: the dot field filled to 100% (13 dots) + 'OK @ X.Xms'
       return '> ' + RUNG_LABEL[i] + ' ' + dotField(100) + ' ' + 'OK @ ' + Number(ms).toFixed(1) + 'ms';
-    } else if (mode === 'fail') {
-      return '> ' + RUNG_LABEL[i] + ' ' + dotField(prog) + ' ' + 'FAULT';
+    } else if (mode === 'fault' || mode === 'fail') {
+      return '> ' + RUNG_LABEL[i] + ' ' + dotField(100) + ' ' + 'FAULT';
     } else if (mode === 'active') {
-      // IN-FLIGHT row: 13-wide field filled by progress (braille in col0)
       return '> ' + RUNG_LABEL[i] + ' ' + dotField(prog);
     } else {
-      // not started: the 13-wide field, empty
       return '> ' + RUNG_LABEL[i] + ' ' + dotField(0);
     }
   }
 
-  // --- the ONE text node: append + in-place re-issue (row-table keyed) ----------------
+  // --- the ONE text node: append + in-place re-issue (row-table keyed) -------------
 
   function setLine(id: string, lineIdx: number, content: string): void {
     const lines = text.split('\n');
     while (lines.length <= lineIdx) lines.push('  ');
-    const g = gutterFor(id, lineIdx);            // the 2-char IN-STREAM gutter
+    const g = gutterFor(id, lineIdx);
     lines[lineIdx] = g + content;
     text = lines.join('\n');
     rowTable.set(id, lineIdx);
   }
 
   function gutterFor(id: string, lineIdx: number): string {
-    // R1/R2: col0 = state (space — the live cell overlays col0 of the active
-    // row), col1 = decorator (the boot box; blank elsewhere) — the frame bar
-    // spans the whole 14-row box, READY (row 13) closes it with └
     if (id.startsWith('boot:')) {
       const d = lineIdx === 0 ? '\u250C' : lineIdx === ROWS - 1 ? '\u2514' : '\u2502';
-      return ' ' + d;   // col0 blank + col1 the frame bar
+      return ' ' + d;      // col0 blank + col1 the frame bar
     }
     if (id.startsWith('usr:')) return '\u00AB ';  // col0 = the user classifier
     if (id === 'reply') return '\u00BB ';         // col0 = the reply classifier
@@ -230,16 +254,14 @@
     return text === '' ? 0 : text.split('\n').length;
   }
 
-  // --- the live cell (ONE node; the CSS spinner; NO JS timer) ---------------------------
+  // --- the live cell (ONE node; the CSS spinner; NO JS timer) ------------------------
 
   function placeLiveCell(): void {
     const lc = livecellEl;
     if (!lc) return;
-    let row = -1;
-    for (let i = 0; i < 6; i++) {
-      if (tree.get('carl.carl.selftest.' + RKEY[i] + '.mode') === 'active') { row = 3 + i; break; }
-    }
-    if (row < 0 && turning) row = turnLine;   // the turn's THRU row (until first char)
+    // the live cell rides col 0 of the crtx row (row index 5) while crtx is
+    // active (a turn's THRU window); it dies on the service flip.
+    const row = (crtxMode() === 'active') ? 5 : -1;
     live.row = row;
     lc.classList.toggle('spin', row >= 0);
     if (row < 0) { lc.style.display = 'none'; return; }
@@ -247,60 +269,8 @@
     lc.style.top = (row * LH) + 'px';
   }
 
-  // --- conversation: c dumps IN ORDER (no char-counting) ---------------------------------
+  // --- G2: the at-bottom guard (same rAF as any append) --------------------------------
 
-  function onChunk(f: Record<string, unknown>): void {
-    const tag = String(f.tag ?? '');
-    const c = typeof f.c === 'string' ? f.c : '';
-    if (tag === 'TURN_START') {
-      // open the reply row (the reply gutter: col0 = the right guillemet);
-      // the live cell keeps spinning col 0 while the THRU window runs
-      const i = lineCount();
-      turning = true;
-      turnLine = i;
-      setLine('reply', i, '');
-      scheduleScroll(true);
-      return;
-    }
-    if (tag === 'ANS' && c) {
-      let lines = text.split('\n');
-      if (!turning || turnLine < 0) {
-        const i = lines.length;
-        turning = true;
-        turnLine = i;
-        lines.push('\u00BB ');
-        text = lines.join('\n');
-      }
-      const cur = lines[turnLine] || '\u00BB ';
-      lines[turnLine] = cur.slice(0, 2) + cur.slice(2) + c; // append IN ORDER
-      text = lines.join('\n');
-      scheduleScroll(true);
-      return;
-    }
-    if (tag === 'DONE') {
-      turning = false;
-      // close-equivalent: re-arm the tail + focus() in the SAME rAF as
-      // scroll-to-bottom (R5)
-      arming = true;
-      scheduleScroll(true);
-    }
-  }
-
-  // --- G2: the at-bottom guard (same rAF as any append) ------------------------------------
-
-  function settleReplyRow(): void {
-    // the close-equivalent gutter re-issue: once the THRU window closes and
-    // the reply row holds its text, rewrite the line's 2-char in-stream
-    // gutter (» → the reply classifier) IN THE ONE text node, keyed by the
-    // row table (row-id → line index) — element identity survives
-    const lines = text.split('\n');
-    if (turnLine < 0 || turnLine >= lines.length) return;
-    const cur = lines[turnLine];
-    if (cur.slice(0, 2) === '\u00BB ' && cur.slice(2).length > 0) {
-      lines[turnLine] = '\u00BB ' + cur.slice(2);
-      text = lines.join('\n');
-    }
-  }
   let raf = 0;
   function scheduleScroll(force = false): void {
     if (raf) return;
@@ -318,36 +288,39 @@
 
   let g1Done = false;
 
-  // --- Enter-freeze (preventDefault; echo on freeze; not live) --------------------------------
+  // --- Enter-freeze (preventDefault; echo on freeze; not live) -------------------------------
 
   function onKey(e: KeyboardEvent): void {
     if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) {
       e.preventDefault();
       const msg = draft;
-      if (msg.length > 0) {
-        usrSeq += 1;
-        setLine('usr:' + usrSeq, lineCount(), msg); // freeze as a read-only row
-        sendMsg(msg);                               // POST; the server echoes USR
+      if (msg.length > 0 && sid) {
+        setLine('usr:' + (lineCount()), lineCount(), msg); // freeze as a read-only row
+        sendTx('crtx', 'usr', { text: msg });               // the wire: a tx usr frame
       }
       draft = ''; // clear; the native caret stays in the textarea
     }
   }
 
-  function sendMsg(msg: string): void {
+  // the tx usr POST (the op/echo path): from = oper-id, to = the faculty
+  function sendTx(to: string, kind: string, data: { [k: string]: unknown } = {}): void {
     void fetch('/sse', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ msg, session: sid }),
+      body: JSON.stringify({ t: 'tx', from: sid, to, kind, data }),
     }).catch(() => { /* wire down: the reply just doesn't come (mock brain) */ });
   }
 
+  // --- the wire connect: no id; the server mints oper-<id> (entry 'to') ---------------
+
+  let es: EventSource | null = null;
   function connect(): void {
-    sid = 'v3-' + Math.random().toString(36).slice(2, 10);
-    const e = new EventSource('/sse?session=' + encodeURIComponent(sid) + '&tag=terminal');
+    const e = new EventSource('/sse'); // no id, no tag — the 't' field IS the type
+    es = e;
     e.onmessage = onEvent;
   }
 
-  // --- G1: the byte-exact width gate (post-font-load; no swap on fail) -------------------------
+  // --- G1: the byte-exact width gate (post-font-load; no swap on fail) -------------------
 
   async function gate(): Promise<void> {
     try { document.fonts?.load?.('16px Glass'); await document.fonts?.ready; } catch { /* measure as-is */ }
@@ -363,12 +336,8 @@
     else console.error('G1 FAIL: gutter(2)=' + g2 + ' live-cell=' + lc + ' x2-content=' + 2 * x1 + ' — DO NOT SHIP (no font swap)');
   }
 
-  // --- lifecycle --------------------------------------------------------------------------------
-
-  onMount(() => {
-    connect();
-    window.addEventListener('keydown', onKey, true);
-  });
+  onMount(() => { connect(); window.addEventListener('keydown', onKey, true); });
+  onDestroy(() => { es?.close(); });
 </script>
 
 <div class="screen">

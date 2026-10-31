@@ -1,65 +1,49 @@
-// faculties/tree.ts — the CARL-01 v0.1.3 state-tree engine.
+// faculties/tree.ts — the CARL-01 v0.2.0 wire-protocol-V1 tree engine.
 //
-// The single writer of truth: a dotted-path tree (carl.version,
-// carl.faculties.<short>, carl.<driver>.selftest.<short>, carl.rom, carl.mem),
-// projected over a FLAT HANDLE table (each leaf = a stable integer handle,
-// assigned once at register; a changed handle = a protocol break).
+// ENVELOPE (every frame, kd and tx): { t, from, to }.
 //
-// One global 60Hz tick flushes the DIRTY set into one WAVE per subscribed
-// client:  wave = { t:'kd', tick, seq_end, dirty:{handle:value} }  —
-// coalesced per key (latest value per handle per wave). The ONE hot field
-// (a selftest .progress) rides on EVERY wave; every other field is dirty-
-// flush. A no-op wave (empty dirty) still advances seq (phase lock across
-// silence).
+// kd frames (kernel data = the tree/state):
+//   ENTRY (on connect — the only frame sent on connect, then SILENCE):
+//     { t:'kd', from:'carl', to:'<oper-id>', data:{...path->value...}, hp:{...handle->path...} }
+//   WAVE (only when something changed, on the 60Hz tick that has dirty data):
+//     { t:'kd', from:'<faculty>', to:'<oper-id>', tick:N, seq_end:N, dirty:{handle:value} }
+//     NO no-op waves: dirty empty => no frame. NO hot-field re-emit: a handle
+//     rides dirty ONLY while its value is actually changing (settled = absent).
+//   RECONNECT (V1): a fresh entry (current tree + fresh hp) — no fold-from-seq.
 //
-// The append-only, never-overwrite, per-seq LOG is the durabiliiyi: it holds
-// both the kd waves and the c text chunks (tx tag), seq-ordered, so a
-// reconnecting client FOLDS from its last seq_end (never a full re-ship) and
-// the tree is a fold of the log. Snapshot-on-connect ships the full table
-// once (a dumb client reads it as handles→paths→a tree; the dev client as
-// its row map).
+// SESSION ID: server-minted. The client connects to SSE with no ID; the
+// server generates oper-<random> and returns it in the entry frame's 'to'.
 //
-// ONE stream: the reused GET /sse carries both event types, tagged kd (tree
-// wave) and tx (text chunk); the client sorts by tag. c is conversation
-// ONLY: zero c during boot — boot is 100% tree (the banner is rendered
-// client-side from carl.version + the selftest progress/mode/ms). The mock
-// brain (one reply per turn): a THRU window (mode=active), then ANS tx
-// chunks drip the reply string byte-for-byte, then a DONE tag.
+// KEY SHAPE: the selftest keys live under the DRIVER (the R3 double-carl bug,
+// carl.carl.selftest.*, is dead): carl.immu.selftest.<target>.{mode,progress,ms}.
+// Faculty registry: carl.faculties.<short>.mode = an object {mode: ...}, NOT null.
 //
-// ROM = on-disk byte-scale size (KiB, 1024) of the RUNTIME SET
-// (dist/ + web-ui/build/ + node_modules), memoized at first await.
-// MEM = live process RSS (MiB). Both real, both tree values.
+// dirty: a flag per leaf, set ONLY when a write changes the value (new != old).
+// The 60Hz tick clock stays; the FLUSH emits a wave only when dirty is
+// non-empty. dirty keys are binned by the UNDER-DRIVER faculty prefix, so a
+// wave's 'from' is the faculty driving the change (immu for selftest, crtx for
+// chat mode, carl for root).
 
-import { carlRomKib, carlProcessMemMib } from './dash/rom.js';
+let booting = false;      // the boot sweep is in flight (no selftest op meanwhile)
+let selftestBusy = false; // a selftest sweep is running (ops queue, not parallel)
+const selftestQueue: string[] = []; // pending 'selftest' tokens (op: serve queued, rest 202)
 
-type LeafValue = string | number | null;
+type LeafValue = string | number | boolean | object | null;
 
 interface Leaf {
-  path: string;      // dotted path (public name)
+  path: string;
   value: LeafValue;
-  dirty: boolean;    // set on write, cleared on wave flush
-  hot: boolean;      // the ONE hot field: selftest progress (every wave)
+  dirty: boolean; // set on change-write, cleared when it rides a wave
 }
 
-export type TxTag = 'TURN_START' | 'ANS' | 'DONE';
-
-interface Sub {
-  session: string;
-  tag: string;
+interface Session {
+  id: string;               // oper-<random> (server-minted)
   send: (f: unknown) => void;
-  cursor: number;    // last seq this client has been given (= its wave seq_end)
-  seqEnd: number;    // the previous wave's seq_end (the delta window's floor)
+  aliveness: number;        // last tick at which this session got its entry
+  route: string;            // the 'to' value for waves: the oper id
 }
 
-interface LogEntry {
-  seq: number;
-  kind: 'kd' | 'tx';
-  dirty?: { [key: string]: LeafValue };
-  tag?: TxTag;
-  c?: string;
-}
-
-// --- flat handle table + dirty flags ------------------------------------------
+// --- flat handle table + dirty flags -------------------------------------------
 
 const leaves = new Map<number, Leaf>();
 const handleByPath = new Map<string, number>();
@@ -69,47 +53,46 @@ function ensureLeaf(path: string): number {
   const found = handleByPath.get(path);
   if (found !== undefined) return found;
   const handle = nextHandle++;
-  leaves.set(handle, {
-    path,
-    value: null,
-    dirty: true,
-    hot: path.endsWith('.progress'), // the single hot field
-  });
+  leaves.set(handle, { path, value: null, dirty: true });
   handleByPath.set(path, handle);
   return handle;
 }
 
-// --- the log (durabiliiyi) -------------------------------------------------------
-
-const LOG_CAP = 8000;
-const log: LogEntry[] = [];
-let seq = 0;
-
-function appendLog(e: Omit<LogEntry, 'seq'>): number {
-  seq += 1;
-  const entry: LogEntry = { ...e, seq };
-  log.push(entry);
-  if (log.length > LOG_CAP) log.splice(0, log.length - LOG_CAP);
-  return seq;
+function leafValue(path: string): LeafValue {
+  const h = handleByPath.get(path);
+  return h === undefined ? null : leaves.get(h)!.value;
 }
 
-// --- tree writes ----------------------------------------------------------------
+// --- tree writes (dirty only on real change) ------------------------------------
 
-/** write one leaf (value change only: no-change writes are dropped — the
-    log is never-overwrite, so a same-value re-write is a protocol no-op). */
+/** write one leaf; a same-value write sets NO dirty (no-change = no wire). */
 export function treeSet(path: string, value: LeafValue): void {
   const handle = ensureLeaf(path);
   const leaf = leaves.get(handle)!;
-  if (leaf.value === value) return; // no change: no log entry, no dirty
+  if (leaf.value === value) return;
   leaf.value = value;
   leaf.dirty = true;
-  appendLog({ kind: 'kd', dirty: { [handle]: value } });
 }
 
-/** register a faculty: PRESENCE of carl.faculties.<short> = registration. */
-export function facultyRegister(short: string): void {
-  treeSet('carl.faculties.' + short, null);
+/** read a leaf (null if unregistered). */
+export function treeGet(path: string): LeafValue {
+  return leafValue(path);
 }
+
+/** register a faculty: presence of carl.faculties.<short> = registration.
+    V1: the value is an OBJECT {mode: ...}, never null. */
+export function facultyRegister(short: string, mode: string = 'idle'): void {
+  treeSet('carl.faculties.' + short, { mode });
+}
+
+export function facultyMode(short: string, mode: string): void {
+  const cur = leafValue('carl.faculties.' + short);
+  const o: { [k: string]: unknown } = (typeof cur === 'object' && cur !== null) ? { ...(cur as object) } : {};
+  o.mode = mode;
+  treeSet('carl.faculties.' + short, o);
+}
+
+// --- the selftest keys (under the DRIVER: carl.<driver>.selftest.<target>.) -------
 
 export function selftestBegin(driver: string, target: string): void {
   treeSet('carl.' + driver + '.selftest.' + target + '.mode', 'active');
@@ -117,210 +100,228 @@ export function selftestBegin(driver: string, target: string): void {
 }
 
 export function selftestProgress(driver: string, target: string, pct: number): void {
-  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  const p = Math.max(0, Math.min(100, Math.round(pct))); // uint8 0..100
   treeSet('carl.' + driver + '.selftest.' + target + '.progress', p);
 }
 
-export function selftestEnd(driver: string, target: string, ms: number): void {
+export function selftestPass(driver: string, target: string, ms: number): void {
   const base = 'carl.' + driver + '.selftest.' + target;
   treeSet(base + '.progress', 100);
-  treeSet(base + '.ms', Math.round(ms * 10) / 10);
+  treeSet(base + '.ms', Math.round(ms * 10) / 10); // float, arrives with pass
   treeSet(base + '.mode', 'pass');
 }
 
-export function logTxChunk(tag: TxTag, c: string): number {
-  return appendLog({ kind: 'tx', tag, c });
+export function selftestFault(driver: string, target: string): void {
+  const base = 'carl.' + driver + '.selftest.' + target;
+  treeSet(base + '.progress', 100);
+  treeSet(base + '.mode', 'fault'); // no ms (the client paints 12 dots + 'FAULT')
 }
 
-export function snapshotTree(): { [path: string]: LeafValue } {
-  const out: { [path: string]: LeafValue } = {};
-  for (const leaf of leaves.values()) out[leaf.path] = leaf.value;
-  return out;
+// --- the session table (server-minted oper ids; frames routed by 'to') -----------
+
+const sessions = new Map<string, Session>();
+
+export function newSession(send: (f: unknown) => void): Session {
+  let id = '';
+  do { id = 'oper-' + Math.random().toString(36).slice(2, 10); } while (sessions.has(id));
+  const s: Session = { id, send, aliveness: 0, route: id };
+  sessions.set(id, s);
+  return s;
 }
 
-/** the DEV client's handle→path table (stable; the snapshot's twin; the
-    wire's `hp` field is this table keyed by string handles). */
-export function pathOf(handle: number): string | undefined {
-  for (const [path, h] of handleByPath) if (h === handle) return path;
-  return undefined;
+export function dropSession(id: string): void {
+  sessions.delete(id);
 }
 
-/** handle→path (flat, for the snapshot frame's hp field). */
-function handleTable(): { [handle: string]: string } {
-  const out: { [handle: string]: string } = {};
+export function routeSession(id: string): Session | undefined {
+  return sessions.get(id);
+}
+
+// --- routing helpers ---------------------------------------------------------------
+
+/** the underline faculty for a path: the first segment after 'carl.' that is
+    not 'faculties' (immu / crtx / ...) — 'carl' for the root keys. */
+function facultyOf(path: string): string {
+  const seg = path.split('.');
+  if (seg[0] !== 'carl' || seg.length < 2) return 'carl';
+  const first = seg[1];
+  if (first === 'faculties') return 'carl'; // the registry rides root
+  return first;
+}
+
+/** bin currently-dirty handles by their driving faculty: handle -> value. */
+function drainDirty(): Map<string, { [h: string]: LeafValue }> {
+  const bins = new Map<string, { [h: string]: LeafValue }>();
+  for (const [h, leaf] of leaves) {
+    if (!leaf.dirty) continue;
+    let b = bins.get(facultyOf(leaf.path));
+    if (!b) { b = {}; bins.set(facultyOf(leaf.path), b); }
+    b[String(h)] = leaf.value;
+  }
+  return bins;
+}
+
+function hpTable(): { [h: string]: string } {
+  const out: { [h: string]: string } = {};
   for (const [path, h] of handleByPath) out[String(h)] = path;
   return out;
 }
 
-/** fold of the log after `cursor` — reconnect is a fold, not a re-ship. */
-export function fold(cursor: number): { entries: LogEntry[]; snapshot: boolean } {
-  if (cursor <= 0) return { entries: [], snapshot: true };
-  return { entries: log.filter((e) => e.seq > cursor), snapshot: false };
+function dataSnapshot(): { [p: string]: LeafValue } {
+  const out: { [p: string]: LeafValue } = {};
+  for (const leaf of leaves.values()) out[leaf.path] = leaf.value;
+  return out;
 }
 
-export const treeSeq = (): number => seq;
-
-// --- the 60Hz wave (single global tick) -------------------------------------------
-
-let tick = 0;
-const subs = new Map<string, Map<string, Sub>>(); // session → tag → Sub
-
-function sendFrame(s: Sub, f: unknown): void {
-  s.send(f);
+/** the ENTRY frame: t=kd, from=carl, to=oper-id, data=full tree, hp=map.
+    Every attach (a fresh connect AND a V1 reconnect) gets a fresh entry. */
+function sendEntry(s: Session): void {
+  s.send({ t: 'kd', from: 'carl', to: s.route, data: dataSnapshot(), hp: hpTable() });
 }
 
-function sendEntry(s: Sub, e: LogEntry): void {
-  if (e.kind === 'kd' && e.dirty) {
-    sendFrame(s, { t: 'kd', tick, seq_end: e.seq, dirty: e.dirty });
-  } else if (e.kind === 'tx' && e.c !== undefined) {
-    sendFrame(s, { t: 'tx', seq: e.seq, tag: e.tag, c: e.c });
+/** broadcast one kd wave to every session (to = each session's oper id). */
+function broadcastWave(from: string, dirty: { [h: string]: LeafValue }): void {
+  if (Object.keys(dirty).length === 0) return; // NO no-op waves (silence)
+  const f: { [k: string]: unknown } = {
+    t: 'kd', from, to: '*', tick: TICK, seq_end: seq, dirty,
+  };
+  for (const s of sessions.values()) {
+    // frame is per-recipient: 'to' names the specific session
+    s.send({ t: 'kd', from, to: s.route, tick: f.tick, seq_end: f.seq_end, dirty });
   }
 }
 
-/** attach: a snapshot (first connect: the full folded tree + the
-    handle→path table, `hp`) or a fold (warm reconnect: the log tail),
-    then live waves — a fold, never a full re-ship. */
-export function attach(session: string, tag: string, a: { send: (f: unknown) => void; lastSeq?: number }): Sub {
-  let byTag = subs.get(session);
-  if (!byTag) { byTag = new Map(); subs.set(session, byTag); }
-  const s: Sub = { session, tag, send: a.send, cursor: a.lastSeq ?? 0, seqEnd: a.lastSeq ?? 0 };
-  byTag.set(tag, s);
-
-  const f = fold(s.cursor);
-  if (f.snapshot) {
-    s.send({ t: 'kd', tick, seq_end: seq, snap: snapshotTree(), hp: handleTable() });
-  } else {
-    for (const e of f.entries) sendEntry(s, e);
-  }
-  s.cursor = seq;
-  return s;
+/** a tx frame to one session (from/to explicit). */
+export function sendTx(s: Session, from: string, kind: string, extra: { [k: string]: unknown } = {}): void {
+  s.send({ t: 'tx', from, to: s.route, kind, ...extra });
 }
 
-export function detach(session: string, tag: string): void {
-  subs.get(session)?.delete(tag);
+/** the entry's `data` (the full current tree: path->value). */
+export function snapshotTree(): { [p: string]: LeafValue } {
+  return dataSnapshot();
 }
 
-function flushWave(): void {
-  tick += 1;
-  // one WAVE per subscribed client: the DELTA since its last wave — the log's
-  // kd entries with seq > (previous seq_end), latest value per key. The hot
-  // selftest progress fields carry their CURRENT value on every wave (the
-  // client observes them continuously); cold fields ride only when written.
-  // A no-op window (no writes) settles to an empty dirty — still a wave,
-  // still seq_end+1 (phase lock across silence). The log keeps every seq
-  // (durability): the wave is a fold over a window, the tree a fold of the log.
-  for (const byTag of subs.values()) {
-    for (const s of byTag.values()) {
-      const since = s.seqEnd ?? 0;
-      // the WAVE = the DELTA since this client's last seq_end: every key
-      // written in (since, seq] carries its latest value, coalesced per key
-      // (the log keeps all intermediate seqs for durability; the wave folds
-      // them). The hot .progress fields ride their writes live (dot-fill is
-      // continuous for the client); a settled tree — nothing written — yields
-      // an EMPTY dirty, which still advances seq (phase lock across silence).
-      const dirty: { [key: string]: LeafValue } = {};
-      for (const e of log) {
-        if (e.seq <= since || !e.dirty) continue;
-        for (const k of Object.keys(e.dirty)) {
-          if (!leaves.has(Number(k))) continue;
-          dirty[k] = e.dirty[k]; // log is seq-ordered: latest wins
-        }
-      }
-      // the ONE hot field (selftest .progress) rides EVERY wave — its value
-      // is re-read from the live tree state, so a no-op window (nothing cold
-      // changed) is a phase-locked frame carrying only the hot fields; seq
-      // still advances (across silence)
-      for (const [h, leaf] of leaves) if (leaf.hot) dirty[String(h)] = leaf.value;
-      s.seqEnd = seq;
-      s.cursor = seq;
-      sendFrame(s, { t: 'kd', tick, seq_end: seq, dirty });
-    }
+/** the entry's `hp` (int->path, keyed by string handles). */
+export function handleTable(): { [h: string]: string } {
+  return hpTable();
+}
+
+// --- the 60Hz tick (stays; the flush is dirty-only) --------------------------------
+
+let TICK = 0;
+let seq = 0; // monotonically increasing (carried as seq_end on kd waves)
+
+function flush(): void {
+  TICK += 1;
+  const bins = drainDirty();
+  if (bins.size === 0) return; // NOTHING changed this tick: SILENCE (no frame)
+  for (const [faculty, dirty] of bins) {
+    leafClear(dirty);
+    seq += 1;
+    broadcastWave(faculty, dirty);
   }
 }
 
-const iv = setInterval(flushWave, Math.ceil(1000 / 60));
+function leafClear(dirty: { [h: string]: LeafValue }): void {
+  for (const h of Object.keys(dirty)) {
+    const leaf = leaves.get(Number(h));
+    if (leaf) leaf.dirty = false;
+  }
+}
+
+const iv = setInterval(flush, Math.ceil(1000 / 60));
 iv.unref?.();
 
-// --- boot: the state tree is the single writer -------------------------------------
+// --- the selftest sweep (driven by immu; ~3 s; progress changes per write) ---------
 
-const HEAD = '0.1.3';
 const RUNGS = ['dash', 'immu', 'crtx', 'teleg', 'nerv', 'llm1'];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * Boot self-test: the six named components, each progress 0..100 over
- * ~3 s total (randomized per-component distribution), then mode pass + ms.
- * The client renders 12 dots per rung from progress and 'OK @ X.X ms' from
- * {pass, ms}; the server sends values only. Driver owns run: the sweep runs
- * under carl.<short>.selftest keys (short-shorthand; the client discovers
- * branches by appearance — presence of the key = a new branch).
+ * immu's sweep: six named components, each progress 0..100 — the server
+ * sleeps between increments (the 60Hz clock is fixed; the DATA changes
+ * slower — a progress delta rides a wave only when it actually changes),
+ * ~3 s total, distributed per component (randomized). Then mode pass + ms
+ * (or mode fault, progress 100, no ms). Concurrent selftests: one at a time
+ * (an op while one is active is queued, not run).
  */
-export async function bootTree(): Promise<void> {
-  treeSet('carl.version', HEAD);
-  for (const s of RUNGS) facultyRegister(s);
-
-  // ROM (runtime set, KiB) + MEM (RSS) — real values, memoized at first await
-  const rom = await carlRomKib();
-  treeSet('carl.rom', rom);
-  treeSet('carl.mem', carlProcessMemMib());
-
-  // six windows, ~3 s total, distributed per component (randomized)
+export async function runSelftest(): Promise<void> {
   const weights = RUNGS.map(() => 200 + Math.floor(Math.random() * 700));
   const totalw = weights.reduce((a, b) => a + b, 0);
   const windows = weights.map((w) => Math.round(3000 * (w / totalw)));
-
   for (let i = 0; i < RUNGS.length; i++) {
     const target = RUNGS[i];
     const w = windows[i];
-    selftestBegin('carl', target);
+    selftestBegin('immu', target);
     const cost = 0.2 + Math.random() * 2.1; // mock settle cost, ms (one decimal)
-    const steps = 24; // progress granularity (the client draws 12 dots)
+    const steps = 12; // the client draws 12 dots: dotField(p) = round(p/100*12)
     for (let k = 1; k <= steps; k++) {
-      await sleep(Math.max(2, (w / steps) - 4));
-      selftestProgress('carl', target, Math.round((k / steps) * 100));
+      await sleep(Math.max(2, w / steps - 2));
+      selftestProgress('immu', target, Math.round((k / steps) * 100));
     }
-    await sleep(30);
-    selftestEnd('carl', target, cost);
+    await sleep(20);
+    selftestPass('immu', target, cost);
   }
 }
 
-// --- the mock brain (one reply per turn) --------------------------------------------
+// --- boot: the tree IS the wire -------------------------------------------------------
+
+const HEAD = '0.2.0';
+
+export async function bootTree(): Promise<void> {
+  booting = true;
+  treeSet('carl.version', HEAD);
+  for (const s of RUNGS) facultyRegister(s, 'selftest');
+  const { carlRomKib, carlProcessMemMib } = await import('./dash/rom.js');
+  treeSet('carl.rom', await carlRomKib());          // dist-only, KiB
+  treeSet('carl.mem', Math.round(carlProcessMemMib() * 10) / 10); // live RSS (MiB)
+  selftestBusy = true;
+  await runSelftest();
+  selftestBusy = false;
+  booting = false;
+  for (const s of RUNGS) facultyMode(s, 'service');
+  if (selftestQueue.length) {
+    selftestBusy = true;
+    await runSelftest(); // a queued selftest op (while the boot sweep ran): served now
+    selftestBusy = false;
+  }
+}
+
+// --- the ops (tx kind:'op': data.op, executed by the named faculty) -------------------
+
+/** data.op dispatch. V1: op:'selftest' (run all) — to = immu. While a sweep is
+    active, the op is QUEUED (one at a time), not run in parallel. */
+export function dispatchOp(s: Session, to: string, data: { [k: string]: unknown }): boolean {
+  const op = typeof data?.op === 'string' ? data.op : '';
+  if (op === 'selftest' && (to === 'immu' || to === '')) {
+    if (selftestBusy || booting) { selftestQueue.push(op); return true; } // rejected/queued
+    selftestBusy = true; void runSelftest(); return true;
+  }
+  return false; // unknown op: not executed (the 202 stays — the wire is live)
+}
+
+// --- the mock brain (one turn: crtx mode flip + tx ans chunks + flip back) -----------
 
 export const REPLY_TEXT = "Hello! I'm CARL-01";
+let turnOwner: Session | null = null; // one turn at a time (mock)
 
 /**
- * One turn: THRU window (mode=active → client col-0 spinner from the tree),
- * then ANS tx chunks drip the reply string byte-for-byte (in-order, per-
- * seq, never-overwrite), then DONE. One reply per turn. The USR line stays
- * client-side (frozen on Enter, local — zero c during boot holds).
+ * One turn for a session (to = that session — per-client chat routing).
+ * crtx active (kd wave, dirty crtx.mode handle) → ANS tx chunks seq 1..N
+ * (streamed byte-for-byte, in-order) → crtx service (kd wave).
  */
-export async function startTurn(session: string, userLine: string): Promise<void> {
-  if (!subs.has(session)) return;
-  const byTag = subs.get(session)!;
-  const cast = (f: unknown) => { for (const s of byTag.values()) s.send(f); };
-
-  logTxChunk('TURN_START', '');
-  cast({ t: 'tx', seq: treeSeq(), tag: 'TURN_START', c: '' });
-
-  // THRU: a short selftest carries the col-0 spinner while active
-  const drv = 'nerv';
-  selftestBegin(drv, 'nerv');
-  const window = 300 + Math.floor(Math.random() * 500);
-  const t0 = Date.now();
-  for (let k = 1; k <= 10; k++) {
-    await sleep(Math.max(2, window / 10 - 4));
-    selftestProgress(drv, 'nerv', k * 10);
-  }
-  selftestEnd(drv, 'nerv', Date.now() - t0);
-
-  // ANS drip: 2-byte chunks (mock vLLM rate), byte-for-byte
+export async function startTurn(s: Session, userLine: string): Promise<void> {
+  if (turnOwner && turnOwner !== s) return; // mock: one turn at a time
+  turnOwner = s;
+  userLine; // the mock brain is one reply per turn (the prompt is echoed client-side)
+  facultyMode('crtx', 'active');
+  await sleep(300 + Math.floor(Math.random() * 400)); // the THRU window (kd dirty-only)
   for (let i = 0; i < REPLY_TEXT.length; i += 2) {
-    const chunk = REPLY_TEXT.slice(i, i + 2);
-    const s = logTxChunk('ANS', chunk);
-    cast({ t: 'tx', seq: s, tag: 'ANS', c: chunk });
+    const chunk = REPLY_TEXT.slice(i, i + 2); // 2-byte chunks (mock vLLM rate)
+    const n = Math.floor(i / 2) + 1;          // seq = 1,2,3... WITHIN the reply
+    sendTx(s, 'crtx', 'ans', { seq: n, text: chunk } as { [k: string]: unknown });
     await sleep(40);
   }
-
-  const done = logTxChunk('DONE', '');
-  cast({ t: 'tx', seq: done, tag: 'DONE', c: '' });
+  facultyMode('crtx', 'service');
+  turnOwner = null;
 }

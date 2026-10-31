@@ -1,21 +1,20 @@
-// faculties/dash/index.ts — right FLUSHED (round-3, the tree epoch):
-// this module used to carry the whole round-2 wire (WireFrame
-// t:'sseinit'|'ready'|'open'|'re'|'close' + F, n, tr, c, m; runBoot; the
-// row()/SPIN/DOT gutter-in-c machine). Round 3 (spec-of-record, 2026-10-30):
-// the state tree IS the wire (faculties/tree.ts) and the banner is RENDERED
-// client-side from carl.version + the selftest progress/mode/ms — so this
-// file is a thin shell around the tree engine: the boot lifecycle and the
-// turn entry point. No DOM, no frame machine, no character dumper left.
+// faculties/dash/index.ts — the shell around the wire-protocol-V1 tree engine
+// (faculties/tree.ts). The R2 frame machine (t:sseinit/ready/open/re/close,
+// F/n/tr/m) is DEAD and must never be reintroduced; the round-3 fold/seq log is
+// dead with the R3 wire. The tree IS the wire: entry (data+hp), dirty-only
+// waves (no no-op, no hot re-emit), tx from/to/kind.
 
-import { bootTree, startTurn, attach, detach } from '../tree.js';
+import { bootTree } from '../tree.js';
 
-/** boot once per process (the tree is the single writer; idempotent). */
 let booted = false;
+/** boot once per process (the tree is the single writer; idempotent). */
 export function bootIfNot(): void {
   if (booted) return;
   booted = true;
   void bootTree();
 }
 
-/** attach an SSE conn to the tree's wave stream (snapshot-then-fold). */
-export { attach, detach, startTurn };
+export {
+  newSession, dropSession,
+  sendTx, dispatchOp, startTurn,
+} from '../tree.js';

@@ -2,15 +2,17 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { attach, detach, startTurn, bootIfNot } from './faculties/dash/index.js';
+import {
+  bootIfNot, newSession, dropSession, dispatchOp, startTurn,
+} from './faculties/dash/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.CARL_PORT ?? 3000);
 const HOST = process.env.CARL_HOST ?? '0.0.0.0';
 const WEB_BUILD = path.resolve(__dirname, '..', 'web-ui', 'build');
 
-// round 3: the state tree boots at process start (the tree is the single
-// writer; the banner renders client-side from it — zero c during boot).
+// The state tree boots at process start (the tree is the single writer; the
+// banner renders client-side from the entry frame + live waves).
 bootIfNot();
 
 const MIME: Record<string, string> = {
@@ -54,18 +56,11 @@ function parseBody(req: http.IncomingMessage): Promise<unknown> {
     let size = 0;
     req.on('data', (c: Buffer) => {
       size += c.length;
-      if (size > 64 * 1024) {
-        req.destroy(); // body cap: the wire carries one message, not a disk
-        return;
-      }
-      chunks.push(c);
+      if (size > 64 * 1024) { req.destroy(); return; } // body cap
     });
     req.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
-      } catch {
-        resolve(null);
-      }
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
+      catch { resolve(null); }
     });
     req.on('error', () => resolve(null));
   });
@@ -75,13 +70,11 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
   if (url.pathname === '/sse' && req.method === 'GET') {
-    const session = url.searchParams.get('session');
-    const tag = url.searchParams.get('tag') ?? 'terminal';
-    if (!session) {
-      res.writeHead(400, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: 'missing session param' }));
-      return;
-    }
+    // THE single tagged stream (kd + tx). The client connects with NO id:
+    // the server mints oper-<random> and returns it in the ENTRY frame's
+    // 'to'. Then SILENCE until a change (dirty-only waves; no no-op; no
+    // hot-field re-emit). A reconnect = a fresh entry (V1 re-snapshot) +
+    // live waves from that point.
     res.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache, no-transform',
@@ -89,43 +82,51 @@ const server = http.createServer(async (req, res) => {
     });
     res.write('retry: 1500\n\n');
     let closed = false;
-    const cleanup = () => {
-      closed = true;
-      detach(session, tag);
-    };
-    req.on('close', cleanup);
-    req.on('error', cleanup);
-    // the tree sends: a snapshot (first connect) or a fold (reconnect), then
-    // live kd waves at 60Hz + the seq-ordered tx chunk stream — one stream,
-    // tagged events. attach is synchronous: the subscriber is in the table
-    // before the first wave tick (never a full re-ship).
-    attach(session, tag, { send: (f) => {
+    const session = newSession((f) => {
       if (closed) return;
       try { res.write('data: ' + JSON.stringify(f) + '\n\n'); } catch { closed = true; }
-    } });
+    });
+    // the entry frame is the only frame on connect (data=full tree, hp=map)
+    process.nextTick(() => { if (!closed) session.send(
+      { t: 'kd', from: 'carl', to: session.route,
+        data: treeSnapData(), hp: treeSnapHp() });
+    });
+    const cleanup = () => { if (!closed) { closed = true; dropSession(session.id); } };
+    req.on('close', cleanup);
+    req.on('error', cleanup);
     return;
   }
 
   if (url.pathname === '/sse' && req.method === 'POST') {
-    const body = (await parseBody(req)) as { msg?: unknown; session?: unknown } | null;
-    const session = typeof body?.session === 'string' ? body.session : '';
-    const msg = typeof body?.msg === 'string' ? body.msg : '';
+    // THE op/echo path (reused): the client POSTs tx frames (kind usr / op).
+    //   usr (from:oper-id, to:crtx): mock brain turn — crtx active (kd),
+    //        tx ans chunks in-order, crtx service (kd).
+    //   op  (from:oper-id, to:<faculty>): data.op dispatch (selftest -> immu).
+    const body = (await parseBody(req)) as { t?: unknown; from?: unknown; to?: unknown; kind?: unknown; data?: unknown } | null;
+    const from = typeof body?.from === 'string' ? body.from : '';
+    const to = typeof body?.to === 'string' ? body.to : '';
+    const kind = typeof body?.kind === 'string' ? body.kind : '';
+    const data = (typeof body?.data === 'object' && body!.data !== null) ? body!.data as { [k: string]: unknown } : {};
+    const session = from ? sessionsGet(from) : undefined;
     res.writeHead(202, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
-    if (!session || !msg) return;
-    // mock brain: THRU window (mode=active) then ANS drip, byte-for-byte
-    void startTurn(session, msg);
+    if (!session) return; // unknown oper-id: the wire is live, the frame is dropped
+    if (kind === 'usr' && to === 'crtx') { void startTurn(session, data.text as string ?? ''); }
+    else if (kind === 'op') { dispatchOp(session, to, data); }
     return;
   }
 
-  if (req.method === 'GET') {
-    await serveStatic(req, res);
-    return;
-  }
+  if (req.method === 'GET') { await serveStatic(req, res); return; }
 
   res.writeHead(404, { 'content-type': 'text/plain' });
   res.end('not found');
 });
+
+// session + snapshot accessors (kept local to the wire layer, not the tree)
+import { routeSession, snapshotTree, handleTable } from './faculties/tree.js';
+function sessionsGet(id: string) { return routeSession(id); }
+function treeSnapData() { return snapshotTree(); }
+function treeSnapHp() { return handleTable(); }
 
 server.listen(PORT, HOST, () => {
   process.stderr.write('carl-01 listening on :' + PORT + '\n');
