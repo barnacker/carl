@@ -50,19 +50,20 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse):
   res.end(body);
 }
 
-function parseBody(req: http.IncomingMessage): Promise<unknown> {
+function parseBody(req: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (c: Buffer) => {
-      size += c.length;
-      if (size > 64 * 1024) { req.destroy(); return; } // body cap
-    });
-    req.on('end', () => {
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-      catch { resolve(null); }
-    });
-    req.on('error', () => resolve(null));
+    let closed = false;
+    const finish = (buf: Buffer) => { if (!closed) { closed = true;
+        req.removeListener('data', ondata); req.removeListener('end', onend); req.removeListener('error', onerr); resolve(buf); } };
+    const ondata = (c: Buffer) => {
+      if (chunks.reduce((a, b) => a + b.length, 0) + c.length > 64 * 1024) { req.destroy(); return; } // body cap
+      chunks.push(c);
+    };
+    const onend = () => { finish(Buffer.concat(chunks)); };
+    const onerr = () => { finish(Buffer.concat(chunks)); };
+    req.on('data', ondata); req.on('end', onend); req.on('error', onerr);
+    if (req.readableEnded) finish(Buffer.concat(chunks));
   });
 }
 
@@ -102,7 +103,8 @@ const server = http.createServer(async (req, res) => {
     //   usr (from:oper-id, to:crtx): mock brain turn — crtx active (kd),
     //        tx ans chunks in-order, crtx service (kd).
     //   op  (from:oper-id, to:<faculty>): data.op dispatch (selftest -> immu).
-    const body = (await parseBody(req)) as { t?: unknown; from?: unknown; to?: unknown; kind?: unknown; data?: unknown } | null;
+    let body: { t?: unknown; from?: unknown; to?: unknown; kind?: unknown; data?: unknown } | null = null;
+    try { body = JSON.parse((await parseBody(req)).toString('utf-8')); } catch { body = null; }
     const from = typeof body?.from === 'string' ? body.from : '';
     const to = typeof body?.to === 'string' ? body.to : '';
     const kind = typeof body?.kind === 'string' ? body.kind : '';
