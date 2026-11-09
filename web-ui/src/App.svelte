@@ -11,8 +11,8 @@
   //     per-line span. In-place re-issue (dot fill / settle) rewrites
   //     the line's substring IN THE ONE text node.
   //   ▸ .livecell — exactly ONE absolutely-positioned node, one gutter
-  //     column wide, at column 0 of the active row. CSS @keyframes 8-
-  //     braille steps(8) 640ms spinner. NO JS timer.
+  //     column wide, at column 0 of the active row. JS-tick 8-braille
+  //     rotator: 100ms/frame, infinite, 4-dot-tall, one cell wide.
   //   ▸ .input  — the ONE writable node below the pre (one <textarea>,
   //     native block caret, maxlength 500, spellcheck false).
   //
@@ -64,6 +64,20 @@
 
   const D = '\u00B7';   // the dot-field byte (in-stream content)
   const LH = 18;        // line pitch, px (G2 + the live cell's y)
+  // the 8-glyph braille rotator (v0.1.1 §8: 100ms/frame, 4-dot-tall,
+  // one cell wide, gutter col 0; JS tick — the spec default):
+  const SPIN_GLYPHS = '\u28F6\u2887\u288F\u281F\u283F\u287B\u28B9\u28BC';
+  let spinFrame = 0;
+  function startSpin(): void {
+    const lc = livecellEl;
+    if (!lc) return;
+    lc.textContent = SPIN_GLYPHS[spinFrame];   // frame 1 at mount
+    spinFrame = 1;
+    window.setInterval(() => {
+      spinFrame = (spinFrame + 1) & 7;
+      if (livecellEl) livecellEl.textContent = SPIN_GLYPHS[spinFrame];
+    }, 100);
+  }
   const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
   const FIELD_WDTS = 12; // the 12-cell dot field (0..12 dots; 12 at 100)
   const TOTAL_RUNGS = 6;
@@ -189,9 +203,8 @@
     if (runShorts.length === 0) row = LADDER_0 - 1; // waiting below the version line
     else if (activeLine >= 0) row = activeLine;
     else if (crtxMode() === 'active' && crtxRowLine >= 0) row = crtxRowLine;
-    if (row < 0) { live.row = -1; lc.classList.toggle('spin', false); lc.style.display = 'none'; return; }
+    if (row < 0) { live.row = -1; lc.style.display = 'none'; return; }
     live.row = row;
-    lc.classList.toggle('spin', true);
     lc.style.display = 'block';
     lc.style.top = (row * LH) + 'px';
   }
@@ -393,7 +406,7 @@
     if (!(x1 > 0)) console.error('G1 FAIL: face unloaded — measure as-is');
   }
 
-  onMount(() => { connect(); window.addEventListener('keydown', onKey, true); });
+  onMount(() => { connect(); window.addEventListener('keydown', onKey, true); startSpin(); });
   onDestroy(() => { es?.close(); });
 </script>
 

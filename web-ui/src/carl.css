@@ -84,6 +84,7 @@ pre.tapes {
   top: 0;                          /* y set inline = row * --fh */
   width: var(--fh);                 /* exactly one grid column (16px face) */
   height: var(--fh);
+  font-size: inherit;               /* the face renders 8 dots tall in one cell */
   display: none;
   pointer-events: none;
   color: var(--tx);                 /* F5: TEXT color, never the dim */
@@ -91,26 +92,8 @@ pre.tapes {
   line-height: var(--fh);
   z-index: 2;
 }
-.livecell.spin::after {
-  content: '\2801';
-  display: block;
-  width: var(--fh);
-  height: var(--fh);
-  line-height: var(--fh);
-  text-align: left;
-  animation: spin 640ms steps(8) infinite;   /* THE 8-BRAILLE CYCLE */
-}
-@keyframes spin {
-  0%    { content: '\2801'; }
-  12.5% { content: '\2802'; }
-  25%   { content: '\2804'; }
-  37.5% { content: '\2808'; }
-  50%   { content: '\2810'; }
-  62.5% { content: '\2820'; }
-  75%   { content: '\2840'; }
-  87.5% { content: '\2880'; }
-  100%  { content: '\2801'; }
-}
+/* NOTE: the 8-glyph braille rotator is JS-tick (iteration 1b) — the
+   CSS .spin / @keyframes spin 2-dot shorthand spinner is superseded. */
 
 /* THE INPUT: the ONLY writable node (flex 0 0 auto), below the history,
    in normal flow — NOT sticky, NOT fixed. Variable height capped ~40vh
