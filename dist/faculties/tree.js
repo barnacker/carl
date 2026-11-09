@@ -79,9 +79,10 @@ export function selftestProgress(driver, target, pct) {
 }
 export function selftestPass(driver, target, ms) {
     const base = 'carl.' + driver + '.selftest.' + target;
+    const degraded = target === 'tele'; // tele selftest: degraded by design (test path)
     treeSet(base + '.progress', 100);
     treeSet(base + '.ms', Math.round(ms * 10) / 10); // float, arrives with pass
-    treeSet(base + '.mode', 'pass');
+    treeSet(base + '.mode', degraded ? 'degraded' : 'pass');
 }
 export function selftestFault(driver, target) {
     const base = 'carl.' + driver + '.selftest.' + target;

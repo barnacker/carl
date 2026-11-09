@@ -106,9 +106,10 @@ export function selftestProgress(driver: string, target: string, pct: number): v
 
 export function selftestPass(driver: string, target: string, ms: number): void {
   const base = 'carl.' + driver + '.selftest.' + target;
+  const degraded = target === 'tele'; // tele selftest: degraded by design (test path)
   treeSet(base + '.progress', 100);
   treeSet(base + '.ms', Math.round(ms * 10) / 10); // float, arrives with pass
-  treeSet(base + '.mode', 'pass');
+  treeSet(base + '.mode', degraded ? 'degraded' : 'pass');
 }
 
 export function selftestFault(driver: string, target: string): void {

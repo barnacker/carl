@@ -63,7 +63,7 @@
   import './carl.css';
 
   const D = '\u00B7';   // the dot-field byte (in-stream content)
-  const LH = 20;        // line pitch, px (G2 + the live cell's y)
+  const LH = 18;        // line pitch, px (G2 + the live cell's y)
   const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
   const FIELD_WDTS = 12; // the 12-cell dot field (0..12 dots; 12 at 100)
   const TOTAL_RUNGS = 6;
