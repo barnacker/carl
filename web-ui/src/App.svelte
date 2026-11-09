@@ -265,7 +265,7 @@
       const hp = f.hp as { [k: string]: string } | undefined;
       if (hp) { handleToPath.clear(); for (const k of Object.keys(hp)) handleToPath.set(k, hp[k]); }
       // (1) the version line ONLY (the entry's rom/mem are folded but IGNORED)
-      putAt(0, '  ', HEAD_L + ' ' + String(tree.get('carl.version') ?? ''));
+      putAt(0, '  ', HEAD_L + ' v' + String(tree.get('carl.version') ?? ''));
       // (2) the auto-request op:selftest → immu IMMEDIATELY (the server
       //     queues if a sweep is in flight). Once per entry.
       sendWire({ t: 'tx', from: to, to: 'immu', kind: 'op', data: { op: 'selftest' } });
@@ -311,7 +311,9 @@
         }
       }
     }
-    if (changed) repaint();
+    // ITER1: TEST hook — wave-branch paint disabled (rows come in iteration 2);
+    // the tree fold above STAYS so iteration 2 reads the accumulated state.
+    // if (changed) repaint();
   }
 
   // --- the tx send (LOCKED per-kind shapes) --------------------------------------------
