@@ -214,20 +214,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * selftests: one at a time (an op while one is active is queued, not run).
  */
 export async function runSelftest() {
-    const weights = RUNGS.map(() => 200 + Math.floor(Math.random() * 700));
-    const totalw = weights.reduce((a, b) => a + b, 0);
-    const windows = weights.map((w) => Math.round(3000 * (w / totalw)));
+    // TEST MODE: every kd emission on the boot/selftest path is 2s apart
+    // (the operator's slow-boot; the previous randomized ~3s/rung cadence
+    // is gone — constant cadence, revert to randomized weights for prod).
+    const STEP_MS = 2000;
     for (let i = 0; i < RUNGS.length; i++) {
         const target = RUNGS[i];
-        const w = windows[i];
         selftestBegin('immu', target);
         const cost = 0.2 + Math.random() * 2.1; // mock settle cost, ms (one decimal)
         const steps = 12; // the client's 12-cell dot field: one write per step
         for (let k = 1; k <= steps; k++) {
-            await sleep(Math.max(2, w / steps - 2));
+            await sleep(STEP_MS);
             selftestProgress('immu', target, Math.round((k / steps) * 100));
         }
-        await sleep(20);
+        await sleep(STEP_MS);
         selftestPass('immu', target, cost);
         // the per-rung re-evaluation: ROM = dist/main.js (live stat), MEM = live RSS.
         const { carlRomFileKib, carlProcessMemMib } = await import('./dash/rom.js');
