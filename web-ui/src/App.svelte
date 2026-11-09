@@ -264,37 +264,14 @@
       for (const p of Object.keys(data)) tree.set(p, data[p]);
       const hp = f.hp as { [k: string]: string } | undefined;
       if (hp) { handleToPath.clear(); for (const k of Object.keys(hp)) handleToPath.set(k, hp[k]); }
-      // (0) seed ladder state from the folded tree (hp order = the server's
-      //     rung creation order = the sweep order). A rung seeds only if its
-      //     mode is not idle (service): boot entries have ALL 6 at service
-      //     (the server's mid-boot sweep already completed) → nothing seeds;
-      //     a mid-sweep reconnect seeds whatever is active/finalized already.
-      for (const [h, p] of handleToPath) {
-        const m = SEL_RE.exec(p);
-        if (!m || m[2] !== 'mode') continue;
-        const short = m[1];
-        if (run[short]) continue; // one mode path per short (hp dedupes by path)
-        const modeVal = data[p as string];
-        if (modeVal === 'active' || modeVal === 'pass' || modeVal === 'degraded' || modeVal === 'fault' || modeVal === 'fail') {
-          const prog = Number(data['carl.immu.selftest.' + short + '.progress'] ?? 0);
-          const msVal = data['carl.immu.selftest.' + short + '.ms'];
-          const isFinal = modeVal === 'pass' || modeVal === 'degraded' || modeVal === 'fault' || modeVal === 'fail';
-          run[short] = {
-            label: LABEL_OF[short] ?? short.toUpperCase(),
-            mode: String(modeVal),
-            dots: isFinal ? FIELD_WDTS : Math.min(FIELD_WDTS, Math.max(0, Math.round(prog / 100 * FIELD_WDTS))),
-            ms: (msVal === null || msVal === undefined) ? null : Number(msVal),
-            finalized: isFinal,
-          };
-          runShorts.push(short);
-        }
-      }
       // (1) the version line ONLY (the entry's rom/mem are folded but IGNORED)
       putAt(0, '  ', HEAD_L + ' ' + String(tree.get('carl.version') ?? ''));
       // (2) the auto-request op:selftest → immu IMMEDIATELY (the server
       //     queues if a sweep is in flight). Once per entry.
       sendWire({ t: 'tx', from: to, to: 'immu', kind: 'op', data: { op: 'selftest' } });
-      // (3) paint seeded rungs (mid-sweep reconnect only) + place the cell
+      // (3) paint row0 (no rungs yet — they arrive on the wave cadence)
+      //     + place the cell. Mid-sweep reconnects re-arrange via the
+      //     wave handler (the hp table is already populated).
       repaint();
       return;
     }
