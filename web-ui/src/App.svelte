@@ -64,9 +64,9 @@
 
   const D = '\u00B7';   // the dot-field byte (in-stream content)
   const LH = 18;        // line pitch, px (G2 + the live cell's y)
-  // the 8-glyph braille rotator (v0.1.1 §8: 100ms/frame, 4-dot-tall,
-  // one cell wide, gutter col 0; JS tick — the spec default):
-  const SPIN_GLYPHS = '\u28F6\u2887\u288F\u281F\u283F\u287B\u28B9\u28BC';
+  // the 10-classic braille spinner rotator (10 frames, 60ms/frame,
+  // 600ms cycle, one cell, gutter col 0; JS tick — the spec default):
+  const SPIN_GLYPHS = '\u28CB\u2899\u28B9\u2878\u28BC\u2874\u2866\u2867\u2807\u288F';
   let spinFrame = 0;
   function startSpin(): void {
     const lc = livecellEl;
@@ -74,9 +74,9 @@
     lc.textContent = SPIN_GLYPHS[spinFrame];   // frame 1 at mount
     spinFrame = 1;
     window.setInterval(() => {
-      spinFrame = (spinFrame + 1) & 7;
+      spinFrame = (spinFrame + 1) % 10;
       if (livecellEl) livecellEl.textContent = SPIN_GLYPHS[spinFrame];
-    }, 100);
+    }, 60);
   }
   const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
   const FIELD_WDTS = 12; // the 12-cell dot field (0..12 dots; 12 at 100)
