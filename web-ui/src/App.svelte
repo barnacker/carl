@@ -64,8 +64,8 @@
 
   const D = '\u00B7';   // the dot-field byte (in-stream content)
   const LH = 18;        // line pitch, px (G2 + the live cell's y)
-  // the 9-braille spinner rotator (9 frames, 60ms/frame,
-  // 540ms cycle, one cell, gutter col 0; JS tick — the spec default):
+  // the braille spinner rotator (10 frames, 60ms/frame,
+  // 600ms cycle, one cell, gutter col 0; JS tick — the spec default):
   const SPIN_GLYPHS = '\u28CB\u2899\u28B9\u2878\u28BC\u2874\u2866\u2867\u2807\u288F';
   let spinFrame = 0;
   function startSpin(): void {
@@ -74,7 +74,7 @@
     lc.textContent = SPIN_GLYPHS[spinFrame];   // frame 1 at mount
     spinFrame = 1;
     window.setInterval(() => {
-      spinFrame = (spinFrame + 1) % 9;
+      spinFrame = (spinFrame + 1) % 10;
       if (livecellEl) livecellEl.textContent = SPIN_GLYPHS[spinFrame];
     }, 60);
   }
