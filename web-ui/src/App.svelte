@@ -66,7 +66,7 @@
   const LH = 18;        // line pitch, px (G2 + the live cell's y)
   // the braille spinner rotator (10 frames, 60ms/frame,
   // 600ms cycle, one cell, gutter col 0; JS tick — the spec default):
-  const SPIN_GLYPHS = '\u28C3\u28C9\u28B9\u28B8\u28BC\u28F4\u28D6\u28D7\u2807\u288F';
+  const SPIN_GLYPHS = '\u28CB\u2899\u28B9\u2878\u28BC\u2874\u2866\u2867\u2807\u288F';
   let spinFrame = 0;
   function startSpin(): void {
     const lc = livecellEl;
