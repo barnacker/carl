@@ -66,7 +66,7 @@
   const LH = 18;        // line pitch, px (G2 + the live cell's y)
   // the braille spinner rotator (10 frames, 60ms/frame,
   // 600ms cycle, one cell, gutter col 0; JS tick — the spec default):
-  const SPIN_GLYPHS = '\u28CB\u2899\u28B9\u2878\u28BC\u2874\u2866\u2867\u2807\u288F';
+  const SPIN_GLYPHS = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
   let spinFrame = 0;
   function startSpin(): void {
     const lc = livecellEl;
@@ -76,7 +76,7 @@
     window.setInterval(() => {
       spinFrame = (spinFrame + 1) % 10;
       if (livecellEl) livecellEl.textContent = SPIN_GLYPHS[spinFrame];
-    }, 60);
+    }, 80);
   }
   const HEAD_L = 'CARL \u00B7 PROVISIONING TERMINAL';
   const FIELD_WDTS = 12; // the 12-cell dot field (0..12 dots; 12 at 100)
