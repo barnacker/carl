@@ -85,7 +85,6 @@ pre.tapes {
   width: var(--fh);                 /* exactly one grid column (16px face) */
   height: var(--fh);
   font-size: inherit;               /* the face renders 8 dots tall in one cell */
-  display: none;
   pointer-events: none;
   color: var(--tx);                 /* F5: TEXT color, never the dim */
   white-space: pre;
