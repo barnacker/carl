@@ -406,7 +406,7 @@
     if (!(x1 > 0)) console.error('G1 FAIL: face unloaded — measure as-is');
   }
 
-  onMount(() => { connect(); window.addEventListener('keydown', onKey, true); startSpin(); });
+  onMount(() => { startSpin(); window.addEventListener('keydown', onKey, true); connect(); });
   onDestroy(() => { es?.close(); });
 </script>
 
