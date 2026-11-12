@@ -88,10 +88,10 @@ const server = http.createServer(async (req, res) => {
       try { res.write('data: ' + JSON.stringify(f) + '\n\n'); } catch { closed = true; }
     });
     // the entry frame is the only frame on connect (data=full tree, hp=map)
-    process.nextTick(() => { if (!closed) session.send(
+    setTimeout(() => { if (!closed) session.send(
       { t: 'kd', from: 'carl', to: session.route,
         data: treeSnapData(), hp: treeSnapHp() });
-    });
+    }, 1000);
     const cleanup = () => { if (!closed) { closed = true; dropSession(session.id); } };
     req.on('close', cleanup);
     req.on('error', cleanup);
