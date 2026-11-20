@@ -68,12 +68,13 @@
   // 600ms cycle, one cell, gutter col 0; JS tick — the spec default):
   const SPIN_GLYPHS = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
   let spinFrame = 0;
+  let spinTimer: number | undefined;   // module-scoped interval id (cleared at entry paint)
   function startSpin(): void {
     const lc = livecellEl;
     if (!lc) return;
     lc.textContent = SPIN_GLYPHS[spinFrame];   // frame 1 at mount
     spinFrame = 1;
-    window.setInterval(() => {
+    spinTimer = window.setInterval(() => {
       spinFrame = (spinFrame + 1) % 10;
       if (livecellEl) livecellEl.textContent = SPIN_GLYPHS[spinFrame];
     }, 80);
@@ -279,6 +280,10 @@
       if (hp) { handleToPath.clear(); for (const k of Object.keys(hp)) handleToPath.set(k, hp[k]); }
       // (1) the version line ONLY (the entry's rom/mem are folded but IGNORED)
       putAt(0, '  ', HEAD_L + ' v' + String(tree.get('carl.version') ?? ''));
+      // stop the spinner the instant the version line is painted:
+      // clear the interval, blank the live cell's content (position untouched)
+      if (spinTimer !== undefined) { clearInterval(spinTimer); spinTimer = undefined; }
+      if (livecellEl) livecellEl.textContent = '';
       // (2) the auto-request op:selftest → immu IMMEDIATELY (the server
       //     queues if a sweep is in flight). Once per entry.
       sendWire({ t: 'tx', from: to, to: 'immu', kind: 'op', data: { op: 'selftest' } });
