@@ -105,9 +105,6 @@ result:
 
 | Check | What it's actually testing |
 |---|---|
-| HTTP ACK received within X ms | Server is alive, network path works |
-| HTTP ACK payload parses (version, schema) | Server speaks the right protocol |
-| No malformed bytes in the wire | Transport integrity |
 | **SSE channel** holds for regular frames | Steady transport path is alive |
 | **WebSocket channel** opens and holds | High-frequency telemetry path is alive |
 
