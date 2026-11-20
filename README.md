@@ -233,6 +233,7 @@ Full detail (claims, scope, falsification, proof-of-life) lives in [`docs/build-
 |---|---|
 | `SPEC.md` | Normative definitions: invariants, authority lattice, schemas, enforcement map, full protocols (Dark Transit, Reflex poisoning, Memory internals, SEB 13-step lifecycle, Optimization, Attention Arbitration), per-stage proof of life + falsification. |
 | `docs/cortex-persona-arc.md` | Derivation of the Arc: Wallas stage mapping, INV-ARC 1–9, projection algorithm, "what the Arc is not," attention-arbitration details. |
+| `docs/self-test-architecture.md` | Self-test architecture: Immune System as the self-test driver, backend-triggered sequence (client connects, dash self-test always, global sweep throttled), per-faculty self-test standard procedures, boot vs client self-test split, dash transport degradation model. |
 | `docs/build-stages.md` | Stage-by-stage targets, scope claims, falsification conditions, and what each stage adds. |
 | `TESTING.md` | Acceptance harness: static checks, replay tests, fixtures, adversarial corpus, stage gates. |
 | `CONTRIBUTING.md` | Contribution rules, doc expectations, PR requirements. |
