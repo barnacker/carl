@@ -280,6 +280,7 @@
       if (hp) { handleToPath.clear(); for (const k of Object.keys(hp)) handleToPath.set(k, hp[k]); }
       // (1) the version line ONLY (the entry's rom/mem are folded but IGNORED)
       putAt(0, '  ', HEAD_L + ' v' + String(tree.get('carl.version') ?? ''));
+      putAt(2, '  ', '- SELF-TEST ' + '-'.repeat(23));
       // stop the spinner the instant the version line is painted:
       // clear the interval, blank the live cell's content (position untouched)
       if (spinTimer !== undefined) { clearInterval(spinTimer); spinTimer = undefined; }
