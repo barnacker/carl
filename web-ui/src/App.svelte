@@ -148,6 +148,7 @@
   }
 
   const SEL_RE = /^carl\.immu\.selftest\.([a-z0-9]+)\.(mode|progress|ms)$/;
+  const SEL_RE_DASH = /^carl\.dash\.selftest\.(mode|progress|ms)$/;
 
   function romLineBody(): string {
     const rom = tree.get('carl.rom');
@@ -285,9 +286,10 @@
       // clear the interval, blank the live cell's content (position untouched)
       if (spinTimer !== undefined) { clearInterval(spinTimer); spinTimer = undefined; }
       if (livecellEl) livecellEl.textContent = '';
-      // (2) the auto-request op:selftest → immu IMMEDIATELY (the server
-      //     queues if a sweep is in flight). Once per entry.
-      sendWire({ t: 'tx', from: to, to: 'immu', kind: 'op', data: { op: 'selftest' } });
+      // (2) the auto-request op:selftest → dash IMMEDIATELY (the special
+      //     first self-test; the server runs dash's own writer path). Once
+      //     per entry.
+      sendWire({ t: 'tx', from: to, to: 'dash', kind: 'op', data: { op: 'selftest' } });
       // (3) paint row0 (no rungs yet — they arrive on the wave cadence)
       //     + place the cell. Mid-sweep reconnects re-arrange via the
       //     wave handler (the hp table is already populated).
@@ -305,28 +307,61 @@
       tree.set(p, v);
       if (p === 'carl.rom' || p === 'carl.mem') { changed = true; continue; }
       const m = SEL_RE.exec(p);
-      if (!m) continue;
-      const short = m[1]; const part = m[2];
-      if (part === 'mode' && v === 'active' && !run[short]) {
-        if (runShorts.length >= TOTAL_RUNGS) continue; // no 7th slot
-        run[short] = {
-          label: LABEL_OF[short] ?? short.toUpperCase(),
-          mode: 'active', dots: 0, ms: null, finalized: false,
-        };
-        runShorts.push(short);
-        changed = true;
-      } else if (run[short]) {
-        const r = run[short];
-        if (part === 'progress') {
-          r.dots = Math.min(FIELD_WDTS, Math.max(0, Math.round(Number(v) / 100 * FIELD_WDTS)));
+      if (m) {
+        const short = m[1]; const part = m[2];
+        if (part === 'mode' && v === 'active' && !run[short]) {
+          if (runShorts.length >= TOTAL_RUNGS) continue; // no 7th slot
+          run[short] = {
+            label: LABEL_OF[short] ?? short.toUpperCase(),
+            mode: 'active', dots: 0, ms: null, finalized: false,
+          };
+          runShorts.push(short);
           changed = true;
-        } else if (part === 'ms') {
-          r.ms = Number(v);
-          changed = true;
-        } else if (part === 'mode' && !r.finalized && (v === 'pass' || v === 'degraded' || v === 'fault' || v === 'fail')) {
-          r.mode = String(v);
-          r.finalized = true;
-          changed = true;
+        } else if (run[short]) {
+          const r = run[short];
+          if (part === 'progress') {
+            r.dots = Math.min(FIELD_WDTS, Math.max(0, Math.round(Number(v) / 100 * FIELD_WDTS)));
+            changed = true;
+          } else if (part === 'ms') {
+            r.ms = Number(v);
+            changed = true;
+          } else if (part === 'mode' && !r.finalized && (v === 'pass' || v === 'degraded' || v === 'fault' || v === 'fail')) {
+            r.mode = String(v);
+            r.finalized = true;
+            changed = true;
+          }
+        }
+      } else {
+        // the SPECIAL dash self-test: flat keys carl.dash.selftest.part
+        // (4 segments, NO <short> after selftest). Mirrors the immu rung
+        // logic but keys rung state off short='dash' directly. SEL_RE above
+        // is untouched (the immu 5-segment path stays as-is).
+        const md = SEL_RE_DASH.exec(p);
+        if (md) {
+          const dpart = md[1];
+          const dshort = 'dash'; // flat shape: no <short> segment
+          if (dpart === 'mode' && v === 'active' && !run[dshort]) {
+            if (runShorts.length >= TOTAL_RUNGS) continue; // no 7th slot
+            run[dshort] = {
+              label: LABEL_OF[dshort] ?? dshort.toUpperCase(),
+              mode: 'active', dots: 0, ms: null, finalized: false,
+            };
+            runShorts.push(dshort);
+            changed = true;
+          } else if (run[dshort]) {
+            const r = run[dshort];
+            if (dpart === 'progress') {
+              r.dots = Math.min(FIELD_WDTS, Math.max(0, Math.round(Number(v) / 100 * FIELD_WDTS)));
+              changed = true;
+            } else if (dpart === 'ms') {
+              r.ms = Number(v);
+              changed = true;
+            } else if (dpart === 'mode' && !r.finalized && (v === 'pass' || v === 'degraded' || v === 'fault' || v === 'fail')) {
+              r.mode = String(v);
+              r.finalized = true;
+              changed = true;
+            }
+          }
         }
       }
     }

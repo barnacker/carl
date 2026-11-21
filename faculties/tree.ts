@@ -27,6 +27,10 @@
 let booting = false;      // the boot sweep is in flight (no selftest op meanwhile)
 let selftestBusy = false; // a selftest sweep is running (ops queue, not parallel)
 const selftestQueue: string[] = []; // pending 'selftest' tokens (op: serve queued, rest 202)
+// THE SPECIAL dash self-test: its own live guard + queue, SEPARATE from the
+// immu sweep's selftestBusy/selftestQueue (no shared state — dash is special).
+let dashSelftestBusy = false; // the flat dash self-test is running
+const dashSelftestQueue: string[] = []; // pending dash 'selftest' tokens
 
 type LeafValue = string | number | boolean | object | null;
 
@@ -116,6 +120,33 @@ export function selftestFault(driver: string, target: string): void {
   const base = 'carl.' + driver + '.selftest.' + target;
   treeSet(base + '.progress', 100);
   treeSet(base + '.mode', 'fault'); // no ms (the client paints 12 dots + 'FAULT')
+}
+
+// --- the SPECIAL dash selftest keys (flat, no <short> segment) -----------------------
+// carl.dash.selftest.{mode,progress,ms} — 4 segments (carl, dash, selftest, part).
+// The dashboard tests ITSELF directly; no <target>/<short> sub-segment, and no
+// reuse of the 5-segment immu shape or the immu sweep's runSelftest/selftestBusy.
+// For dash: only 'pass' or 'fault' mode (NO 'degraded' single-case).
+
+export function dashSelftestBegin(): void {
+  treeSet('carl.dash.selftest.mode', 'active');
+  treeSet('carl.dash.selftest.progress', 0);
+}
+
+export function dashSelftestProgress(pct: number): void {
+  const p = Math.max(0, Math.min(100, Math.round(pct))); // uint8 0..100
+  treeSet('carl.dash.selftest.progress', p);
+}
+
+export function dashSelftestPass(ms: number): void {
+  treeSet('carl.dash.selftest.progress', 100);
+  treeSet('carl.dash.selftest.ms', Math.round(ms * 10) / 10); // float, one decimal
+  treeSet('carl.dash.selftest.mode', 'pass');
+}
+
+export function dashSelftestFault(): void {
+  treeSet('carl.dash.selftest.progress', 100);
+  treeSet('carl.dash.selftest.mode', 'fault'); // no ms
 }
 
 // --- the session table (server-minted oper ids; frames routed by 'to') -----------
@@ -274,6 +305,27 @@ export async function runSelftest(): Promise<void> {
   }
 }
 
+/**
+ * The SPECIAL dash self-test: the dashboard tests ITSELF directly. NOT the
+ * immu 6-rung sweep (runSelftest) — a single flat key set
+ * carl.dash.selftest.{mode,progress,ms}. Same 2s step / 12 increments as the
+ * immu cadence. No selftestBusy/selftestQueue (immu sweep state), no
+ * 'degraded' single-case, no per-rung rom/mem re-evaluation runs here (the
+ * first wave is mode:'active'; progress climbs 12 steps; final wave = pass+ms
+ * or fault).
+ */
+export async function runDashSelftest(): Promise<void> {
+  const STEP_MS = 2000;
+  const started = Date.now();
+  dashSelftestBegin();
+  for (let k = 1; k <= 12; k++) {
+    await sleep(STEP_MS);
+    dashSelftestProgress((k / 12) * 100);
+  }
+  await sleep(STEP_MS);
+  dashSelftestPass(Date.now() - started);
+}
+
 // --- boot: the tree IS the wire -------------------------------------------------------
 
 const HEAD = '0.2.1';
@@ -312,6 +364,28 @@ export function dispatchOp(s: Session, to: string, data: { [k: string]: unknown 
   const opToken = (typeof data === 'object' && data !== null && typeof data.op === 'string') ? (data as { op: string }).op
     : (typeof data === 'string' ? data : '');
   const op = opToken || (typeof (data as { op?: unknown })?.op === 'string' ? (data as { op: string }).op : '');
+  if (op === 'selftest' && to === 'dash') {
+    // THE SPECIAL FIRST SELF-TEST: the dashboard self-tests directly. A
+    // DEDICATED busy/queue (dashSelftestBusy / dashSelftestQueue) — NO reuse
+    // of the immu sweep's selftestBusy/selftestQueue (separate state).
+    // Fires runDashSelftest() ONLY (not the 6-rung runSelftest).
+    if (dashSelftestBusy) {
+      if (!dashSelftestQueue.includes(op)) dashSelftestQueue.push(op);
+      return true;
+    }
+    dashSelftestBusy = true;
+    void (async () => {
+      await runDashSelftest();
+      dashSelftestBusy = false;
+      while (dashSelftestQueue.length) {
+        dashSelftestQueue.shift();
+        dashSelftestBusy = true;
+        await runDashSelftest();
+        dashSelftestBusy = false;
+      }
+    })();
+    return true;
+  }
   if (op === 'selftest' && (to === 'immu' || to === '')) {
     if (selftestBusy || booting) {
       // rejected/queued: remember it; serve once the live sweep settles.
