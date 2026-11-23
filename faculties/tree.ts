@@ -52,6 +52,9 @@ interface Session {
 const leaves = new Map<number, Leaf>();
 const handleByPath = new Map<string, number>();
 let nextHandle = 1;
+// THE NESTED store root: a treeSet() writes a leaf into this object.
+// Walked for the wire output (the entry frame's `data`).
+const treeRoot: { [k: string]: unknown } = {};
 
 function ensureLeaf(path: string): number {
   const found = handleByPath.get(path);
@@ -67,15 +70,34 @@ function leafValue(path: string): LeafValue {
   return h === undefined ? null : leaves.get(h)!.value;
 }
 
+/** walk a dot-path into `root`, creating intermediate objects; the last
+    segment becomes a numeric property. Returns the parent container for the
+    last segment. Callers keep passing dot-joined strings (convention unchanged). */
+function nestedContainer(root: { [k: string]: unknown }, path: string): { [k: string]: unknown } {
+  const segs = path.split('.');
+  let cur = root;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const k = segs[i];
+    const next = cur[k];
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) cur[k] = {};
+    cur = cur[k] as { [k: string]: unknown };
+  }
+  return cur;
+}
+
 // --- tree writes (dirty only on real change) ------------------------------------
 
-/** write one leaf; a same-value write sets NO dirty (no-change = no wire). */
+/** write one leaf; a same-value write sets NO dirty (no-change = no wire).
+    The leaf is written into the nested store: walk the dot-path, create
+    intermediate objects, set the last segment as a numeric property. */
 export function treeSet(path: string, value: LeafValue): void {
+  const container = nestedContainer(treeRoot, path);
+  const last = path.split('.').pop()!;
+  if (container[last] === value) return; // same-value: no nested write, no dirty
+  container[last] = value;
   const handle = ensureLeaf(path);
-  const leaf = leaves.get(handle)!;
-  if (leaf.value === value) return;
-  leaf.value = value;
-  leaf.dirty = true;
+  leaves.get(handle)!.value = value;
+  leaves.get(handle)!.dirty = true;
 }
 
 /** read a leaf (null if unregistered). */
@@ -181,15 +203,28 @@ function facultyOf(path: string): string {
   return first;
 }
 
-/** bin currently-dirty handles by their driving faculty: handle -> value. */
+/** bin currently-dirty handles by their driving faculty: handle -> value.
+    The dirty set stays a Set of dot-path strings; the VALUE for each dirty
+    leaf is read by walking the nested store object. */
 function drainDirty(): Map<string, { [h: string]: LeafValue }> {
   const bins = new Map<string, { [h: string]: LeafValue }>();
-  for (const [h, leaf] of leaves) {
-    if (!leaf.dirty) continue;
-    let b = bins.get(facultyOf(leaf.path));
-    if (!b) { b = {}; bins.set(facultyOf(leaf.path), b); }
-    b[String(h)] = leaf.value;
-  }
+  const walk = (node: { [k: string]: unknown }, prefix: string): void => {
+    for (const seg of Object.keys(node)) {
+      const p = prefix ? prefix + '.' + seg : seg;
+      const child = node[seg];
+      const h = handleByPath.get(p);
+      if (h !== undefined) {
+        const leaf = leaves.get(h)!;
+        if (!leaf.dirty) continue;
+        let b = bins.get(facultyOf(p));
+        if (!b) { b = {}; bins.set(facultyOf(p), b); }
+        b[String(h)] = leaf.value;
+      } else if (typeof child === 'object' && child !== null && !Array.isArray(child)) {
+        walk(child as { [k: string]: unknown }, p); // a pure-branch interior object
+      }
+    }
+  };
+  walk(treeRoot, '');
   return bins;
 }
 
@@ -199,10 +234,11 @@ function hpTable(): { [h: string]: string } {
   return out;
 }
 
-function dataSnapshot(): { [p: string]: LeafValue } {
-  const out: { [p: string]: LeafValue } = {};
-  for (const leaf of leaves.values()) out[leaf.path] = leaf.value;
-  return out;
+/** the entry frame's `data`: the NESTED store object (the root), NOT a flat
+    path->value object literal. The dot-path convention is internal to the
+    store; the wire now carries the object shape. */
+function dataSnapshot(): { [k: string]: unknown } {
+  return treeRoot;
 }
 
 /** the ENTRY frame: t=kd, from=carl, to=oper-id, data=full tree, hp=map.
@@ -228,8 +264,8 @@ export function sendTx(s: Session, from: string, kind: string, extra: { [k: stri
   s.send({ t: 'tx', from, to: s.route, kind, ...extra });
 }
 
-/** the entry's `data` (the full current tree: path->value). */
-export function snapshotTree(): { [p: string]: LeafValue } {
+/** the entry's `data` (the NESTED store object, root). */
+export function snapshotTree(): { [k: string]: unknown } {
   return dataSnapshot();
 }
 
