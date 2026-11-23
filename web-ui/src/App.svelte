@@ -289,6 +289,7 @@
       // (2) the auto-request op:selftest → dash IMMEDIATELY (the special
       //     first self-test; the server runs dash's own writer path). Once
       //     per entry.
+      startSpin(); // the spinner starts BEFORE the selftest request goes out
       sendWire({ t: 'tx', from: to, to: 'dash', kind: 'op', data: { op: 'selftest' } });
       // (3) paint row0 (no rungs yet — they arrive on the wave cadence)
       //     + place the cell. Mid-sweep reconnects re-arrange via the
@@ -447,7 +448,7 @@
     if (!(x1 > 0)) console.error('G1 FAIL: face unloaded — measure as-is');
   }
 
-  onMount(() => { startSpin(); window.addEventListener('keydown', onKey, true); connect(); });
+  onMount(() => { window.addEventListener('keydown', onKey, true); connect(); });
   onDestroy(() => { es?.close(); });
 </script>
 
