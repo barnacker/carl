@@ -282,22 +282,22 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * re-evaluation (fresh write; dirty-only if changed). Concurrent
  * selftests: one at a time (an op while one is active is queued, not run).
  */
-export async function runSelftest(): Promise<void> {
+export async function runSelftest(driver: string = 'immu'): Promise<void> {
   // TEST MODE: every kd emission on the boot/selftest path is 2s apart
   // (the operator's slow-boot; the previous randomized ~3s/rung cadence
   // is gone — constant cadence, revert to randomized weights for prod).
   const STEP_MS = 2000;
   for (let i = 0; i < RUNGS.length; i++) {
     const target = RUNGS[i];
-    selftestBegin('immu', target);
+    selftestBegin(driver, target);
     const cost = 0.2 + Math.random() * 2.1; // mock settle cost, ms (one decimal)
     const steps = 12; // the client's 12-cell dot field: one write per step
     for (let k = 1; k <= steps; k++) {
       await sleep(STEP_MS);
-      selftestProgress('immu', target, Math.round((k / steps) * 100));
+      selftestProgress(driver, target, Math.round((k / steps) * 100));
     }
     await sleep(STEP_MS);
-    selftestPass('immu', target, cost);
+    selftestPass(driver, target, cost);
     // the per-rung re-evaluation: ROM = dist/main.js (live stat), MEM = live RSS.
     const { carlRomFileKib, carlProcessMemMib } = await import('./dash/rom.js');
     treeSet('carl.rom', await carlRomFileKib());
@@ -342,13 +342,13 @@ export async function bootTree(): Promise<void> {
   treeSet('carl.rom', await carlRomKib());          // dist-only, KiB
   treeSet('carl.mem', Math.round(carlProcessMemMib() * 10) / 10); // live RSS (MiB)
   selftestBusy = true;
-  await runSelftest();
+  await runSelftest('boot');
   selftestBusy = false;
   booting = false;
   for (const s of RUNGS) facultyMode(s, 'service');
   if (selftestQueue.length) {
     selftestBusy = true;
-    await runSelftest(); // a queued selftest op (while the boot sweep ran): served now
+    await runSelftest('boot'); // a queued selftest op (while the boot sweep ran): served now
     selftestBusy = false;
   }
 }
